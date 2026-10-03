@@ -1,0 +1,9 @@
+{
+  "id" : "ae0841b6-f35f-45a6-8c11-989ce4ec6b64",
+  "targets" : [
+    {
+      "id" : "6a84cc5a-a83d-4a00-9724-1d4833894edf",
+      "name" : "MOSA"
+    }
+  ]
+}

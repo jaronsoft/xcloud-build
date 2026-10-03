@@ -1,0 +1,10 @@
+# 复制本文件为项目根目录 release-config，再填写需要的值。
+# API Key 三项全部留空时，脚本使用 Xcode 已登录的 Apple 账号。
+# 默认自动查找 Xcode 26.6；只有安装在非标准位置时才填写 MOSA_XCODE_APP_PATH。
+MOSA_XCODE_APP_PATH=
+UPLOAD_BYPASS_PROXY=true
+ASC_KEY_ID=
+ASC_ISSUER_ID=
+ASC_KEY_PATH=
+EXPECTED_BUNDLE_ID=com.wekarepartners.mosa.app
+EXPECTED_TEAM_ID=R3622MSZJ7

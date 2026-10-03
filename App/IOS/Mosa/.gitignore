@@ -1,0 +1,9 @@
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+MOSA.xcodeproj/project.xcworkspace/xcuserdata/
+.release/
+release-config
+AuthKey_*.p8
+*.p12
