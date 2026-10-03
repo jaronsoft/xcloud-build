@@ -361,8 +361,13 @@ private struct HomeScreen: View {
                         Spacer()
                         Button { date = Self.schoolCalendar.date(byAdding: .day, value: 1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.right") }
                     }
-                    if session.isLoadingHome {
+                    if let error = session.homeErrorMessage, !session.dailySchedules.isEmpty {
+                        homeErrorCard(error)
+                    }
+                    if session.isLoadingFamily || session.isLoadingHome {
                         ProgressView(zh ? "正在读取学校安排…" : "Loading school schedules…").frame(maxWidth: .infinity, minHeight: 120)
+                    } else if let error = session.homeErrorMessage, session.dailySchedules.isEmpty {
+                        homeErrorCard(error)
                     } else if session.dailySchedules.isEmpty {
                         Text(zh ? "还没有可显示的孩子学校安排。请在家庭页添加孩子并设置学校。" : "No school schedules yet. Add a child and school in Family.")
                             .foregroundStyle(MeroliColor.muted).padding(18).frame(maxWidth: .infinity, alignment: .leading)
@@ -419,12 +424,34 @@ private struct HomeScreen: View {
             }
             .background(MeroliColor.canvas)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { refresh() } label: { Image(systemName: "arrow.clockwise") } } }
+            .refreshable {
+                await session.loadFamily()
+                await session.loadDailySchedules(for: date)
+            }
             .task { if session.dailySchedules.isEmpty { refresh() } }
             .onChange(of: session.children.count) { refresh() }
         }
     }
 
     private func refresh() { Task { await session.loadDailySchedules(for: date) } }
+
+    private func homeErrorCard(_ error: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(zh ? "暂时无法读取家庭安排" : "Schedules are unavailable", systemImage: "exclamationmark.triangle")
+                .font(.headline).foregroundStyle(MeroliColor.coral)
+            Text(error).font(.subheadline).foregroundStyle(MeroliColor.muted)
+            Button(zh ? "重试" : "Try again") {
+                Task {
+                    await session.loadFamily()
+                    await session.loadDailySchedules(for: date)
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+    }
 
     private func schoolDateLabel(_ date: Date) -> String {
         let formatter = DateFormatter()

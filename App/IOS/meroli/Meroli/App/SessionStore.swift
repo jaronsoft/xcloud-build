@@ -92,6 +92,7 @@ final class SessionStore {
     private(set) var isLoadingSchools = false
     private(set) var isLoadingCalendar = false
     private(set) var isLoadingHome = false
+    private(set) var homeErrorMessage: String?
     private(set) var isLoadingSchoolOverview = false
     private(set) var isSavingSchoolYearTransition = false
     private(set) var isAuthenticating = false
@@ -240,9 +241,10 @@ final class SessionStore {
             enrollments = try decoder.decode(APIEnvelope<[EnrollmentDTO]>.self, from: enrollmentData).response
             let transitionData = try await authorized(path: "school-year-transition/preview")
             schoolYearTransitions = try decoder.decode(APIEnvelope<[SchoolYearTransitionDTO]>.self, from: transitionData).response
+            homeErrorMessage = nil
             errorMessage = nil
         } catch {
-            dailySchedules = []
+            homeErrorMessage = message(for: error)
             errorMessage = message(for: error)
         }
     }
@@ -318,9 +320,10 @@ final class SessionStore {
                 items.append(try decoder.decode(APIEnvelope<DailyScheduleDTO>.self, from: data).response)
             }
             dailySchedules = items
+            homeErrorMessage = nil
             errorMessage = nil
         } catch {
-            dailySchedules = []
+            homeErrorMessage = message(for: error)
             errorMessage = message(for: error)
         }
     }
@@ -518,7 +521,7 @@ final class SessionStore {
         selectionStatus: String,
         programIds: [String]
     ) async -> Bool {
-        guard let grade = gradeNumber(for: gradeCode) else {
+        guard gradeNumber(for: gradeCode) != nil else {
             errorMessage = usesChinese ? "请选择有效年级。" : "Choose a valid grade."
             return false
         }
