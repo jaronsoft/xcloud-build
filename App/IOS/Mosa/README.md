@@ -28,15 +28,11 @@ DEVELOPER_DIR="/Applications/Xcode-beta.app/Contents/Developer" \
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
 
-## GitHub 仓库自动同步
+## GitHub 同步与 Xcode Cloud
 
-`App/IOS/Mosa` 是 iOS 工程的唯一修改源。首次镜像前先确认目标仓库没有未提交改动，执行 `git -C /Users/jaron/Projects/Github/mosa pull --ff-only`，并使用 `./scripts/sync-to-github.sh --dry-run --delete` 核对变更。开发时运行以下命令，脚本会先完成一次同步，随后持续监听变更并同步到 `/Users/jaron/Projects/Github/mosa`：
+`App/IOS/Mosa` 是 iOS 工程的唯一修改源，统一同步目标为 `https://github.com/jaronsoft/xcloud-build.git` 中的 `App/IOS/Mosa/`。从仓库根目录运行 `Scripts/sync-ios-to-xcloud-build.sh`，会先快进拉取目标仓库，再按 App 分别提交并推送 `App/IOS/` 下的工程。执行 `Scripts/sync-ios-to-xcloud-build.sh --dry-run` 可预览文件变化；本机 Xcode 状态、构建产物、发布配置和签名文件不会同步。
 
-```bash
-./scripts/sync-to-github.sh --watch
-```
-
-监听模式会镜像删除已从源目录移除的文件，但始终保护目标仓库的 `.git` 元数据。`MOSA.xcodeproj` 及其共享配置会同步；个人 Xcode 状态（`xcuserdata`、`*.xcuserstate`）和构建、签名产物不会同步。同步只更新本地 GitHub 镜像工作树，不会自动提交或推送。可先使用 `./scripts/sync-to-github.sh --dry-run --delete` 查看镜像变更。
+Xcode Cloud 使用仓库内的 `App/IOS/Mosa/MOSA.xcodeproj` 和共享 Scheme `MOSA`。推送 MOSA 工程变更到 `main` 后，由其 workflow 触发自动归档并上传 App Store Connect。TestFlight 内部分发组需在 App Store Connect 中配置。
 
 不要把令牌、密码或邮件验证码写入工程配置。API 地址集中定义在 `MOSA/App/AppConfiguration.swift`；App 启动后异步读取 `https://api.wekarepartners.com/config/v1/mosa` 的公共配置，失败时使用最后一次有效缓存或内置默认值，API 地址不会通过远程配置下发。
 
