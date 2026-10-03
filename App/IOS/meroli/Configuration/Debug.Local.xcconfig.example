@@ -1,0 +1,2 @@
+// 将本文件复制为 Debug.Local.xcconfig，并填写运行 API 的开发机局域网地址。
+MEROLI_API_BASE_URL = http:/$()/192.168.1.20:8980

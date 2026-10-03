@@ -1,0 +1,1315 @@
+import Foundation
+import Observation
+import Security
+
+enum AppPhase: Equatable {
+    case restoring
+    case restoreUnavailable
+    case signedOut
+    case signedIn
+}
+
+private struct CachedAuthSession: Codable {
+    let accessToken: String
+    let refreshToken: String
+    let userId: String
+    let email: String
+    let language: String
+}
+
+private struct OnboardingSubscribeReceipt: Codable, Equatable {
+    let userId: String
+    let idempotencyKey: String
+    let nickname: String
+    let schoolId: String
+    let gradeCode: String
+    let selectionStatus: String
+    let scheduleVariantCode: String
+    let programIds: [String]
+}
+
+struct EnrollmentRemovalSnapshot: Codable, Equatable, Identifiable {
+    let id: String
+    let childId: String
+    let schoolId: String
+    let schoolYearId: String
+    let gradeCode: String
+    var status: String
+
+    init(_ enrollment: EnrollmentDTO) {
+        id = enrollment.id
+        childId = enrollment.childId
+        schoolId = enrollment.schoolId
+        schoolYearId = enrollment.schoolYearId
+        gradeCode = enrollment.gradeCode
+        status = enrollment.status
+    }
+}
+
+struct EnrollmentRemovalReceipt: Codable {
+    let userId: String
+    let childId: String
+    let enrollmentId: String
+    let childNickname: String
+    let schoolName: String
+    let rows: [EnrollmentRemovalSnapshot]
+}
+
+struct EnrollmentSchoolChangeReceipt: Codable {
+    let userId: String
+    let childId: String
+    let enrollmentId: String
+    let sourceSchoolId: String
+    let schoolYearId: String
+    let oldGradeCode: String
+    let targetSchoolId: String
+    let targetGradeCode: String
+    let knownEnrollmentIds: [String]
+}
+
+@MainActor
+@Observable
+final class SessionStore {
+    private(set) var phase: AppPhase = .restoring
+    private(set) var email = ""
+    private(set) var userId = ""
+    private(set) var language = "en"
+    private(set) var family: FamilyDTO?
+    private(set) var children: [ChildDTO] = []
+    private(set) var enrollments: [EnrollmentDTO] = []
+    private(set) var schoolYearTransitions: [SchoolYearTransitionDTO] = []
+    private(set) var transitionPrograms: [ScheduleProgramDTO] = []
+    private(set) var districts: [DistrictDTO] = []
+    private(set) var schoolYears: [SchoolYearDTO] = []
+    private(set) var schools: [ParentSchoolDTO] = []
+    private(set) var calendarEvents: [ParentEventDTO] = []
+    private(set) var dailySchedules: [DailyScheduleDTO] = []
+    private(set) var scheduleProfile: ScheduleProfileDTO?
+    private(set) var schoolOverview: ParentSchoolOverviewDTO?
+    private(set) var schoolPerformanceHistory: ParentPerformanceHistoryDTO?
+    private(set) var isLoadingFamily = false
+    private(set) var isLoadingCatalog = false
+    private(set) var isLoadingSchools = false
+    private(set) var isLoadingCalendar = false
+    private(set) var isLoadingHome = false
+    private(set) var isLoadingSchoolOverview = false
+    private(set) var isSavingSchoolYearTransition = false
+    private(set) var isAuthenticating = false
+    private(set) var isAppleLinked = false
+    private(set) var pendingSchoolRemoval: EnrollmentRemovalReceipt?
+    private(set) var pendingSchoolChange: EnrollmentSchoolChangeReceipt?
+    private(set) var isRestoringSession = false
+    private(set) var isSavingChild = false
+    var errorMessage: String?
+
+    @ObservationIgnored private let api: APIClient?
+    @ObservationIgnored private var accessToken: String?
+    @ObservationIgnored private var rotationTask: Task<Void, Error>?
+    @ObservationIgnored private var isRemovingEnrollment = false
+    @ObservationIgnored private let decoder: JSONDecoder
+
+    init() {
+        api = try? APIClient()
+        decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+    }
+
+    var usesChinese: Bool { language == "zh-CN" }
+
+    func restore() async {
+        guard !isRestoringSession else { return }
+        isRestoringSession = true
+        defer { isRestoringSession = false }
+        if let cached = KeychainRefreshToken.readSession() {
+            accessToken = cached.accessToken
+            userId = cached.userId
+            email = cached.email
+            language = cached.language
+            phase = .signedIn
+            await loadFamily()
+            await resumePendingSubscription()
+            return
+        }
+        guard let refreshToken = KeychainRefreshToken.read() else {
+            phase = .signedOut
+            return
+        }
+        do {
+            try await rotate(refreshToken: refreshToken)
+            try await loadIdentity()
+            phase = .signedIn
+            await loadFamily()
+            await resumePendingSubscription()
+        } catch {
+            if requiresReauthentication(error) {
+                clearLocalSession()
+                phase = .signedOut
+            } else {
+                phase = .restoreUnavailable
+            }
+            errorMessage = message(for: error)
+        }
+    }
+
+    func signIn(email: String, password: String, createAccount: Bool) async {
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedEmail.isEmpty, !password.isEmpty else {
+            errorMessage = usesChinese ? "请输入邮箱和密码。" : "Enter your email and password."
+            return
+        }
+        errorMessage = nil
+        isAuthenticating = true
+        defer { isAuthenticating = false }
+        do {
+            let path = createAccount ? "auth/register" : "auth/login"
+            var payload: [String: String] = ["email": normalizedEmail, "password": password]
+            if createAccount {
+                payload["language"] = Locale.current.language.languageCode?.identifier == "zh" ? "zh-CN" : "en"
+            }
+            let data = try await send(path: path, method: "POST", json: payload)
+            let response = try decoder.decode(APIEnvelope<AuthPayload>.self, from: data)
+            try store(tokens: response.response.tokens)
+            try await loadIdentity()
+            phase = .signedIn
+            await loadFamily()
+        } catch {
+            errorMessage = message(for: error)
+        }
+    }
+
+    func signInWithApple(identityToken: String, rawNonce: String) async {
+        isAuthenticating = true
+        errorMessage = nil
+        defer { isAuthenticating = false }
+        do {
+            let data = try await send(path: "auth/apple", method: "POST", json: [
+                "identity_token": identityToken,
+                "raw_nonce": rawNonce,
+                "language": Locale.current.language.languageCode?.identifier == "zh" ? "zh-CN" : "en"
+            ])
+            let response = try decoder.decode(APIEnvelope<AuthPayload>.self, from: data)
+            try store(tokens: response.response.tokens)
+            try await loadIdentity()
+            phase = .signedIn
+            await loadFamily()
+        } catch {
+            if (error as? APIClientError)?.statusCode == 409 {
+                errorMessage = usesChinese
+                    ? "此 Apple 账号关联了已有 Meroli 邮箱，请先使用原方式登录，再到设置中绑定 Apple。"
+                    : "This Apple account uses an existing Meroli email. Sign in with your original method, then link Apple in Settings."
+            } else if (error as? APIClientError)?.statusCode == 422 {
+                errorMessage = usesChinese ? "Apple 未提供已验证邮箱，请先创建邮箱账户后再绑定 Apple。" : "Apple did not provide a verified email. Create an email account first, then link Apple."
+            } else {
+                errorMessage = message(for: error)
+            }
+        }
+    }
+
+    func loadAppleBinding() async {
+        do {
+            let data = try await authorized(path: "auth/apple/binding")
+            isAppleLinked = try decoder.decode(APIEnvelope<AppleBindingDTO>.self, from: data).response.linked
+        } catch { errorMessage = message(for: error) }
+    }
+
+    func bindApple(identityToken: String, rawNonce: String) async {
+        do {
+            let data = try await authorized(path: "auth/apple/bind", method: "POST", json: [
+                "identity_token": identityToken,
+                "raw_nonce": rawNonce
+            ])
+            isAppleLinked = try decoder.decode(APIEnvelope<AppleBindingDTO>.self, from: data).response.linked
+            errorMessage = nil
+        } catch {
+            errorMessage = (error as? APIClientError)?.statusCode == 409
+                ? (usesChinese ? "此 Apple 账号已绑定到其他 Meroli 账户。" : "This Apple account is linked to another Meroli account.")
+                : message(for: error)
+        }
+    }
+
+    func loadFamily() async {
+        guard phase == .signedIn || accessToken != nil else { return }
+        isLoadingFamily = true
+        defer { isLoadingFamily = false }
+        do {
+            let familyData = try await authorized(path: "family")
+            family = try decoder.decode(APIEnvelope<FamilyDTO>.self, from: familyData).response
+            let childData = try await authorized(path: "children")
+            children = try decoder.decode(APIEnvelope<[ChildDTO]>.self, from: childData).response
+            let enrollmentData = try await authorized(path: "enrollments")
+            enrollments = try decoder.decode(APIEnvelope<[EnrollmentDTO]>.self, from: enrollmentData).response
+            let transitionData = try await authorized(path: "school-year-transition/preview")
+            schoolYearTransitions = try decoder.decode(APIEnvelope<[SchoolYearTransitionDTO]>.self, from: transitionData).response
+            errorMessage = nil
+        } catch {
+            dailySchedules = []
+            errorMessage = message(for: error)
+        }
+    }
+
+    func loadSchoolCatalog() async {
+        isLoadingCatalog = true
+        defer { isLoadingCatalog = false }
+        do {
+            async let districtData = send(path: "districts")
+            async let yearData = send(path: "school-years")
+            districts = try decoder.decode(APIEnvelope<[DistrictDTO]>.self, from: await districtData).response
+            schoolYears = try decoder.decode(APIEnvelope<[SchoolYearDTO]>.self, from: await yearData).response
+        } catch {
+            errorMessage = message(for: error)
+        }
+    }
+
+    func loadSchools(districtId: String, keyword: String = "") async {
+        isLoadingSchools = true
+        defer { isLoadingSchools = false }
+        do {
+            var query: [URLQueryItem] = []
+            let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { query.append(URLQueryItem(name: "keyword", value: trimmed)) }
+            guard let api else { throw APIClientError.invalidBaseURL }
+            let data = try await api.request(path: "districts/\(districtId)/schools", query: query)
+            schools = try decoder.decode(APIEnvelope<[ParentSchoolDTO]>.self, from: data).response
+        } catch {
+            errorMessage = message(for: error)
+        }
+    }
+
+    func loadTransitionPrograms(schoolId: String) async {
+        transitionPrograms = []
+        do {
+            let data = try await send(path: "schools/\(schoolId)/schedule-programs")
+            transitionPrograms = try decoder.decode(APIEnvelope<[ScheduleProgramDTO]>.self, from: data).response
+        } catch {
+            errorMessage = message(for: error)
+        }
+    }
+
+    func loadCalendar(from startDate: Date, to endDate: Date, childId: String? = nil) async {
+        guard accessToken != nil else { return }
+        isLoadingCalendar = true
+        calendarEvents = []
+        errorMessage = nil
+        defer { isLoadingCalendar = false }
+        var query = [
+            URLQueryItem(name: "start_date", value: schoolDateString(startDate)),
+            URLQueryItem(name: "end_date", value: schoolDateString(endDate))
+        ]
+        if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
+        do {
+            let data = try await authorized(path: "calendar", query: query)
+            calendarEvents = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
+            errorMessage = nil
+        } catch {
+            errorMessage = message(for: error)
+        }
+    }
+
+    func loadDailySchedules(for date: Date) async {
+        guard api != nil, accessToken != nil else { return }
+        isLoadingHome = true
+        defer { isLoadingHome = false }
+        do {
+            let value = schoolDateString(date)
+            var items: [DailyScheduleDTO] = []
+            for child in children {
+                let data = try await authorized(path: "children/\(child.id)/daily-schedule",
+                    query: [URLQueryItem(name: "date", value: value)])
+                items.append(try decoder.decode(APIEnvelope<DailyScheduleDTO>.self, from: data).response)
+            }
+            dailySchedules = items
+            errorMessage = nil
+        } catch {
+            dailySchedules = []
+            errorMessage = message(for: error)
+        }
+    }
+
+    func loadScheduleProfile(child: ChildDTO, schoolId: String) async {
+        scheduleProfile = nil
+        do {
+            let data = try await authorized(path: "children/\(child.id)/schedule-profile",
+                query: [URLQueryItem(name: "school_id", value: schoolId)])
+            scheduleProfile = try decoder.decode(APIEnvelope<ScheduleProfileDTO>.self, from: data).response
+        } catch {
+            errorMessage = message(for: error)
+        }
+    }
+
+    func loadSchoolOverview(schoolId: String) async {
+        schoolOverview = nil
+        isLoadingSchoolOverview = true
+        defer { isLoadingSchoolOverview = false }
+        do {
+            let data = try await authorized(path: "schools/\(schoolId)/overview")
+            schoolOverview = try decoder.decode(APIEnvelope<ParentSchoolOverviewDTO>.self, from: data).response
+        } catch {
+            errorMessage = message(for: error)
+        }
+    }
+
+    func loadSchoolPerformanceHistory(schoolId: String) async {
+        schoolPerformanceHistory = nil
+        do {
+            let data = try await authorized(path: "schools/\(schoolId)/performance/history")
+            schoolPerformanceHistory = try decoder.decode(APIEnvelope<ParentPerformanceHistoryDTO>.self, from: data).response
+        } catch {
+            schoolPerformanceHistory = nil
+        }
+    }
+
+    func applySchoolYearTransition(childId: String, action: String, targetYearId: String? = nil, grade: Int? = nil, extraPayload: [String: Any] = [:]) async -> Bool {
+        isSavingSchoolYearTransition = true
+        defer { isSavingSchoolYearTransition = false }
+        var payload: [String: Any] = [:]
+        if let targetYearId { payload["target_school_year_id"] = targetYearId }
+        if let grade { payload["target_grade"] = grade }
+        payload.merge(extraPayload) { _, new in new }
+        do {
+            _ = try await authorized(path: "school-year-transition/\(childId)/\(action)",
+                method: "POST", json: payload.isEmpty ? nil : payload)
+            await loadFamily()
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func saveScheduleProfile(child: ChildDTO, selectionStatus: String, variantCode: String, programIds: [String]) async -> Bool {
+        do {
+            let data = try await authorized(path: "children/\(child.id)/schedule-profile", method: "PUT", json: [
+                "school_id": scheduleProfile?.schoolId ?? "",
+                "schedule_variant_code": variantCode,
+                "selection_status": selectionStatus,
+                "program_ids": selectionStatus == "SELECTED" ? programIds : []
+            ])
+            scheduleProfile = try decoder.decode(APIEnvelope<ScheduleProfileDTO>.self, from: data).response
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func saveEnrollment(
+        child: ChildDTO,
+        current: EnrollmentDTO?,
+        school: ParentSchoolDTO,
+        schoolYear: SchoolYearDTO,
+        gradeCode: String
+    ) async -> Bool {
+        guard let grade = gradeNumber(for: gradeCode) else {
+            errorMessage = usesChinese ? "请选择有效年级。" : "Choose a valid grade."
+            return false
+        }
+        isSavingChild = true
+        errorMessage = nil
+        defer { isSavingChild = false }
+        if hasPendingSchoolRemoval(childId: child.id) {
+            errorMessage = usesChinese
+                ? "此孩子的学校关联操作尚待确认，请先检查状态。"
+                : "A school enrollment operation for this child is unconfirmed. Check its status first."
+            return false
+        }
+        if hasPendingSchoolChange(childId: child.id) {
+            if let receipt = KeychainRefreshToken.readSchoolChangeReceipt(key: schoolChangeKey(childId: child.id)) {
+                pendingSchoolChange = receipt
+                _ = await reconcileSchoolChange(childId: child.id)
+            }
+            if pendingSchoolChange != nil || KeychainRefreshToken.receiptExists(key: schoolChangeKey(childId: child.id)) {
+                errorMessage = usesChinese
+                    ? "换校操作尚待确认，已禁止重复保存。请先检查状态。"
+                    : "The school change is unconfirmed. Saving is blocked; check its status first."
+                return false
+            }
+        }
+        do {
+            let data: Data
+            if let current {
+                if current.schoolId == school.id {
+                    data = try await authorized(path: "enrollments/\(current.id)", method: "PATCH", json: ["grade": grade])
+                } else {
+                    let key = schoolChangeKey(childId: child.id)
+                    if KeychainRefreshToken.receiptExists(key: key) {
+                        guard let pending = KeychainRefreshToken.readSchoolChangeReceipt(key: key) else {
+                            errorMessage = usesChinese ? "换校回执无法读取，请勿重复提交。" : "The saved school-change receipt cannot be read. Do not submit again."
+                            return false
+                        }
+                        pendingSchoolChange = pending
+                        _ = await reconcileSchoolChange(childId: child.id)
+                        errorMessage = usesChinese
+                            ? "上次换校操作尚待核实，请先检查状态。"
+                            : "A previous school change is still unconfirmed. Check its status first."
+                        return false
+                    }
+                    let fresh = try await fetchEnrollments()
+                    guard let source = fresh.first(where: {
+                        $0.id == current.id && $0.childId == child.id && $0.schoolId == current.schoolId
+                    }), source.isCurrent, source.schoolYearId == schoolYear.id else {
+                        throw APIClientError.unacceptableStatusCode(409)
+                    }
+                    let receipt = EnrollmentSchoolChangeReceipt(
+                        userId: userId,
+                        childId: child.id,
+                        enrollmentId: source.id,
+                        sourceSchoolId: source.schoolId,
+                        schoolYearId: source.schoolYearId,
+                        oldGradeCode: source.gradeCode,
+                        targetSchoolId: school.id,
+                        targetGradeCode: gradeCode,
+                        knownEnrollmentIds: fresh.filter { $0.childId == child.id }.map(\.id).sorted()
+                    )
+                    guard KeychainRefreshToken.saveSchoolChangeReceipt(receipt, key: key) else {
+                        throw APIClientError.secureStorageUnavailable
+                    }
+                    pendingSchoolChange = receipt
+                    do {
+                        _ = try await authorized(path: "enrollments/\(current.id)/school-settings", method: "PUT", json: ["school_id": school.id, "grade": grade])
+                    } catch let error as APIClientError where [401, 403, 404, 422].contains(error.statusCode ?? 0) {
+                        _ = KeychainRefreshToken.deleteReceipt(key: key)
+                        pendingSchoolChange = nil
+                        throw error
+                    } catch {
+                        _ = await reconcileSchoolChange(childId: child.id)
+                        return pendingSchoolChange == nil
+                    }
+                    _ = await reconcileSchoolChange(childId: child.id)
+                    return pendingSchoolChange == nil
+                }
+            } else {
+                data = try await authorized(path: "enrollments", method: "POST", json: [
+                    "child_id": child.id,
+                    "school_id": school.id,
+                    "school_year_id": schoolYear.id,
+                    "grade": grade
+                ])
+            }
+            let enrollment = try decoder.decode(APIEnvelope<EnrollmentDTO>.self, from: data).response
+            if let index = enrollments.firstIndex(where: { $0.id == enrollment.id }) {
+                enrollments[index] = enrollment
+            } else {
+                enrollments.append(enrollment)
+            }
+            if let old = current, old.id != enrollment.id,
+               let index = enrollments.firstIndex(where: { $0.id == old.id }) {
+                enrollments[index] = EnrollmentDTO(
+                    id: old.id, childId: old.childId, childName: old.childName,
+                    schoolId: old.schoolId, districtId: old.districtId, schoolName: old.schoolName,
+                    schoolYearId: old.schoolYearId, schoolYearName: old.schoolYearName,
+                    grade: old.grade, gradeCode: old.gradeCode, status: "COMPLETED",
+                    startedAt: old.startedAt, endedAt: enrollment.startedAt
+                )
+            }
+            await loadDailySchedules(for: Date())
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func subscribeChild(
+        nickname: String,
+        school: ParentSchoolDTO,
+        gradeCode: String,
+        selectionStatus: String,
+        programIds: [String]
+    ) async -> Bool {
+        guard let grade = gradeNumber(for: gradeCode) else {
+            errorMessage = usesChinese ? "请选择有效年级。" : "Choose a valid grade."
+            return false
+        }
+        let normalizedName = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty,
+              selectionStatus == "SELECTED" && !programIds.isEmpty
+                || selectionStatus != "SELECTED" && programIds.isEmpty else {
+            errorMessage = usesChinese ? "请填写称呼并完成作息项目选择。" : "Enter a name and complete the schedule choice."
+            return false
+        }
+        let key = onboardingKey()
+        let receipt: OnboardingSubscribeReceipt
+        if KeychainRefreshToken.receiptExists(key: key) {
+            guard let saved = KeychainRefreshToken.readOnboardingReceipt(key: key),
+                  saved.userId == userId,
+                  saved.nickname == normalizedName,
+                  saved.schoolId == school.id,
+                  saved.gradeCode == gradeCode,
+                  saved.selectionStatus == selectionStatus,
+                  saved.programIds == programIds.sorted() else {
+                errorMessage = usesChinese
+                    ? "上次建档提交尚待核实。请使用相同资料重试，或稍后重新打开应用。"
+                    : "A previous setup is unresolved. Retry with the same details or reopen the app later."
+                return false
+            }
+            receipt = saved
+        } else {
+            receipt = OnboardingSubscribeReceipt(
+                userId: userId,
+                idempotencyKey: UUID().uuidString.lowercased(),
+                nickname: normalizedName,
+                schoolId: school.id,
+                gradeCode: gradeCode,
+                selectionStatus: selectionStatus,
+                scheduleVariantCode: "DEFAULT",
+                programIds: programIds.sorted()
+            )
+            guard KeychainRefreshToken.saveOnboardingReceipt(receipt, key: key) else {
+                errorMessage = APIClientError.secureStorageUnavailable.localizedDescription
+                return false
+            }
+        }
+        return await dispatchSubscription(receipt)
+    }
+
+    private func resumePendingSubscription() async {
+        let key = onboardingKey()
+        guard KeychainRefreshToken.receiptExists(key: key),
+              let receipt = KeychainRefreshToken.readOnboardingReceipt(key: key),
+              receipt.userId == userId else { return }
+        _ = await dispatchSubscription(receipt)
+    }
+
+    private func dispatchSubscription(_ receipt: OnboardingSubscribeReceipt) async -> Bool {
+        guard let grade = gradeNumber(for: receipt.gradeCode) else { return false }
+        isSavingChild = true
+        errorMessage = nil
+        defer { isSavingChild = false }
+        do {
+            guard let accessToken else { throw APIClientError.unacceptableStatusCode(401) }
+            let data = try await send(
+                path: "onboarding/subscribe",
+                method: "POST",
+                authorization: accessToken,
+                json: [
+                    "nickname": receipt.nickname,
+                    "school_id": receipt.schoolId,
+                    "grade": grade,
+                    "selection_status": receipt.selectionStatus,
+                    "schedule_variant_code": receipt.scheduleVariantCode,
+                    "program_ids": receipt.programIds
+                ],
+                headers: ["Idempotency-Key": receipt.idempotencyKey]
+            )
+            _ = try decoder.decode(APIEnvelope<OnboardingSubscribeDTO>.self, from: data).response
+            guard KeychainRefreshToken.deleteReceipt(key: onboardingKey()) else {
+                throw APIClientError.secureStorageUnavailable
+            }
+            await loadFamily()
+            await loadDailySchedules(for: Date())
+            errorMessage = nil
+            return true
+        } catch let error as APIClientError where error.statusCode == 422 {
+            _ = KeychainRefreshToken.deleteReceipt(key: onboardingKey())
+            errorMessage = message(for: error)
+            return false
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func closeEnrollment(enrollmentId: String, action: String) async -> Bool {
+        if action == "remove" {
+            return await removeEnrollmentOnce(enrollmentId: enrollmentId)
+        }
+        isSavingChild = true
+        defer { isSavingChild = false }
+        do {
+            _ = try await authorized(path: "enrollments/\(enrollmentId)/\(action)", method: "POST")
+            await loadFamily()
+            await loadDailySchedules(for: Date())
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func restorePendingSchoolRemoval(childId: String) async {
+        guard !userId.isEmpty else { return }
+        let key = schoolRemovalKey(childId: childId)
+        guard let receipt = KeychainRefreshToken.readReceipt(key: key),
+              receipt.userId == userId,
+              receipt.childId == childId else {
+            pendingSchoolRemoval = nil
+            return
+        }
+        pendingSchoolRemoval = receipt
+        _ = await reconcileSchoolRemoval(childId: childId)
+    }
+
+    func restorePendingSchoolChange(childId: String) async {
+        guard !userId.isEmpty else { return }
+        let key = schoolChangeKey(childId: childId)
+        guard KeychainRefreshToken.receiptExists(key: key) else {
+            pendingSchoolChange = nil
+            return
+        }
+        guard let receipt = KeychainRefreshToken.readSchoolChangeReceipt(key: key),
+              receipt.userId == userId, receipt.childId == childId else {
+            errorMessage = usesChinese ? "换校回执无法读取，请勿重复提交。" : "The saved school-change receipt cannot be read. Do not submit again."
+            return
+        }
+        pendingSchoolChange = receipt
+        _ = await reconcileSchoolChange(childId: childId)
+    }
+
+    func checkPendingSchoolChange(childId: String) async -> Bool {
+        await reconcileSchoolChange(childId: childId)
+    }
+
+    func hasPendingSchoolChange(childId: String) -> Bool {
+        pendingSchoolChange?.childId == childId
+            || KeychainRefreshToken.receiptExists(key: schoolChangeKey(childId: childId))
+    }
+
+    func checkPendingSchoolRemoval(childId: String) async -> Bool {
+        await reconcileSchoolRemoval(childId: childId)
+    }
+
+    func hasPendingSchoolRemoval(childId: String) -> Bool {
+        pendingSchoolRemoval?.childId == childId
+            || KeychainRefreshToken.receiptExists(key: schoolRemovalKey(childId: childId))
+    }
+
+    private func removeEnrollmentOnce(enrollmentId: String) async -> Bool {
+        guard !isRemovingEnrollment else { return false }
+        isRemovingEnrollment = true
+        defer { isRemovingEnrollment = false }
+        isSavingChild = true
+        errorMessage = nil
+        defer { isSavingChild = false }
+        do {
+            guard let target = enrollments.first(where: { $0.id == enrollmentId }) else {
+                throw APIClientError.unacceptableStatusCode(404)
+            }
+            let key = schoolRemovalKey(childId: target.childId)
+            guard !hasPendingSchoolChange(childId: target.childId) else {
+                errorMessage = usesChinese
+                    ? "孩子有一项换校操作尚待确认，请先检查换校状态。"
+                    : "A school change for this child is unconfirmed. Check its status first."
+                return false
+            }
+            if KeychainRefreshToken.receiptExists(key: key) {
+                guard let existing = KeychainRefreshToken.readReceipt(key: key) else {
+                    errorMessage = usesChinese ? "移除回执无法读取，请勿重复提交。" : "The saved removal receipt cannot be read. Do not submit again."
+                    return false
+                }
+                pendingSchoolRemoval = existing
+                _ = await reconcileSchoolRemoval(childId: target.childId)
+                if pendingSchoolRemoval != nil { return false }
+                errorMessage = usesChinese ? "已核实关联状态，请重新打开学校资料后查看。" : "The enrollment status was checked. Reopen the school details to review it."
+                return false
+            }
+
+            let actual = try await fetchEnrollments()
+            guard let current = actual.first(where: {
+                $0.id == enrollmentId && $0.childId == target.childId && $0.schoolId == target.schoolId
+            }), current.isCurrent else {
+                throw APIClientError.unacceptableStatusCode(409)
+            }
+            let child = try await fetchChild(id: target.childId)
+            let receipt = EnrollmentRemovalReceipt(
+                userId: userId,
+                childId: child.id,
+                enrollmentId: enrollmentId,
+                childNickname: child.nickname,
+                schoolName: current.schoolName,
+                rows: actual.filter { $0.childId == child.id }
+                    .map(EnrollmentRemovalSnapshot.init)
+                    .sorted { $0.id < $1.id }
+            )
+            guard KeychainRefreshToken.saveReceipt(receipt, key: key) else {
+                throw APIClientError.secureStorageUnavailable
+            }
+            pendingSchoolRemoval = receipt
+
+            do {
+                _ = try await authorized(path: "enrollments/\(enrollmentId)/remove", method: "POST")
+            } catch let error as APIClientError where [401, 403, 404, 422].contains(error.statusCode ?? 0) {
+                _ = KeychainRefreshToken.deleteReceipt(key: key)
+                pendingSchoolRemoval = nil
+                throw error
+            } catch {
+                errorMessage = message(for: error)
+                return await reconcileSchoolRemoval(childId: child.id)
+            }
+            return await reconcileSchoolRemoval(childId: child.id)
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    private func reconcileSchoolRemoval(childId: String) async -> Bool {
+        guard let receipt = pendingSchoolRemoval ?? KeychainRefreshToken.readReceipt(key: schoolRemovalKey(childId: childId)),
+              receipt.userId == userId, receipt.childId == childId else { return false }
+        do {
+            let child = try await fetchChild(id: childId)
+            guard child.id == childId else {
+                errorMessage = usesChinese ? "暂时无法确认孩子的学校记录状态，请稍后重试。" : "The school record status could not be confirmed. Try again shortly."
+                return false
+            }
+            let current = try await fetchEnrollments().filter { $0.childId == childId }
+                .map(EnrollmentRemovalSnapshot.init).sorted { $0.id < $1.id }
+            let expected = receipt.rows.map { row -> EnrollmentRemovalSnapshot in
+                var updated = row
+                if row.id == receipt.enrollmentId { updated.status = "REMOVED" }
+                return updated
+            }.sorted { $0.id < $1.id }
+            guard current == expected else {
+                pendingSchoolRemoval = receipt
+                errorMessage = usesChinese
+                    ? "移除结果仍待确认。为避免重复操作，请只检查状态，不要再次移除。"
+                    : "Removal is still unconfirmed. Check the status; do not submit the removal again."
+                return false
+            }
+            _ = KeychainRefreshToken.deleteReceipt(key: schoolRemovalKey(childId: childId))
+            pendingSchoolRemoval = nil
+            errorMessage = nil
+            await loadFamily()
+            await loadDailySchedules(for: Date())
+            return true
+        } catch {
+            pendingSchoolRemoval = receipt
+            errorMessage = usesChinese
+                ? "暂时无法确认移除结果。请稍后检查状态，不要重复提交。"
+                : "The removal result could not be checked. Try a read-only status check later; do not submit again."
+            return false
+        }
+    }
+
+    private func fetchEnrollments() async throws -> [EnrollmentDTO] {
+        let data = try await authorized(path: "enrollments")
+        return try decoder.decode(APIEnvelope<[EnrollmentDTO]>.self, from: data).response
+    }
+
+    private func fetchChild(id: String) async throws -> ChildDTO {
+        let data = try await authorized(path: "children/\(id)")
+        return try decoder.decode(APIEnvelope<ChildDTO>.self, from: data).response
+    }
+
+    private func reconcileSchoolChange(childId: String) async -> Bool {
+        guard let receipt = pendingSchoolChange ?? KeychainRefreshToken.readSchoolChangeReceipt(key: schoolChangeKey(childId: childId)),
+              receipt.userId == userId, receipt.childId == childId else { return false }
+        do {
+            let child = try await fetchChild(id: childId)
+            let rows = try await fetchEnrollments().filter { $0.childId == childId }
+            let prior = rows.first { $0.id == receipt.enrollmentId }
+            let additions = rows.filter { !receipt.knownEnrollmentIds.contains($0.id) }
+            let activeTargets = rows.filter { $0.schoolId == receipt.targetSchoolId && $0.isCurrent }
+            guard child.id == childId,
+                  let prior,
+                  prior.status == "COMPLETED",
+                  prior.schoolId == receipt.sourceSchoolId,
+                  prior.schoolYearId == receipt.schoolYearId,
+                  prior.gradeCode == receipt.oldGradeCode,
+                  additions.count == 1,
+                  let next = additions.first,
+                  next.status == "ACTIVE",
+                  next.schoolId == receipt.targetSchoolId,
+                  next.schoolYearId == receipt.schoolYearId,
+                  next.gradeCode == receipt.targetGradeCode,
+                  activeTargets.filter({ $0.status == "ACTIVE" }).count == 1 else {
+                pendingSchoolChange = receipt
+                errorMessage = usesChinese
+                    ? "换校结果尚未核实。请只检查状态，不要重复提交。"
+                    : "The school change is unconfirmed. Check its status; do not submit it again."
+                return false
+            }
+            _ = KeychainRefreshToken.deleteReceipt(key: schoolChangeKey(childId: childId))
+            pendingSchoolChange = nil
+            errorMessage = nil
+            await loadFamily()
+            await loadDailySchedules(for: Date())
+            return true
+        } catch {
+            pendingSchoolChange = receipt
+            errorMessage = usesChinese
+                ? "暂时无法确认换校结果。请稍后检查状态，不要重复提交。"
+                : "The school change could not be verified. Check its status later; do not submit again."
+            return false
+        }
+    }
+
+    private func schoolRemovalKey(childId: String) -> String {
+        "school-remove.\(userId).\(childId)"
+    }
+
+    private func onboardingKey() -> String {
+        "onboarding-subscribe.\(userId)"
+    }
+
+    private func schoolChangeKey(childId: String) -> String {
+        "school-change.\(userId).\(childId)"
+    }
+
+    func createChild(nickname: String) async -> Bool {
+        let name = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            errorMessage = usesChinese ? "请输入孩子的称呼。" : "Enter a name for your child."
+            return false
+        }
+        isSavingChild = true
+        errorMessage = nil
+        defer { isSavingChild = false }
+        do {
+            let data = try await authorized(path: "children", method: "POST", json: ["nickname": name])
+            let child = try decoder.decode(APIEnvelope<ChildDTO>.self, from: data).response
+            children.append(child)
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func renameChild(id: String, nickname: String) async -> Bool {
+        let name = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            errorMessage = usesChinese ? "请输入孩子的称呼。" : "Enter a name for your child."
+            return false
+        }
+        isSavingChild = true
+        errorMessage = nil
+        defer { isSavingChild = false }
+        do {
+            let data = try await authorized(path: "children/\(id)", method: "PATCH", json: ["nickname": name])
+            let updated = try decoder.decode(APIEnvelope<ChildDTO>.self, from: data).response
+            if let index = children.firstIndex(where: { $0.id == id }) { children[index] = updated }
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func setLanguage(_ value: String) async {
+        guard ["en", "zh-CN"].contains(value) else { return }
+        errorMessage = nil
+        do {
+            let data = try await authorized(path: "preferences", method: "PATCH", json: ["language": value])
+            language = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: data).response.language
+        } catch {
+            errorMessage = message(for: error)
+        }
+    }
+
+    func requestPasswordReset(email: String) async -> Bool {
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedEmail.isEmpty else {
+            errorMessage = usesChinese ? "请输入邮箱地址。" : "Enter your email address."
+            return false
+        }
+        errorMessage = nil
+        do {
+            _ = try await send(path: "auth/password-reset/request", method: "POST", json: ["email": normalizedEmail])
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func logout() async {
+        if let refreshToken = KeychainRefreshToken.read() {
+            _ = try? await send(path: "auth/logout", method: "POST", json: ["refresh_token": refreshToken])
+        }
+        clearLocalSession()
+        phase = .signedOut
+        errorMessage = nil
+    }
+
+    func deleteAccount(password: String) async -> Bool {
+        guard !password.isEmpty else {
+            errorMessage = usesChinese ? "请输入当前密码以确认删除账户。" : "Enter your current password to confirm account deletion."
+            return false
+        }
+        isSavingChild = true
+        errorMessage = nil
+        defer { isSavingChild = false }
+        do {
+            let data = try await authorized(path: "auth/account", method: "DELETE", json: ["password": password])
+            let result = try decoder.decode(APIEnvelope<MeroliAccountDeleteDTO>.self, from: data).response
+            guard result.deleted else { throw APIClientError.invalidResponse }
+            clearLocalSession()
+            phase = .signedOut
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    private func loadIdentity() async throws {
+        let profileData = try await authorized(path: "auth/me")
+        let user = try decoder.decode(APIEnvelope<MePayload>.self, from: profileData).response.user
+        userId = user.id
+        email = user.email
+        let preferencesData = try await authorized(path: "preferences")
+        language = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: preferencesData).response.language
+        persistCachedSession()
+    }
+
+    private func authorized(
+        path: String,
+        method: String = "GET",
+        json: [String: Any]? = nil,
+        query: [URLQueryItem] = []
+    ) async throws -> Data {
+        guard let token = accessToken else { throw APIClientError.unacceptableStatusCode(401) }
+        do {
+            return try await send(path: path, method: method, authorization: token, json: json, query: query)
+        } catch let error as APIClientError where error.statusCode == 401 {
+            guard method == "GET" else { throw error }
+            if let currentToken = accessToken, currentToken != token {
+                return try await send(path: path, method: method, authorization: currentToken, json: json, query: query)
+            }
+            guard let refreshToken = KeychainRefreshToken.read() else { throw error }
+            try await rotate(refreshToken: refreshToken)
+            guard let newToken = accessToken else { throw error }
+            do {
+                return try await send(path: path, method: method, authorization: newToken, json: json, query: query)
+            } catch let retryError as APIClientError where retryError.statusCode == 401 {
+                clearLocalSession()
+                phase = .signedOut
+                throw retryError
+            }
+        }
+    }
+
+    private func rotate(refreshToken: String) async throws {
+        if let rotationTask {
+            try await rotationTask.value
+            return
+        }
+        let task = Task { [weak self] in
+            guard let self else { throw APIClientError.invalidResponse }
+            try await self.performRotation(refreshToken: refreshToken)
+        }
+        rotationTask = task
+        defer { rotationTask = nil }
+        try await task.value
+    }
+
+    private func performRotation(refreshToken: String) async throws {
+        let data = try await send(path: "auth/refresh", method: "POST", json: ["refresh_token": refreshToken])
+        let response = try decoder.decode(APIEnvelope<RefreshPayload>.self, from: data)
+        try store(tokens: response.response.tokens)
+    }
+
+    private func store(tokens: AuthTokens) throws {
+        guard !tokens.accessToken.isEmpty, !tokens.refreshToken.isEmpty else {
+            throw APIClientError.invalidResponse
+        }
+        guard KeychainRefreshToken.save(tokens.refreshToken) else {
+            throw APIClientError.secureStorageUnavailable
+        }
+        accessToken = tokens.accessToken
+        persistCachedSession(refreshToken: tokens.refreshToken)
+    }
+
+    private func persistCachedSession(refreshToken: String? = nil) {
+        guard !userId.isEmpty, !email.isEmpty,
+              let accessToken,
+              let storedRefreshToken = refreshToken ?? KeychainRefreshToken.read() else { return }
+        let cached = CachedAuthSession(
+            accessToken: accessToken,
+            refreshToken: storedRefreshToken,
+            userId: userId,
+            email: email,
+            language: language
+        )
+        _ = KeychainRefreshToken.saveSession(cached)
+    }
+
+    private func send(
+        path: String,
+        method: String = "GET",
+        authorization: String? = nil,
+        json: [String: Any]? = nil,
+        query: [URLQueryItem] = [],
+        headers: [String: String] = [:]
+    ) async throws -> Data {
+        guard let api else { throw APIClientError.invalidBaseURL }
+        let body = try json.map { try JSONSerialization.data(withJSONObject: $0) }
+        return try await api.request(path: path, method: method, query: query, authorization: authorization, headers: headers, body: body)
+    }
+
+    private func clearLocalSession() {
+        rotationTask?.cancel()
+        rotationTask = nil
+        accessToken = nil
+        _ = KeychainRefreshToken.delete()
+        _ = KeychainRefreshToken.deleteSession()
+        email = ""
+        userId = ""
+        language = "en"
+        family = nil
+        children = []
+        enrollments = []
+        districts = []
+        schoolYears = []
+        schools = []
+        calendarEvents = []
+    }
+
+    private func requiresReauthentication(_ error: Error) -> Bool {
+        guard let apiError = error as? APIClientError else { return false }
+        return apiError.statusCode == 401 || apiError.statusCode == 403
+    }
+
+    private func message(for error: Error) -> String {
+        guard let apiError = error as? APIClientError else {
+            return usesChinese ? "网络暂时不可用，请检查连接后重试。" : "The network is unavailable. Check your connection and try again."
+        }
+        switch apiError {
+        case .invalidBaseURL:
+            return usesChinese ? "尚未配置 Meroli API 地址。" : "The Meroli API address is not configured."
+        case .invalidRequestPath, .invalidResponse:
+            return usesChinese ? "暂时无法读取 Meroli 数据，请稍后重试。" : "Meroli data could not be loaded. Try again shortly."
+        case .secureStorageUnavailable:
+            return usesChinese ? "无法安全保存登录状态，请解锁设备后重试。" : "The secure sign-in state could not be saved. Unlock your device and try again."
+        case let .unacceptableStatusCode(status):
+            if status == 401 { return usesChinese ? "邮箱或密码不正确，或登录已过期。" : "The email or password is incorrect, or your session expired." }
+            if status == 409 { return usesChinese ? "此邮箱已注册，请直接登录。" : "This email is already registered. Sign in instead." }
+            if status == 422 { return usesChinese ? "请检查输入的信息。" : "Check the information you entered." }
+            return usesChinese ? "Meroli 服务暂时无法完成请求（\(status)）。" : "Meroli could not complete the request (\(status))."
+        }
+    }
+
+    private func gradeNumber(for code: String) -> Int? {
+        switch code {
+        case "PK": return -2
+        case "TK": return -1
+        case "K": return 0
+        default: return Int(code).flatMap { (1...12).contains($0) ? $0 : nil }
+        }
+    }
+
+    private func schoolDateString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(identifier: "America/Los_Angeles")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+}
+
+private enum KeychainRefreshToken {
+    private static let service = "com.wekarepartners.meroli.app"
+    private static let account = "refresh-token"
+    private static let sessionAccount = "auth-session-v1"
+
+    static func readSession() -> CachedAuthSession? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: sessionAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data,
+              let session = try? JSONDecoder().decode(CachedAuthSession.self, from: data),
+              !session.accessToken.isEmpty, !session.refreshToken.isEmpty,
+              !session.userId.isEmpty, !session.email.isEmpty else { return nil }
+        return session
+    }
+
+    static func saveSession(_ session: CachedAuthSession) -> Bool {
+        guard let data = try? JSONEncoder().encode(session) else { return false }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: sessionAccount
+        ]
+        let attributes: [String: Any] = [kSecValueData as String: data]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var insert = query
+            insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            insert[kSecValueData as String] = data
+            return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+        }
+        return status == errSecSuccess
+    }
+
+    static func readReceipt(key: String) -> EnrollmentRemovalReceipt? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return try? JSONDecoder().decode(EnrollmentRemovalReceipt.self, from: data)
+    }
+
+    static func readOnboardingReceipt(key: String) -> OnboardingSubscribeReceipt? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return try? JSONDecoder().decode(OnboardingSubscribeReceipt.self, from: data)
+    }
+
+    static func saveOnboardingReceipt(_ receipt: OnboardingSubscribeReceipt, key: String) -> Bool {
+        guard let data = try? JSONEncoder().encode(receipt) else { return false }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        let update = [kSecValueData as String: data]
+        let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if status == errSecItemNotFound {
+            var insert = query
+            insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            insert[kSecValueData as String] = data
+            return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+        }
+        return status == errSecSuccess
+    }
+
+    static func receiptExists(key: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        return SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess
+    }
+
+    static func readSchoolChangeReceipt(key: String) -> EnrollmentSchoolChangeReceipt? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return try? JSONDecoder().decode(EnrollmentSchoolChangeReceipt.self, from: data)
+    }
+
+    static func saveSchoolChangeReceipt(_ receipt: EnrollmentSchoolChangeReceipt, key: String) -> Bool {
+        guard let data = try? JSONEncoder().encode(receipt) else { return false }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        let update = [kSecValueData as String: data]
+        let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if status == errSecItemNotFound {
+            var insert = query
+            insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            insert[kSecValueData as String] = data
+            return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+        }
+        return status == errSecSuccess
+    }
+
+    static func saveReceipt(_ receipt: EnrollmentRemovalReceipt, key: String) -> Bool {
+        guard let data = try? JSONEncoder().encode(receipt) else { return false }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        let update = [kSecValueData as String: data]
+        let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if status == errSecItemNotFound {
+            var insert = query
+            insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            insert[kSecValueData as String] = data
+            return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+        }
+        return status == errSecSuccess
+    }
+
+    @discardableResult
+    static func deleteReceipt(key: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    @discardableResult
+    static func deleteSession() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: sessionAccount
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    static func read() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func save(_ token: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let attributes: [String: Any] = [kSecValueData as String: Data(token.utf8)]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var insert = query
+            insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            attributes.forEach { insert[$0.key] = $0.value }
+            return SecItemAdd(insert as CFDictionary, nil) == errSecSuccess
+        }
+        return status == errSecSuccess
+    }
+
+    @discardableResult
+    static func delete() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+}

@@ -1,0 +1,2 @@
+MEROLI_API_BASE_URL = http:/$()/localhost:8980
+#include? "Debug.Local.xcconfig"
