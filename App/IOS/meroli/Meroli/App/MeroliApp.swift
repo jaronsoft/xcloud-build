@@ -8,7 +8,6 @@ struct MeroliApp: App {
         WindowGroup {
             RootView()
                 .environment(session)
-                .task { await session.restore() }
                 .preferredColorScheme(.light)
         }
     }

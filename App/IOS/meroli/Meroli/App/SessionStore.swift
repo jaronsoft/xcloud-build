@@ -9,6 +9,17 @@ enum AppPhase: Equatable {
     case signedIn
 }
 
+private enum MeroliLanguage {
+    static var preferred: String {
+        Locale.preferredLanguages.first?.lowercased().hasPrefix("zh") == true ? "zh-CN" : "en"
+    }
+}
+
+struct MeroliPresentationError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 private struct CachedAuthSession: Codable {
     let accessToken: String
     let refreshToken: String
@@ -73,7 +84,7 @@ final class SessionStore {
     private(set) var phase: AppPhase = .restoring
     private(set) var email = ""
     private(set) var userId = ""
-    private(set) var language = "en"
+    private(set) var language = MeroliLanguage.preferred
     private(set) var family: FamilyDTO?
     private(set) var children: [ChildDTO] = []
     private(set) var enrollments: [EnrollmentDTO] = []
@@ -83,12 +94,22 @@ final class SessionStore {
     private(set) var schoolYears: [SchoolYearDTO] = []
     private(set) var schools: [ParentSchoolDTO] = []
     private(set) var calendarEvents: [ParentEventDTO] = []
+    private(set) var homeEvents: [ParentEventDTO] = []
+    private(set) var isLoadingHomeEvents = false
+    private(set) var homeEventsErrorMessage: String?
     private(set) var dailySchedules: [DailyScheduleDTO] = []
+    private(set) var tomorrowDailySchedules: [DailyScheduleDTO] = []
+    private(set) var isLoadingTomorrowSchedules = false
+    private(set) var tomorrowSchedulesErrorMessage: String?
     private(set) var scheduleProfile: ScheduleProfileDTO?
     private(set) var schoolOverview: ParentSchoolOverviewDTO?
+    private(set) var schoolOverviewErrorMessage: String?
     private(set) var schoolPerformanceHistory: ParentPerformanceHistoryDTO?
+    private(set) var isLoadingSchoolPerformanceHistory = false
+    private(set) var schoolPerformanceHistoryErrorMessage: String?
     private(set) var isLoadingFamily = false
     private(set) var isLoadingCatalog = false
+    private(set) var catalogErrorMessage: String?
     private(set) var isLoadingSchools = false
     private(set) var isLoadingCalendar = false
     private(set) var isLoadingHome = false
@@ -97,6 +118,7 @@ final class SessionStore {
     private(set) var isSavingSchoolYearTransition = false
     private(set) var isAuthenticating = false
     private(set) var isAppleLinked = false
+    private(set) var pendingPasswordResetToken: String?
     private(set) var pendingSchoolRemoval: EnrollmentRemovalReceipt?
     private(set) var pendingSchoolChange: EnrollmentSchoolChangeReceipt?
     private(set) var isRestoringSession = false
@@ -107,6 +129,21 @@ final class SessionStore {
     @ObservationIgnored private var accessToken: String?
     @ObservationIgnored private var rotationTask: Task<Void, Error>?
     @ObservationIgnored private var isRemovingEnrollment = false
+    @ObservationIgnored private var familyLoadGeneration = 0
+    @ObservationIgnored private var schoolsLoadGeneration = 0
+    @ObservationIgnored private var programsLoadGeneration = 0
+    @ObservationIgnored private var calendarLoadGeneration = 0
+    @ObservationIgnored private var homeEventsLoadGeneration = 0
+    @ObservationIgnored private var dailySchedulesLoadGeneration = 0
+    @ObservationIgnored private var tomorrowSchedulesLoadGeneration = 0
+    @ObservationIgnored private var schoolOverviewLoadGeneration = 0
+    @ObservationIgnored private var performanceHistoryLoadGeneration = 0
+    @ObservationIgnored private var lastCalendarRequest: (start: Date, end: Date, childId: String?)?
+    @ObservationIgnored private var lastHomeEventsRequest: (start: Date, end: Date, childId: String?)?
+    @ObservationIgnored private var lastDailyScheduleDate: Date?
+    @ObservationIgnored private var lastTomorrowScheduleDate: Date?
+    @ObservationIgnored private var lastSchoolOverviewId: String?
+    @ObservationIgnored private var lastPerformanceHistorySchoolId: String?
     @ObservationIgnored private let decoder: JSONDecoder
 
     init() {
@@ -128,7 +165,7 @@ final class SessionStore {
             language = cached.language
             phase = .signedIn
             await loadFamily()
-            await resumePendingSubscription()
+            if phase == .signedIn { await resumePendingSubscription() }
             return
         }
         guard let refreshToken = KeychainRefreshToken.read() else {
@@ -140,7 +177,7 @@ final class SessionStore {
             try await loadIdentity()
             phase = .signedIn
             await loadFamily()
-            await resumePendingSubscription()
+            if phase == .signedIn { await resumePendingSubscription() }
         } catch {
             if requiresReauthentication(error) {
                 clearLocalSession()
@@ -165,7 +202,7 @@ final class SessionStore {
             let path = createAccount ? "auth/register" : "auth/login"
             var payload: [String: String] = ["email": normalizedEmail, "password": password]
             if createAccount {
-                payload["language"] = Locale.current.language.languageCode?.identifier == "zh" ? "zh-CN" : "en"
+                payload["language"] = usesChinese ? "zh-CN" : "en"
             }
             let data = try await send(path: path, method: "POST", json: payload)
             let response = try decoder.decode(APIEnvelope<AuthPayload>.self, from: data)
@@ -186,7 +223,7 @@ final class SessionStore {
             let data = try await send(path: "auth/apple", method: "POST", json: [
                 "identity_token": identityToken,
                 "raw_nonce": rawNonce,
-                "language": Locale.current.language.languageCode?.identifier == "zh" ? "zh-CN" : "en"
+                "language": usesChinese ? "zh-CN" : "en"
             ])
             let response = try decoder.decode(APIEnvelope<AuthPayload>.self, from: data)
             try store(tokens: response.response.tokens)
@@ -230,69 +267,110 @@ final class SessionStore {
 
     func loadFamily() async {
         guard phase == .signedIn || accessToken != nil else { return }
+        familyLoadGeneration += 1
+        let generation = familyLoadGeneration
         isLoadingFamily = true
-        defer { isLoadingFamily = false }
+        defer {
+            if generation == familyLoadGeneration { isLoadingFamily = false }
+        }
         do {
             let familyData = try await authorized(path: "family")
-            family = try decoder.decode(APIEnvelope<FamilyDTO>.self, from: familyData).response
+            let familyResult = try decoder.decode(APIEnvelope<FamilyDTO>.self, from: familyData).response
             let childData = try await authorized(path: "children")
-            children = try decoder.decode(APIEnvelope<[ChildDTO]>.self, from: childData).response
+            let childrenResult = try decoder.decode(APIEnvelope<[ChildDTO]>.self, from: childData).response
             let enrollmentData = try await authorized(path: "enrollments")
-            enrollments = try decoder.decode(APIEnvelope<[EnrollmentDTO]>.self, from: enrollmentData).response
+            let enrollmentsResult = try decoder.decode(APIEnvelope<[EnrollmentDTO]>.self, from: enrollmentData).response
             let transitionData = try await authorized(path: "school-year-transition/preview")
-            schoolYearTransitions = try decoder.decode(APIEnvelope<[SchoolYearTransitionDTO]>.self, from: transitionData).response
+            let transitionsResult = try decoder.decode(APIEnvelope<[SchoolYearTransitionDTO]>.self, from: transitionData).response
+            guard generation == familyLoadGeneration, accessToken != nil else { return }
+            family = familyResult
+            children = childrenResult
+            enrollments = enrollmentsResult
+            schoolYearTransitions = transitionsResult
             homeErrorMessage = nil
             errorMessage = nil
         } catch {
-            homeErrorMessage = message(for: error)
-            errorMessage = message(for: error)
+            guard generation == familyLoadGeneration else { return }
+            let failureMessage = message(for: error)
+            if (error as? APIClientError)?.statusCode == 401 {
+                clearLocalSession()
+                phase = .signedOut
+            }
+            homeErrorMessage = failureMessage
+            errorMessage = failureMessage
         }
     }
 
     func loadSchoolCatalog() async {
         isLoadingCatalog = true
+        catalogErrorMessage = nil
         defer { isLoadingCatalog = false }
         do {
             async let districtData = send(path: "districts")
             async let yearData = send(path: "school-years")
             districts = try decoder.decode(APIEnvelope<[DistrictDTO]>.self, from: await districtData).response
             schoolYears = try decoder.decode(APIEnvelope<[SchoolYearDTO]>.self, from: await yearData).response
+            catalogErrorMessage = nil
         } catch {
-            errorMessage = message(for: error)
+            catalogErrorMessage = message(for: error)
         }
     }
 
     func loadSchools(districtId: String, keyword: String = "") async {
+        schoolsLoadGeneration += 1
+        let generation = schoolsLoadGeneration
+        schools = []
+        errorMessage = nil
+        guard !districtId.isEmpty else {
+            isLoadingSchools = false
+            return
+        }
         isLoadingSchools = true
-        defer { isLoadingSchools = false }
+        defer {
+            if generation == schoolsLoadGeneration { isLoadingSchools = false }
+        }
         do {
             var query: [URLQueryItem] = []
             let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { query.append(URLQueryItem(name: "keyword", value: trimmed)) }
             guard let api else { throw APIClientError.invalidBaseURL }
             let data = try await api.request(path: "districts/\(districtId)/schools", query: query)
-            schools = try decoder.decode(APIEnvelope<[ParentSchoolDTO]>.self, from: data).response
+            let result = try decoder.decode(APIEnvelope<[ParentSchoolDTO]>.self, from: data).response
+            guard generation == schoolsLoadGeneration else { return }
+            schools = result
         } catch {
+            guard generation == schoolsLoadGeneration else { return }
             errorMessage = message(for: error)
         }
     }
 
     func loadTransitionPrograms(schoolId: String) async {
+        programsLoadGeneration += 1
+        let generation = programsLoadGeneration
         transitionPrograms = []
+        guard !schoolId.isEmpty else { return }
         do {
             let data = try await send(path: "schools/\(schoolId)/schedule-programs")
-            transitionPrograms = try decoder.decode(APIEnvelope<[ScheduleProgramDTO]>.self, from: data).response
+            let result = try decoder.decode(APIEnvelope<[ScheduleProgramDTO]>.self, from: data).response
+            guard generation == programsLoadGeneration else { return }
+            transitionPrograms = result
         } catch {
+            guard generation == programsLoadGeneration else { return }
             errorMessage = message(for: error)
         }
     }
 
     func loadCalendar(from startDate: Date, to endDate: Date, childId: String? = nil) async {
         guard accessToken != nil else { return }
+        lastCalendarRequest = (startDate, endDate, childId)
+        calendarLoadGeneration += 1
+        let generation = calendarLoadGeneration
         isLoadingCalendar = true
         calendarEvents = []
         errorMessage = nil
-        defer { isLoadingCalendar = false }
+        defer {
+            if generation == calendarLoadGeneration { isLoadingCalendar = false }
+        }
         var query = [
             URLQueryItem(name: "start_date", value: schoolDateString(startDate)),
             URLQueryItem(name: "end_date", value: schoolDateString(endDate))
@@ -300,17 +378,66 @@ final class SessionStore {
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
             let data = try await authorized(path: "calendar", query: query)
-            calendarEvents = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
+            let result = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
+            guard generation == calendarLoadGeneration, accessToken != nil else { return }
+            calendarEvents = result
             errorMessage = nil
         } catch {
+            guard generation == calendarLoadGeneration else { return }
             errorMessage = message(for: error)
+        }
+    }
+
+    func loadCalendarEvent(id: String) async -> Result<ParentEventDTO, MeroliPresentationError> {
+        guard !id.isEmpty, id.allSatisfy(\.isNumber) else {
+            return .failure(MeroliPresentationError(message: usesChinese ? "活动编号无效。" : "This event ID is invalid."))
+        }
+        do {
+            let data = try await authorized(path: "events/\(id)")
+            let event = try decoder.decode(APIEnvelope<ParentEventDTO>.self, from: data).response
+            return .success(event)
+        } catch let error as APIClientError where error.statusCode == 404 {
+            return .failure(MeroliPresentationError(message: usesChinese ? "此活动已不再适用于你的家庭。" : "This event is no longer available to your family."))
+        } catch {
+            return .failure(MeroliPresentationError(message: message(for: error)))
+        }
+    }
+
+    func loadHomeEvents(from startDate: Date, to endDate: Date, childId: String? = nil) async {
+        guard accessToken != nil else { return }
+        lastHomeEventsRequest = (startDate, endDate, childId)
+        homeEventsLoadGeneration += 1
+        let generation = homeEventsLoadGeneration
+        isLoadingHomeEvents = true
+        defer {
+            if generation == homeEventsLoadGeneration { isLoadingHomeEvents = false }
+        }
+        var query = [
+            URLQueryItem(name: "start_date", value: schoolDateString(startDate)),
+            URLQueryItem(name: "end_date", value: schoolDateString(endDate))
+        ]
+        if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
+        do {
+            let data = try await authorized(path: "calendar", query: query)
+            let result = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
+            guard generation == homeEventsLoadGeneration, accessToken != nil else { return }
+            homeEvents = result
+            homeEventsErrorMessage = nil
+        } catch {
+            guard generation == homeEventsLoadGeneration else { return }
+            homeEventsErrorMessage = message(for: error)
         }
     }
 
     func loadDailySchedules(for date: Date) async {
         guard api != nil, accessToken != nil else { return }
+        lastDailyScheduleDate = date
+        dailySchedulesLoadGeneration += 1
+        let generation = dailySchedulesLoadGeneration
         isLoadingHome = true
-        defer { isLoadingHome = false }
+        defer {
+            if generation == dailySchedulesLoadGeneration { isLoadingHome = false }
+        }
         do {
             let value = schoolDateString(date)
             var items: [DailyScheduleDTO] = []
@@ -319,12 +446,40 @@ final class SessionStore {
                     query: [URLQueryItem(name: "date", value: value)])
                 items.append(try decoder.decode(APIEnvelope<DailyScheduleDTO>.self, from: data).response)
             }
+            guard generation == dailySchedulesLoadGeneration, accessToken != nil else { return }
             dailySchedules = items
             homeErrorMessage = nil
             errorMessage = nil
         } catch {
+            guard generation == dailySchedulesLoadGeneration else { return }
             homeErrorMessage = message(for: error)
             errorMessage = message(for: error)
+        }
+    }
+
+    func loadTomorrowDailySchedules(for date: Date) async {
+        guard api != nil, accessToken != nil else { return }
+        lastTomorrowScheduleDate = date
+        tomorrowSchedulesLoadGeneration += 1
+        let generation = tomorrowSchedulesLoadGeneration
+        isLoadingTomorrowSchedules = true
+        defer {
+            if generation == tomorrowSchedulesLoadGeneration { isLoadingTomorrowSchedules = false }
+        }
+        do {
+            let value = schoolDateString(date)
+            var items: [DailyScheduleDTO] = []
+            for child in children {
+                let data = try await authorized(path: "children/\(child.id)/daily-schedule",
+                    query: [URLQueryItem(name: "date", value: value)])
+                items.append(try decoder.decode(APIEnvelope<DailyScheduleDTO>.self, from: data).response)
+            }
+            guard generation == tomorrowSchedulesLoadGeneration, accessToken != nil else { return }
+            tomorrowDailySchedules = items
+            tomorrowSchedulesErrorMessage = nil
+        } catch {
+            guard generation == tomorrowSchedulesLoadGeneration else { return }
+            tomorrowSchedulesErrorMessage = message(for: error)
         }
     }
 
@@ -340,24 +495,55 @@ final class SessionStore {
     }
 
     func loadSchoolOverview(schoolId: String) async {
+        lastSchoolOverviewId = schoolId
+        schoolOverviewLoadGeneration += 1
+        let generation = schoolOverviewLoadGeneration
         schoolOverview = nil
+        schoolOverviewErrorMessage = nil
+        errorMessage = nil
         isLoadingSchoolOverview = true
-        defer { isLoadingSchoolOverview = false }
+        defer {
+            if generation == schoolOverviewLoadGeneration {
+                isLoadingSchoolOverview = false
+            }
+        }
         do {
             let data = try await authorized(path: "schools/\(schoolId)/overview")
-            schoolOverview = try decoder.decode(APIEnvelope<ParentSchoolOverviewDTO>.self, from: data).response
+            let overview = try decoder.decode(APIEnvelope<ParentSchoolOverviewDTO>.self, from: data).response
+            guard overview.schoolId == schoolId else { throw APIClientError.invalidResponse }
+            guard generation == schoolOverviewLoadGeneration, accessToken != nil else { return }
+            schoolOverview = overview
+            schoolOverviewErrorMessage = nil
+            errorMessage = nil
         } catch {
+            guard generation == schoolOverviewLoadGeneration else { return }
+            schoolOverviewErrorMessage = message(for: error)
             errorMessage = message(for: error)
         }
     }
 
     func loadSchoolPerformanceHistory(schoolId: String) async {
+        lastPerformanceHistorySchoolId = schoolId
+        performanceHistoryLoadGeneration += 1
+        let generation = performanceHistoryLoadGeneration
         schoolPerformanceHistory = nil
+        schoolPerformanceHistoryErrorMessage = nil
+        isLoadingSchoolPerformanceHistory = true
+        defer {
+            if generation == performanceHistoryLoadGeneration {
+                isLoadingSchoolPerformanceHistory = false
+            }
+        }
         do {
             let data = try await authorized(path: "schools/\(schoolId)/performance/history")
-            schoolPerformanceHistory = try decoder.decode(APIEnvelope<ParentPerformanceHistoryDTO>.self, from: data).response
+            let history = try decoder.decode(APIEnvelope<ParentPerformanceHistoryDTO>.self, from: data).response
+            guard history.schoolId == schoolId else { throw APIClientError.invalidResponse }
+            guard generation == performanceHistoryLoadGeneration, accessToken != nil else { return }
+            schoolPerformanceHistory = history
         } catch {
+            guard generation == performanceHistoryLoadGeneration else { return }
             schoolPerformanceHistory = nil
+            schoolPerformanceHistoryErrorMessage = message(for: error)
         }
     }
 
@@ -895,9 +1081,27 @@ final class SessionStore {
         errorMessage = nil
         do {
             let data = try await authorized(path: "preferences", method: "PATCH", json: ["language": value])
-            language = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: data).response.language
+            let updatedLanguage = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: data).response.language
+            let languageChanged = language != updatedLanguage
+            language = updatedLanguage
+            if languageChanged { await reloadLocalizedContent() }
         } catch {
             errorMessage = message(for: error)
+        }
+    }
+
+    private func reloadLocalizedContent() async {
+        if let request = lastCalendarRequest {
+            await loadCalendar(from: request.start, to: request.end, childId: request.childId)
+        }
+        if let request = lastHomeEventsRequest {
+            await loadHomeEvents(from: request.start, to: request.end, childId: request.childId)
+        }
+        if let date = lastDailyScheduleDate { await loadDailySchedules(for: date) }
+        if let date = lastTomorrowScheduleDate { await loadTomorrowDailySchedules(for: date) }
+        if let schoolId = lastSchoolOverviewId { await loadSchoolOverview(schoolId: schoolId) }
+        if let schoolId = lastPerformanceHistorySchoolId {
+            await loadSchoolPerformanceHistory(schoolId: schoolId)
         }
     }
 
@@ -917,6 +1121,45 @@ final class SessionStore {
         }
     }
 
+    func handleIncomingURL(_ url: URL) {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.scheme?.lowercased() == "meroli",
+              components.host?.lowercased() == "reset-password",
+              let token = components.queryItems?.first(where: { $0.name == "token" })?.value,
+              (32...256).contains(token.utf16.count),
+              token.unicodeScalars.allSatisfy({ CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-").contains($0) }) else { return }
+        pendingPasswordResetToken = token
+        errorMessage = nil
+    }
+
+    func dismissPasswordReset() {
+        pendingPasswordResetToken = nil
+        errorMessage = nil
+    }
+
+    func confirmPasswordReset(token: String, newPassword: String) async -> Bool {
+        guard (32...256).contains(token.utf16.count),
+              (6...256).contains(newPassword.utf16.count) else {
+            errorMessage = usesChinese ? "重置链接无效，或新密码长度不符合要求。" : "The reset link is invalid or the new password length is not allowed."
+            return false
+        }
+        isAuthenticating = true
+        errorMessage = nil
+        defer { isAuthenticating = false }
+        do {
+            _ = try await send(path: "auth/password-reset/confirm", method: "POST", json: [
+                "token": token,
+                "new_password": newPassword
+            ])
+            clearLocalSession()
+            phase = .signedOut
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
     func logout() async {
         if let refreshToken = KeychainRefreshToken.read() {
             _ = try? await send(path: "auth/logout", method: "POST", json: ["refresh_token": refreshToken])
@@ -926,22 +1169,32 @@ final class SessionStore {
         errorMessage = nil
     }
 
-    func deleteAccount(password: String) async -> Bool {
-        guard !password.isEmpty else {
-            errorMessage = usesChinese ? "请输入当前密码以确认删除账户。" : "Enter your current password to confirm account deletion."
+    func deleteAccount(password: String = "", identityToken: String? = nil, rawNonce: String? = nil) async -> Bool {
+        guard !password.isEmpty || identityToken != nil && rawNonce != nil else {
+            errorMessage = usesChinese ? "请使用当前密码或已绑定的 Apple 账号重新验证。" : "Reauthenticate with your password or linked Apple account."
             return false
         }
         isSavingChild = true
         errorMessage = nil
         defer { isSavingChild = false }
         do {
-            let data = try await authorized(path: "auth/account", method: "DELETE", json: ["password": password])
+            var payload = ["password": password]
+            if let identityToken, let rawNonce {
+                payload["identity_token"] = identityToken
+                payload["raw_nonce"] = rawNonce
+            }
+            let data = try await authorized(path: "auth/account", method: "DELETE", json: payload)
             let result = try decoder.decode(APIEnvelope<MeroliAccountDeleteDTO>.self, from: data).response
             guard result.deleted else { throw APIClientError.invalidResponse }
             clearLocalSession()
             phase = .signedOut
             errorMessage = nil
             return true
+        } catch let error as APIClientError where error.statusCode == 401 {
+            errorMessage = usesChinese
+                ? "验证失败。请检查密码，或使用已绑定的 Apple 账号重新验证。"
+                : "Verification failed. Check your password or reauthenticate with your linked Apple account."
+            return false
         } catch {
             errorMessage = message(for: error)
             return false
@@ -1044,21 +1297,61 @@ final class SessionStore {
     }
 
     private func clearLocalSession() {
+        familyLoadGeneration += 1
+        schoolsLoadGeneration += 1
+        programsLoadGeneration += 1
+        calendarLoadGeneration += 1
+        homeEventsLoadGeneration += 1
+        dailySchedulesLoadGeneration += 1
+        tomorrowSchedulesLoadGeneration += 1
+        schoolOverviewLoadGeneration += 1
+        performanceHistoryLoadGeneration += 1
         rotationTask?.cancel()
         rotationTask = nil
+        lastCalendarRequest = nil
+        lastHomeEventsRequest = nil
+        lastDailyScheduleDate = nil
+        lastTomorrowScheduleDate = nil
+        lastSchoolOverviewId = nil
+        lastPerformanceHistorySchoolId = nil
         accessToken = nil
         _ = KeychainRefreshToken.delete()
         _ = KeychainRefreshToken.deleteSession()
         email = ""
         userId = ""
-        language = "en"
+        language = MeroliLanguage.preferred
         family = nil
         children = []
         enrollments = []
+        schoolYearTransitions = []
+        transitionPrograms = []
         districts = []
         schoolYears = []
+        catalogErrorMessage = nil
         schools = []
         calendarEvents = []
+        homeEvents = []
+        homeEventsErrorMessage = nil
+        dailySchedules = []
+        tomorrowDailySchedules = []
+        tomorrowSchedulesErrorMessage = nil
+        scheduleProfile = nil
+        schoolOverview = nil
+        schoolOverviewErrorMessage = nil
+        schoolPerformanceHistory = nil
+        schoolPerformanceHistoryErrorMessage = nil
+        pendingSchoolRemoval = nil
+        pendingSchoolChange = nil
+        isAppleLinked = false
+        homeErrorMessage = nil
+        isLoadingFamily = false
+        isLoadingSchools = false
+        isLoadingCalendar = false
+        isLoadingHome = false
+        isLoadingHomeEvents = false
+        isLoadingTomorrowSchedules = false
+        isLoadingSchoolOverview = false
+        isLoadingSchoolPerformanceHistory = false
     }
 
     private func requiresReauthentication(_ error: Error) -> Bool {

@@ -1,6 +1,7 @@
 import SwiftUI
 import AuthenticationServices
 import CryptoKit
+import UIKit
 
 private enum MeroliColor {
     static let ink = Color(red: 23 / 255, green: 63 / 255, blue: 58 / 255)
@@ -14,16 +15,24 @@ private enum MeroliColor {
 
 struct RootView: View {
     @Environment(SessionStore.self) private var session
+    @AppStorage("meroli.hasCompletedNetworkGuide") private var hasCompletedNetworkGuide = false
 
     var body: some View {
         ZStack {
             MeroliColor.canvas.ignoresSafeArea()
             Group {
-                switch session.phase {
-                case .restoring: LoadingView()
-                case .restoreUnavailable: SessionRestoreUnavailableView()
-                case .signedOut: SignInView()
-                case .signedIn: FamilyTabView()
+                if !hasCompletedNetworkGuide {
+                    NetworkAccessGuideView {
+                        hasCompletedNetworkGuide = true
+                        Task { await session.restore() }
+                    }
+                } else {
+                    switch session.phase {
+                    case .restoring: LoadingView()
+                    case .restoreUnavailable: SessionRestoreUnavailableView()
+                    case .signedOut: SignInView()
+                    case .signedIn: FamilyTabView()
+                    }
                 }
             }
         }
@@ -31,6 +40,97 @@ struct RootView: View {
         .background(MeroliColor.canvas.ignoresSafeArea())
         .tint(MeroliColor.ink)
         .animation(.easeInOut(duration: 0.2), value: session.phase)
+        .sheet(isPresented: Binding(
+            get: { session.pendingPasswordResetToken != nil },
+            set: { if !$0 { session.dismissPasswordReset() } }
+        )) {
+            if let token = session.pendingPasswordResetToken {
+                PasswordResetConfirmationView(token: token)
+            }
+        }
+        .task {
+            if hasCompletedNetworkGuide {
+                await session.restore()
+            }
+        }
+        .onOpenURL { session.handleIncomingURL($0) }
+    }
+}
+
+private struct NetworkAccessGuideView: View {
+    @Environment(SessionStore.self) private var session
+    let onContinue: () -> Void
+
+    private var zh: Bool { session.usesChinese }
+
+    var body: some View {
+        VStack(spacing: 22) {
+            Spacer()
+
+            ZStack {
+                Circle()
+                    .fill(MeroliColor.paleGreen)
+                    .frame(width: 142, height: 142)
+                Image(systemName: "wifi")
+                    .font(.system(size: 54, weight: .medium))
+                    .foregroundStyle(MeroliColor.ink)
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(MeroliColor.gold)
+                    .background(MeroliColor.canvas, in: Circle())
+                    .offset(x: 48, y: 46)
+            }
+
+            VStack(spacing: 10) {
+                Text("Meroli")
+                    .font(.system(.largeTitle, design: .serif, weight: .bold))
+                    .foregroundStyle(MeroliColor.ink)
+                Text(zh ? "连接网络，整理校园信息" : "Connect to keep school life in sync")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(MeroliColor.ink)
+                    .multilineTextAlignment(.center)
+                Text(zh
+                     ? "Meroli 需要互联网来安全登录，并同步孩子、学校和每日安排。请连接 Wi-Fi，或在系统设置中允许 Meroli 使用蜂窝数据。"
+                     : "Meroli uses the internet to sign you in and sync your children, schools, and daily schedules. Connect to Wi-Fi or allow cellular data in Settings.")
+                    .font(.body)
+                    .foregroundStyle(MeroliColor.muted)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+            }
+            .frame(maxWidth: 420)
+
+            Spacer()
+
+            VStack(spacing: 14) {
+                Button(action: onContinue) {
+                    Text(zh ? "继续并连接" : "Continue and connect")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 54)
+                        .foregroundStyle(.white)
+                        .background(MeroliColor.ink, in: RoundedRectangle(cornerRadius: 15))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(settingsURL)
+                } label: {
+                    Text(zh ? "打开 Meroli 的系统设置" : "Open Meroli Settings")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(MeroliColor.ink)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(maxWidth: 420)
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 36)
+        .padding(.bottom, 22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(MeroliColor.canvas.ignoresSafeArea())
     }
 }
 
@@ -60,7 +160,7 @@ private struct SessionRestoreUnavailableView: View {
                     Text(zh ? "重试连接" : "Try again")
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 52)
+                .frame(minHeight: 52)
                 .foregroundStyle(.white)
                 .background(MeroliColor.ink, in: RoundedRectangle(cornerRadius: 15))
             }
@@ -78,17 +178,59 @@ private struct SessionRestoreUnavailableView: View {
 }
 
 private struct LoadingView: View {
+    @Environment(SessionStore.self) private var session
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isAnimating = false
+
     var body: some View {
-        VStack(spacing: 20) {
-            Image("MeroliMark")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 92, height: 92)
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            ProgressView().tint(.white)
+        ZStack {
+            MeroliColor.canvas.ignoresSafeArea()
+
+            ZStack {
+                Circle()
+                    .stroke(MeroliColor.gold.opacity(isAnimating ? 0.08 : 0.3), lineWidth: 1.5)
+                    .frame(width: 136, height: 136)
+                    .scaleEffect(isAnimating ? 1.34 : 0.92)
+
+                ForEach(0..<8, id: \.self) { ray in
+                    Capsule()
+                        .fill(MeroliColor.gold.opacity(isAnimating ? 0.28 : 0.72))
+                        .frame(width: 3, height: 10)
+                        .offset(y: -76)
+                        .rotationEffect(.degrees(Double(ray) * 45))
+                }
+                .scaleEffect(isAnimating ? 1.1 : 0.86)
+                .rotationEffect(.degrees(isAnimating ? 22.5 : 0))
+            }
+
+            VStack(spacing: 14) {
+                Image("MeroliMark")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 104, height: 104)
+                    .clipShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
+                    .scaleEffect(isAnimating ? 1 : 0.94)
+                    .shadow(color: MeroliColor.ink.opacity(0.18), radius: 18, y: 9)
+
+                Text("Meroli")
+                    .font(.system(.largeTitle, design: .serif, weight: .bold))
+                    .foregroundStyle(MeroliColor.ink)
+                Text(session.usesChinese ? "每日校园安排" : "Your School Daily")
+                    .font(.subheadline)
+                    .foregroundStyle(MeroliColor.muted)
+                ProgressView()
+                    .tint(MeroliColor.ink)
+                    .padding(.top, 10)
+            }
+            .offset(y: isAnimating ? -4 : 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(MeroliColor.ink.ignoresSafeArea())
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+                isAnimating = true
+            }
+        }
     }
 }
 
@@ -115,9 +257,9 @@ private struct SignInView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Meroli")
-                            .font(.system(size: 25, weight: .bold, design: .serif))
+                            .font(.system(.title2, design: .serif, weight: .bold))
                             .foregroundStyle(MeroliColor.ink)
-                        Text("Your School Daily")
+                        Text(zh ? "每日校园安排" : "Your School Daily")
                             .font(.subheadline)
                             .foregroundStyle(MeroliColor.muted)
                     }
@@ -125,7 +267,7 @@ private struct SignInView: View {
                 .padding(.bottom, 43)
 
                 Text(createAccount ? (zh ? "创建家庭账户" : "Create your family account") : (zh ? "欢迎回来" : "Welcome back"))
-                    .font(.system(size: 32, weight: .bold, design: .serif))
+                    .font(.system(.largeTitle, design: .serif, weight: .bold))
                     .foregroundStyle(MeroliColor.ink)
                 Text(zh ? "从一个共享的家庭账户开始。" : "Start with one shared family account.")
                     .font(.body)
@@ -181,7 +323,7 @@ private struct SignInView: View {
                             .font(.headline)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 54)
+                    .frame(minHeight: 54)
                     .foregroundStyle(.white)
                     .background(MeroliColor.ink, in: RoundedRectangle(cornerRadius: 15))
                 }
@@ -190,25 +332,29 @@ private struct SignInView: View {
                 .padding(.top, 22)
                 .accessibilityIdentifier("meroli.submit")
 
-                SignInWithAppleButton(.signIn, onRequest: { request in
-                    let nonce = AppleNonce.generate()
-                    appleRawNonce = nonce
-                    request.nonce = AppleNonce.sha256(nonce)
-                    request.requestedScopes = [.email, .fullName]
-                }, onCompletion: { result in
-                    guard case .success(let authorization) = result,
-                          let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-                          let tokenData = credential.identityToken,
-                          let token = String(data: tokenData, encoding: .utf8),
-                          let nonce = appleRawNonce else {
-                        if case .failure(let error) = result { session.errorMessage = error.localizedDescription }
-                        return
+                MeroliAppleAuthorizationButton(
+                    type: .signIn,
+                    title: zh ? "通过 Apple 登录" : "Sign in with Apple",
+                    height: 52,
+                    accessibilityIdentifier: "meroli.signInWithApple",
+                    onRequest: { request in
+                        let nonce = AppleNonce.generate()
+                        appleRawNonce = nonce
+                        request.nonce = AppleNonce.sha256(nonce)
+                        request.requestedScopes = [.email, .fullName]
+                    },
+                    onCompletion: { result in
+                        guard case .success(let authorization) = result,
+                              let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                              let tokenData = credential.identityToken,
+                              let token = String(data: tokenData, encoding: .utf8),
+                              let nonce = appleRawNonce else {
+                            if case .failure(let error) = result { session.errorMessage = error.localizedDescription }
+                            return
+                        }
+                        Task { await session.signInWithApple(identityToken: token, rawNonce: nonce) }
                     }
-                    Task { await session.signInWithApple(identityToken: token, rawNonce: nonce) }
-                })
-                .signInWithAppleButtonStyle(.black)
-                .frame(height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 15))
+                )
                 .padding(.top, 14)
 
                 if !createAccount {
@@ -295,7 +441,7 @@ private struct PasswordResetRequestView: View {
                         Text(zh ? "发送说明" : "Send instructions")
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 50)
+                    .frame(minHeight: 50)
                     .foregroundStyle(.white)
                     .background(MeroliColor.ink, in: RoundedRectangle(cornerRadius: 13))
                 }
@@ -312,16 +458,83 @@ private struct PasswordResetRequestView: View {
     }
 }
 
+private struct PasswordResetConfirmationView: View {
+    @Environment(SessionStore.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    let token: String
+    @State private var password = ""
+    @State private var confirmation = ""
+    @State private var isCompleted = false
+    private var zh: Bool { session.usesChinese }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text(zh ? "设置新的 Meroli 密码。" : "Choose a new password for your Meroli account.")
+                        .font(.body)
+                        .foregroundStyle(MeroliColor.muted)
+                    if isCompleted {
+                        Label(zh ? "密码已更新，请使用新密码登录。" : "Password updated. Sign in with your new password.", systemImage: "checkmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(MeroliColor.ink)
+                        Button(zh ? "完成" : "Done") { dismiss() }
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 50)
+                            .foregroundStyle(.white)
+                            .background(MeroliColor.ink, in: RoundedRectangle(cornerRadius: 13))
+                    } else {
+                        SecureField(zh ? "新密码（至少 6 位）" : "New password (at least 6 characters)", text: $password)
+                            .textContentType(.newPassword)
+                            .textFieldStyle(MeroliFieldStyle())
+                        SecureField(zh ? "再次输入新密码" : "Confirm new password", text: $confirmation)
+                            .textContentType(.newPassword)
+                            .textFieldStyle(MeroliFieldStyle())
+                        if let error = session.errorMessage {
+                            Text(error).font(.subheadline).foregroundStyle(MeroliColor.coral)
+                        }
+                        Button {
+                            guard password == confirmation else {
+                                session.errorMessage = zh ? "两次输入的密码不一致。" : "The passwords do not match."
+                                return
+                            }
+                            Task { isCompleted = await session.confirmPasswordReset(token: token, newPassword: password) }
+                        } label: {
+                            HStack {
+                                if session.isAuthenticating { ProgressView().tint(.white) }
+                                Text(zh ? "更新密码" : "Update password")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 50)
+                            .foregroundStyle(.white)
+                            .background(MeroliColor.ink, in: RoundedRectangle(cornerRadius: 13))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(session.isAuthenticating || password.utf16.count < 6 || confirmation.isEmpty)
+                    }
+                }
+                .padding(22)
+            }
+            .background(MeroliColor.canvas.ignoresSafeArea())
+            .navigationTitle(zh ? "重置密码" : "Reset password")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(zh ? "关闭" : "Close") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
 private struct FamilyTabView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selected = 0
     private var zh: Bool { session.usesChinese }
 
     var body: some View {
         TabView(selection: $selected) {
-            HomeScreen()
+            HomeScreen(showFamily: { selected = 1 })
                 .tag(0)
-                .tabItem { Label(zh ? "今天" : "Today", systemImage: "sun.max") }
+                .tabItem { Label(zh ? "首页" : "Home", systemImage: "sun.max") }
             FamilyScreen()
                 .tag(1)
                 .tabItem { Label(zh ? "家庭" : "Family", systemImage: "person.2") }
@@ -334,32 +547,119 @@ private struct FamilyTabView: View {
         }
         .toolbarBackground(MeroliColor.canvas, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, session.phase == .signedIn else { return }
+            Task { await session.loadFamily() }
+        }
+    }
+}
+
+private struct MeroliChildFilter: View {
+    let children: [ChildDTO]
+    @Binding var selection: String
+    let zh: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            optionButton(title: zh ? "全部" : "All", id: "", accessibilityId: "meroli.childFilter.all")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(children) { child in
+                        optionButton(title: child.nickname, id: child.id, accessibilityId: "meroli.childFilter.\(child.id)")
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .contentMargins(.trailing, 2)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func optionButton(title: String, id: String, accessibilityId: String) -> some View {
+        let isSelected = selection == id
+        return Button { selection = id } label: {
+            Text(title)
+                .font(.subheadline.weight(isSelected ? .semibold : .medium))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: id.isEmpty ? nil : 156)
+                .padding(.horizontal, 13)
+                .frame(minHeight: 44)
+                .foregroundStyle(isSelected ? .white : MeroliColor.ink)
+                .background(isSelected ? MeroliColor.ink : .white, in: Capsule())
+                .overlay(Capsule().stroke(isSelected ? MeroliColor.ink : MeroliColor.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier(accessibilityId)
     }
 }
 
 private struct HomeScreen: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
+    let showFamily: () -> Void
     @State private var date = Date()
+    @AppStorage("meroli.home.childId") private var selectedChildId = ""
+    @State private var selectedEvent: ParentEventDTO?
     private var zh: Bool { session.usesChinese }
     private static var schoolCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/Los_Angeles") ?? .current
         return calendar
     }
+    private var selectedSchedules: [DailyScheduleDTO] {
+        selectedChildId.isEmpty ? session.dailySchedules : session.dailySchedules.filter { $0.childId == selectedChildId }
+    }
+    private var selectedTomorrowSchedules: [DailyScheduleDTO] {
+        selectedChildId.isEmpty ? session.tomorrowDailySchedules : session.tomorrowDailySchedules.filter { $0.childId == selectedChildId }
+    }
+    private var visibleEvents: [ParentEventDTO] {
+        MeroliEventPresentation.sorted(selectedChildId.isEmpty
+            ? session.homeEvents
+            : session.homeEvents.filter { $0.children.contains { $0.id == selectedChildId } })
+    }
+    private var tomorrowEvents: [ParentEventDTO] {
+        visibleEvents.filter { eventCovers($0, dateKey: dateKey(offset: 1)) }
+    }
+    private var thisWeekEvents: [ParentEventDTO] {
+        let tomorrowIds = Set(tomorrowEvents.map(\.id))
+        return visibleEvents.filter {
+            !tomorrowIds.contains($0.id)
+                && ($0.endDate ?? $0.startDate) >= dateKey(offset: 2)
+                && $0.startDate <= dateKey(offset: 7)
+        }
+    }
+    private var needToKnowEvents: [ParentEventDTO] {
+        visibleEvents.filter {
+            $0.parentRelevance == "ACTION_REQUIRED"
+                && ($0.endDate ?? $0.startDate) >= dateKey(offset: 0)
+                && $0.startDate <= dateKey(offset: 7)
+        }
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    Text("Meroli")
+                        .font(.system(.headline, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
                     Text(zh ? "今天的上学安排" : "Today at school")
-                        .font(.system(size: 29, weight: .bold, design: .serif)).foregroundStyle(MeroliColor.ink)
+                        .font(.system(.largeTitle, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
                     HStack {
-                        Button { date = Self.schoolCalendar.date(byAdding: .day, value: -1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.left") }
+                        Button { date = Self.schoolCalendar.date(byAdding: .day, value: -1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
+                            .accessibilityLabel(zh ? "前一天" : "Previous day")
                         Spacer()
                         Text(schoolDateLabel(date))
                             .font(.headline)
                         Spacer()
-                        Button { date = Self.schoolCalendar.date(byAdding: .day, value: 1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.right") }
+                        Button { date = Self.schoolCalendar.date(byAdding: .day, value: 1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
+                            .accessibilityLabel(zh ? "后一天" : "Next day")
+                    }
+                    if session.children.count > 1 {
+                        MeroliChildFilter(children: session.children, selection: $selectedChildId, zh: zh)
+                        .onChange(of: selectedChildId) { _, _ in refresh() }
                     }
                     if let error = session.homeErrorMessage, !session.dailySchedules.isEmpty {
                         homeErrorCard(error)
@@ -368,12 +668,23 @@ private struct HomeScreen: View {
                         ProgressView(zh ? "正在读取学校安排…" : "Loading school schedules…").frame(maxWidth: .infinity, minHeight: 120)
                     } else if let error = session.homeErrorMessage, session.dailySchedules.isEmpty {
                         homeErrorCard(error)
-                    } else if session.dailySchedules.isEmpty {
-                        Text(zh ? "还没有可显示的孩子学校安排。请在家庭页添加孩子并设置学校。" : "No school schedules yet. Add a child and school in Family.")
-                            .foregroundStyle(MeroliColor.muted).padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 18))
+                    } else if selectedSchedules.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(zh ? "还没有可显示的孩子学校安排。添加孩子并设置学校后，这里会显示每日安排。" : "No school schedules yet. Add a child and school to see their daily plans here.")
+                                .foregroundStyle(MeroliColor.muted)
+                            Button(action: showFamily) {
+                                Label(zh ? "添加孩子" : "Add a child", systemImage: "person.crop.circle.badge.plus")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(MeroliColor.ink)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("meroli.home.addChild")
+                        }
+                        .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 18))
                     } else {
-                        ForEach(session.dailySchedules) { item in
+                        sectionHeading(zh ? "今天" : "Today")
+                        ForEach(selectedSchedules) { item in
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 3) {
@@ -391,7 +702,10 @@ private struct HomeScreen: View {
                                         scheduleTime(title: zh ? "到校" : "Arrival", value: item.arrivalTime)
                                         scheduleTime(title: zh ? "放学" : "Dismissal", value: item.dismissalTime)
                                     }
-                                    if let code = item.scheduleCode { Text(code).font(.caption).foregroundStyle(MeroliColor.muted) }
+                                    if let scheduleType = item.scheduleType {
+                                        Text(scheduleTypeLabel(scheduleType))
+                                            .font(.caption).foregroundStyle(MeroliColor.muted)
+                                    }
                                     if let periods = item.periods, !periods.isEmpty {
                                         VStack(spacing: 0) {
                                             ForEach(periods) { period in
@@ -419,21 +733,142 @@ private struct HomeScreen: View {
                             .padding(18).background(.white, in: RoundedRectangle(cornerRadius: 18))
                         }
                     }
+                    if let error = session.homeEventsErrorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(MeroliColor.coral)
+                    }
+                    if !needToKnowEvents.isEmpty {
+                        sectionHeading(zh ? "需要留意" : "Need to Know")
+                        eventList(needToKnowEvents)
+                    }
+                    sectionHeading(zh ? "明天" : "Tomorrow")
+                    if session.isLoadingTomorrowSchedules && selectedTomorrowSchedules.isEmpty {
+                        ProgressView(zh ? "正在读取明天的作息…" : "Loading tomorrow’s schedules…")
+                    }
+                    if let error = session.tomorrowSchedulesErrorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(MeroliColor.coral)
+                    }
+                    ForEach(selectedTomorrowSchedules) { item in
+                        VStack(alignment: .leading, spacing: 9) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(item.childName).font(.headline).foregroundStyle(MeroliColor.ink)
+                                    Text(item.schoolName ?? (zh ? "未设置学校" : "No school selected"))
+                                        .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                }
+                                Spacer()
+                                Text(statusLabel(item.status)).font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(MeroliColor.paleGreen, in: Capsule())
+                            }
+                            if item.status == "OK" {
+                                HStack(spacing: 20) {
+                                    scheduleTime(title: zh ? "到校" : "Arrival", value: item.arrivalTime)
+                                    scheduleTime(title: zh ? "放学" : "Dismissal", value: item.dismissalTime)
+                                }
+                                if let scheduleType = item.scheduleType {
+                                    Text(scheduleTypeLabel(scheduleType)).font(.caption).foregroundStyle(MeroliColor.muted)
+                                }
+                            }
+                            if !item.eventTitles.isEmpty {
+                                ForEach(item.eventTitles, id: \.self) { title in
+                                    Label(title, systemImage: "calendar.badge.exclamationmark").font(.subheadline)
+                                }
+                            }
+                        }
+                        .padding(16).background(.white, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    if tomorrowEvents.isEmpty && selectedTomorrowSchedules.isEmpty && !session.isLoadingTomorrowSchedules {
+                        Text(zh ? "明天暂时没有学校动态。" : "No school updates for tomorrow.")
+                            .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                    }
+                    if !tomorrowEvents.isEmpty { eventList(tomorrowEvents) }
+                    sectionHeading(zh ? "本周" : "This Week")
+                    if thisWeekEvents.isEmpty {
+                        Text(zh ? "后续暂无学校动态。" : "No further school updates this week.")
+                            .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                    } else { eventList(thisWeekEvents) }
                 }
                 .padding(20)
             }
             .background(MeroliColor.canvas)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { refresh() } label: { Image(systemName: "arrow.clockwise") } } }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { refresh() } label: { Image(systemName: "arrow.clockwise") }
+                        .accessibilityLabel(zh ? "刷新日历" : "Refresh calendar")
+                }
+            }
             .refreshable {
                 await session.loadFamily()
                 await session.loadDailySchedules(for: date)
+                await session.loadTomorrowDailySchedules(for: tomorrowDate)
+                await loadHomeEvents()
             }
-            .task { if session.dailySchedules.isEmpty { refresh() } }
-            .onChange(of: session.children.count) { refresh() }
+            .task { if session.dailySchedules.isEmpty || session.homeEvents.isEmpty { refresh() } }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                let today = Self.schoolCalendar.startOfDay(for: .now)
+                if !Self.schoolCalendar.isDate(date, inSameDayAs: today) { date = today }
+                refresh()
+            }
+            .onChange(of: session.children.map(\.id)) { _, childIds in
+                if !selectedChildId.isEmpty && !childIds.contains(selectedChildId) {
+                    selectedChildId = ""
+                }
+                refresh()
+            }
+            .sheet(item: $selectedEvent) { event in EventDetailSheet(event: event, zh: zh) }
         }
     }
 
-    private func refresh() { Task { await session.loadDailySchedules(for: date) } }
+    private func refresh() {
+        Task {
+            await session.loadDailySchedules(for: date)
+            await session.loadTomorrowDailySchedules(for: tomorrowDate)
+            await loadHomeEvents()
+        }
+    }
+
+    private var tomorrowDate: Date {
+        Self.schoolCalendar.date(byAdding: .day, value: 1, to: date) ?? date
+    }
+
+    private func loadHomeEvents() async {
+        let end = Self.schoolCalendar.date(byAdding: .day, value: 7, to: date) ?? date
+        await session.loadHomeEvents(from: date, to: end, childId: selectedChildId.isEmpty ? nil : selectedChildId)
+    }
+
+    private func dateKey(offset: Int) -> String {
+        let target = Self.schoolCalendar.date(byAdding: .day, value: offset, to: date) ?? date
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Self.schoolCalendar
+        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: target)
+    }
+
+    private func eventCovers(_ event: ParentEventDTO, dateKey: String) -> Bool {
+        event.startDate <= dateKey && (event.endDate ?? event.startDate) >= dateKey
+    }
+
+    private func sectionHeading(_ title: String) -> some View {
+        Text(title).font(.title3.weight(.semibold)).foregroundStyle(MeroliColor.ink).padding(.top, 8)
+    }
+
+    private func eventList(_ events: [ParentEventDTO]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(events) { event in
+                Button { selectedEvent = event } label: { EventRow(event: event, zh: zh) }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, 12)
+                if event.id != events.last?.id { Divider().overlay(MeroliColor.line) }
+            }
+        }
+        .padding(.horizontal, 15)
+        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+    }
 
     private func homeErrorCard(_ error: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -476,6 +911,18 @@ private struct HomeScreen: View {
         }
     }
 
+    private func scheduleTypeLabel(_ value: String) -> String {
+        switch value.uppercased() {
+        case "REGULAR", "REGULAR_DAY": return zh ? "正常作息" : "Regular schedule"
+        case "LATE_START": return zh ? "延迟到校作息" : "Late start schedule"
+        case "MINIMUM_DAY": return zh ? "短日作息" : "Minimum day schedule"
+        case "EARLY_RELEASE": return zh ? "提前放学作息" : "Early release schedule"
+        case "WEDNESDAY": return zh ? "周三作息" : "Wednesday schedule"
+        case "SPECIAL": return zh ? "特别作息" : "Special schedule"
+        default: return zh ? "学校作息" : "School schedule"
+        }
+    }
+
     private func scheduleTime(title: String, value: String?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).font(.caption).foregroundStyle(MeroliColor.muted)
@@ -486,9 +933,12 @@ private struct HomeScreen: View {
 
 private struct CalendarScreen: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
     @State private var month = Date()
-    @State private var selectedChildId = ""
+    @State private var selectedDate = Date()
+    @AppStorage("meroli.calendar.childId") private var selectedChildId = ""
     @State private var selectedEvent: ParentEventDTO?
+    @AppStorage("meroli.calendar.displayMode") private var displayMode = "month"
     private var zh: Bool { session.usesChinese }
     private static var schoolCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
@@ -496,7 +946,12 @@ private struct CalendarScreen: View {
         return calendar
     }
     private var monthTitle: String {
-        month.formatted(.dateTime.month(.wide).year().locale(Locale(identifier: zh ? "zh_CN" : "en_US")))
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
+        formatter.calendar = Self.schoolCalendar
+        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.dateFormat = zh ? "yyyy年M月" : "MMMM yyyy"
+        return formatter.string(from: month)
     }
     private var range: (Date, Date) {
         let components = Self.schoolCalendar.dateComponents([.year, .month], from: month)
@@ -508,31 +963,50 @@ private struct CalendarScreen: View {
         return (start, end)
     }
     private var groupedEvents: [(String, [ParentEventDTO])] {
-        let groups = Dictionary(grouping: session.calendarEvents, by: \.startDate)
+        let groups = Dictionary(grouping: MeroliEventPresentation.sorted(session.calendarEvents), by: \.startDate)
         return groups.keys.sorted().map { ($0, groups[$0, default: []]) }
+    }
+    private var monthCells: [Date?] {
+        guard let dayRange = Self.schoolCalendar.range(of: .day, in: .month, for: month),
+              let firstDay = Self.schoolCalendar.date(from: Self.schoolCalendar.dateComponents([.year, .month], from: month)) else { return [] }
+        let leading = (Self.schoolCalendar.component(.weekday, from: firstDay) - Self.schoolCalendar.firstWeekday + 7) % 7
+        let days = dayRange.compactMap { Self.schoolCalendar.date(byAdding: .day, value: $0 - 1, to: firstDay) }
+        return Array<Date?>(repeating: nil, count: leading) + days.map(Optional.some)
+    }
+    private var selectedDateEvents: [ParentEventDTO] {
+        MeroliEventPresentation.sorted(session.calendarEvents.filter { eventCovers($0, date: selectedDate) })
+    }
+    private var selectedWeek: [Date] {
+        let parts = Self.schoolCalendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate)
+        guard let start = Self.schoolCalendar.date(from: parts) else { return [selectedDate] }
+        return (0..<7).compactMap { Self.schoolCalendar.date(byAdding: .day, value: $0, to: start) }
     }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left").frame(width: 40, height: 40) }
+                    Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
                         .accessibilityLabel(zh ? "上个月" : "Previous month")
                     Spacer()
-                    Text(monthTitle).font(.system(size: 22, weight: .bold, design: .serif)).foregroundStyle(MeroliColor.ink)
+                    Text(monthTitle).font(.system(.title2, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
                     Spacer()
-                    Button { shiftMonth(1) } label: { Image(systemName: "chevron.right").frame(width: 40, height: 40) }
+                    Button { shiftMonth(1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
                         .accessibilityLabel(zh ? "下个月" : "Next month")
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 10)
 
+                Picker(zh ? "显示方式" : "View", selection: $displayMode) {
+                    Text(zh ? "月历" : "Month").tag("month")
+                    Text(zh ? "日程" : "Agenda").tag("agenda")
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 18)
+
                 if session.children.count > 1 {
-                    Picker(zh ? "孩子" : "Child", selection: $selectedChildId) {
-                        Text(zh ? "全部孩子" : "All children").tag("")
-                        ForEach(session.children) { child in Text(child.nickname).tag(child.id) }
-                    }
-                    .pickerStyle(.segmented)
+                    MeroliChildFilter(children: session.children, selection: $selectedChildId, zh: zh)
                     .padding(.horizontal, 19)
                     .padding(.top, 8)
                     .onChange(of: selectedChildId) { _, _ in Task { await load() } }
@@ -540,7 +1014,7 @@ private struct CalendarScreen: View {
 
                 if session.isLoadingCalendar && session.calendarEvents.isEmpty {
                     ProgressView(zh ? "正在读取日历…" : "Loading calendar…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 180)
                 } else if let error = session.errorMessage, session.calendarEvents.isEmpty {
                     VStack(spacing: 14) {
                         Label(zh ? "暂时无法读取日历" : "Calendar unavailable", systemImage: "exclamationmark.triangle")
@@ -551,54 +1025,85 @@ private struct CalendarScreen: View {
                             .buttonStyle(.borderedProminent)
                     }
                     .padding(28)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if session.calendarEvents.isEmpty {
-                    ContentUnavailableView(
-                        zh ? "这个月还没有活动" : "No events this month",
-                        systemImage: "calendar",
-                        description: Text(zh ? "学校公告和家庭日程会显示在这里。" : "School announcements and family events will appear here.")
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List {
-                        ForEach(groupedEvents, id: \.0) { date, events in
-                            Section {
-                                ForEach(events) { event in
-                                    Button { selectedEvent = event } label: {
-                                        EventRow(event: event, zh: zh)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .listRowBackground(Color.white)
-                                }
-                            } header: {
-                                Text(formattedDate(date))
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(MeroliColor.muted)
-                                    .textCase(nil)
+                    .frame(maxWidth: .infinity, minHeight: 220)
+                } else if displayMode == "month" {
+                    monthCalendar
+                    HStack {
+                        Text(dateHeading(selectedDate)).font(.headline).foregroundStyle(MeroliColor.ink)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 18)
+                    if selectedDateEvents.isEmpty {
+                        Text(zh ? "这一天没有学校日程。" : "No school events on this day.")
+                            .font(.subheadline).foregroundStyle(MeroliColor.muted).padding(.horizontal, 18)
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(selectedDateEvents) { event in
+                                Button { selectedEvent = event } label: { EventRow(event: event, zh: zh) }
+                                    .buttonStyle(.plain).padding(.vertical, 10)
+                                if event.id != selectedDateEvents.last?.id { Divider().overlay(MeroliColor.line) }
                             }
                         }
+                        .padding(.horizontal, 15)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                        .padding(.horizontal, 18)
                     }
-                    .listStyle(.insetGrouped)
-                    .scrollContentBackground(.hidden)
-                    .background(MeroliColor.canvas)
-                    .refreshable { await load() }
+                } else {
+                    if groupedEvents.isEmpty {
+                        ContentUnavailableView(zh ? "这个月还没有活动" : "No events this month", systemImage: "calendar",
+                            description: Text(zh ? "学校公告和家庭日程会显示在这里。" : "School announcements and family events will appear here."))
+                            .frame(maxWidth: .infinity, minHeight: 220)
+                    } else {
+                        ForEach(groupedEvents, id: \.0) { date, events in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(formattedDate(date)).font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.muted)
+                                VStack(spacing: 0) {
+                                    ForEach(events) { event in
+                                        Button { selectedEvent = event } label: { EventRow(event: event, zh: zh) }
+                                            .buttonStyle(.plain).padding(.vertical, 10)
+                                        if event.id != events.last?.id { Divider().overlay(MeroliColor.line) }
+                                    }
+                                }
+                                .padding(.horizontal, 15)
+                                .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                            }
+                            .padding(.horizontal, 18)
+                        }
+                    }
                 }
+                }
+                .padding(.bottom, 22)
             }
             .background(MeroliColor.canvas)
             .navigationTitle(zh ? "日历" : "Calendar")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(zh ? "本月" : "Today") { month = monthStart(.now); Task { await load() } }
+                    Button(zh ? "今天" : "Today") {
+                        month = monthStart(.now)
+                        selectedDate = Self.schoolCalendar.startOfDay(for: .now)
+                        Task { await load() }
+                    }
                 }
             }
             .task { await load() }
+            .refreshable { await load() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await load() } }
+            }
             .sheet(item: $selectedEvent) { event in EventDetailSheet(event: event, zh: zh) }
+            .onChange(of: session.children.map(\.id)) { _, childIds in
+                if !selectedChildId.isEmpty && !childIds.contains(selectedChildId) {
+                    selectedChildId = ""
+                }
+                Task { await load() }
+            }
         }
     }
 
     private func shiftMonth(_ amount: Int) {
         month = Self.schoolCalendar.date(byAdding: .month, value: amount, to: month) ?? month
+        selectedDate = monthStart(month)
         Task { await load() }
     }
 
@@ -622,6 +1127,126 @@ private struct CalendarScreen: View {
         formatter.dateStyle = .full
         return formatter.string(from: date)
     }
+
+    private var monthCalendar: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 0) {
+                ForEach(Self.schoolCalendar.veryShortStandaloneWeekdaySymbols, id: \.self) { day in
+                    Text(day).font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.muted).frame(maxWidth: .infinity)
+                }
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 3) {
+                ForEach(Array(monthCells.enumerated()), id: \.offset) { _, value in
+                    if let day = value {
+                        let dayEvents = session.calendarEvents.filter { eventCovers($0, date: day) }
+                        Button { selectDay(day) } label: {
+                            VStack(spacing: 3) {
+                                Text("\(Self.schoolCalendar.component(.day, from: day))")
+                                    .font(.subheadline.weight(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .bold : .regular))
+                                    .foregroundStyle(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .white : MeroliColor.ink)
+                                Circle().fill(dayEvents.isEmpty ? .clear : MeroliColor.gold).frame(width: 5, height: 5)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .background(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? MeroliColor.ink : .clear, in: RoundedRectangle(cornerRadius: 11))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(dateHeading(day) + (dayEvents.isEmpty ? "" : (zh ? "，有活动" : ", events")))
+                        .accessibilityAddTraits(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .isSelected : [])
+                    } else {
+                        Color.clear.frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+            }
+            HStack(spacing: 6) {
+                ForEach(selectedWeek, id: \.timeIntervalSince1970) { day in
+                    let dayEvents = session.calendarEvents.filter { eventCovers($0, date: day) }
+                    Button { selectDay(day) } label: {
+                        VStack(spacing: 4) {
+                            Text(weekdayLabel(day))
+                                .font(.caption2).foregroundStyle(MeroliColor.muted)
+                            Text("\(Self.schoolCalendar.component(.day, from: day))")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .white : MeroliColor.ink)
+                            Circle().fill(dayEvents.isEmpty ? .clear : MeroliColor.gold).frame(width: 4, height: 4)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 56)
+                        .background(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? MeroliColor.ink : .clear, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(dateHeading(day) + (dayEvents.isEmpty ? "" : (zh ? "，有活动" : ", events")))
+                    .accessibilityAddTraits(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .isSelected : [])
+                }
+            }
+        }
+        .padding(16)
+        .background(.white, in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 18)
+    }
+
+    private func dateKey(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Self.schoolCalendar
+        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    private func eventCovers(_ event: ParentEventDTO, date: Date) -> Bool {
+        let key = dateKey(date)
+        return event.startDate <= key && (event.endDate ?? event.startDate) >= key
+    }
+
+    private func selectDay(_ day: Date) {
+        selectedDate = Self.schoolCalendar.startOfDay(for: day)
+        let selectedMonth = monthStart(day)
+        guard !Self.schoolCalendar.isDate(selectedMonth, equalTo: month, toGranularity: .month) else { return }
+        month = selectedMonth
+        Task { await load() }
+    }
+
+    private func dateHeading(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
+        formatter.calendar = Self.schoolCalendar
+        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.dateStyle = .full
+        return formatter.string(from: date)
+    }
+
+    private func weekdayLabel(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
+        formatter.calendar = Self.schoolCalendar
+        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.dateFormat = "EEEEE"
+        return formatter.string(from: date)
+    }
+}
+
+private enum MeroliEventPresentation {
+    static func sorted(_ events: [ParentEventDTO]) -> [ParentEventDTO] {
+        events.sorted {
+            let leftPriority = priority($0)
+            let rightPriority = priority($1)
+            if leftPriority != rightPriority { return leftPriority < rightPriority }
+            let leftTime = $0.startTime ?? "99:99"
+            let rightTime = $1.startTime ?? "99:99"
+            if leftTime != rightTime { return leftTime < rightTime }
+            return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+        }
+    }
+
+    private static func priority(_ event: ParentEventDTO) -> Int {
+        if event.parentRelevance.uppercased() == "ACTION_REQUIRED" || ["ACTION_REQUIRED", "DEADLINE"].contains(event.eventType.uppercased()) {
+            return 0
+        }
+        let scheduleTypes: Set<String> = ["NO_SCHOOL", "PUPIL_FREE_DAY", "BREAK", "HOLIDAY", "MINIMUM_DAY", "LATE_START", "NO_LATE_START", "EARLY_RELEASE"]
+        if scheduleTypes.contains(event.eventType.uppercased()) || (!event.scheduleAction.isEmpty && event.scheduleAction.uppercased() != "NONE") {
+            return 1
+        }
+        return event.startTime == nil ? 3 : 2
+    }
 }
 
 private struct EventRow: View {
@@ -642,7 +1267,12 @@ private struct EventRow: View {
                 HStack(spacing: 6) {
                     if !event.allDay, let start = event.startTime { Text(String(start.prefix(5))) }
                     if !event.children.isEmpty {
-                        Text(event.children.map(\.name).joined(separator: ", "))
+                        Text(event.children.map { child in
+                            guard let school = event.schools.first(where: { $0.id == child.schoolId })?.name, !school.isEmpty else {
+                                return child.name
+                            }
+                            return "\(child.name) · \(school)"
+                        }.joined(separator: ", "))
                     } else if !event.schools.isEmpty {
                         Text(event.schools.map(\.name).joined(separator: ", "))
                     }
@@ -660,44 +1290,134 @@ private struct EventRow: View {
 }
 
 private struct EventDetailSheet: View {
+    @Environment(SessionStore.self) private var session
     let event: ParentEventDTO
     let zh: Bool
+    @State private var detail: ParentEventDTO?
+    @State private var errorMessage: String?
+    @State private var isLoading = true
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text(event.title).font(.system(size: 28, weight: .bold, design: .serif)).foregroundStyle(MeroliColor.ink)
-                    Label(event.allDay ? (zh ? "全天" : "All day") : [event.startTime.map { String($0.prefix(5)) }, event.endTime.map { String($0.prefix(5)) }].compactMap { $0 }.joined(separator: "–"), systemImage: "clock")
-                        .font(.subheadline).foregroundStyle(MeroliColor.muted)
-                    if !event.explanation.isEmpty { Text(event.explanation).font(.body).foregroundStyle(MeroliColor.ink) }
-                    if !event.action.isEmpty {
-                        Label(event.action, systemImage: "checkmark.circle")
-                            .font(.body.weight(.medium)).foregroundStyle(MeroliColor.coral)
+            Group {
+                if isLoading {
+                    ProgressView(zh ? "正在读取活动详情…" : "Loading event details…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let errorMessage {
+                    VStack(spacing: 14) {
+                        Text(errorMessage).font(.subheadline).foregroundStyle(MeroliColor.muted).multilineTextAlignment(.center)
+                        Button(zh ? "重试" : "Try again") { Task { await load() } }
+                            .buttonStyle(.borderedProminent)
                     }
-                    if let location = event.location, !location.isEmpty {
-                        Label(location, systemImage: "mappin.and.ellipse").font(.subheadline).foregroundStyle(MeroliColor.muted)
-                    }
-                    if !event.children.isEmpty {
-                        Label(event.children.map(\.name).joined(separator: ", "), systemImage: "person.2")
-                            .font(.subheadline).foregroundStyle(MeroliColor.muted)
-                    }
-                    if let sourceURL = URL(string: event.sourceUrl) {
-                        Link(destination: sourceURL) {
-                            Label(zh ? "查看官方来源 · \(event.sourceName)" : "Official source · \(event.sourceName)", systemImage: "arrow.up.right.square")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let detail {
+                    detailContent(detail)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(22)
             }
             .background(MeroliColor.canvas.ignoresSafeArea())
             .navigationTitle(zh ? "活动详情" : "Event details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { CloseSheetButton(zh: zh) } }
         }
+        .task(id: event.id) { await load() }
         .presentationDetents([.medium, .large])
+    }
+
+    private func load() async {
+        isLoading = true
+        errorMessage = nil
+        switch await session.loadCalendarEvent(id: event.id) {
+        case .success(let loadedEvent): detail = loadedEvent
+        case .failure(let error): errorMessage = error.message
+        }
+        isLoading = false
+    }
+
+    private func detailContent(_ event: ParentEventDTO) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text(event.title).font(.system(.title, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
+                Label(eventDateLabel(for: event), systemImage: event.allDay ? "calendar" : "clock")
+                    .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                if let originalTitle = event.originalTitle, !originalTitle.isEmpty, originalTitle != event.title {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(zh ? "来源标题" : "Source title").font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.muted)
+                        Text(originalTitle).font(.subheadline).foregroundStyle(MeroliColor.ink)
+                    }
+                }
+                if !event.explanation.isEmpty { Text(event.explanation).font(.body).foregroundStyle(MeroliColor.ink) }
+                if !event.action.isEmpty {
+                    Label(event.action, systemImage: "checkmark.circle")
+                        .font(.body.weight(.medium)).foregroundStyle(MeroliColor.coral)
+                }
+                if let location = event.location, !location.isEmpty {
+                    Label(location, systemImage: "mappin.and.ellipse").font(.subheadline).foregroundStyle(MeroliColor.muted)
+                }
+                if !event.children.isEmpty {
+                    Label(event.children.map(\.name).joined(separator: ", "), systemImage: "person.2")
+                        .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                }
+                if !event.schools.isEmpty {
+                    Label(event.schools.map(\.name).joined(separator: ", "), systemImage: "building.2")
+                        .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                }
+                if let updatedAt = updatedAtLabel(for: event) {
+                    Label(zh ? "资料更新：\(updatedAt)" : "Updated \(updatedAt)", systemImage: "arrow.clockwise")
+                        .font(.caption).foregroundStyle(MeroliColor.muted)
+                }
+                if let sourceURL = officialSourceURL(for: event) {
+                    Link(destination: sourceURL) {
+                        Label(zh ? "查看官方来源 · \(event.sourceName)" : "Official source · \(event.sourceName)", systemImage: "arrow.up.right.square")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(22)
+        }
+    }
+
+    private func eventDateLabel(for event: ParentEventDTO) -> String {
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(identifier: event.timezone) ?? TimeZone(identifier: "America/Los_Angeles")
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let start = parser.date(from: event.startDate) else { return event.startDate }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
+        formatter.timeZone = parser.timeZone
+        formatter.dateStyle = .long
+        let startLabel = formatter.string(from: start)
+        let endKey = event.endDate ?? event.startDate
+        let endLabel: String
+        if endKey != event.startDate, let end = parser.date(from: endKey) {
+            endLabel = "–\(formatter.string(from: end))"
+        } else {
+            endLabel = ""
+        }
+        let timeLabel = event.allDay
+            ? (zh ? "全天" : "All day")
+            : [event.startTime.map { String($0.prefix(5)) }, event.endTime.map { String($0.prefix(5)) }].compactMap { $0 }.joined(separator: "–")
+        return "\(startLabel)\(endLabel) · \(timeLabel)"
+    }
+
+    private func updatedAtLabel(for event: ParentEventDTO) -> String? {
+        let parser = ISO8601DateFormatter()
+        guard let date = parser.date(from: event.lastUpdatedAt) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
+        formatter.timeZone = TimeZone(identifier: event.timezone) ?? TimeZone(identifier: "America/Los_Angeles")
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func officialSourceURL(for event: ParentEventDTO) -> URL? {
+        guard let url = URL(string: event.sourceUrl),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              url.host != nil else { return nil }
+        return url
     }
 }
 
@@ -722,13 +1442,8 @@ private struct FamilyScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack(spacing: 10) {
-                        Image("MeroliMark")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 38, height: 38)
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        Text("Meroli")
-                            .font(.system(size: 21, weight: .bold, design: .serif))
+                        Text(zh ? "学校" : "Schools")
+                            .font(.system(.title3, weight: .semibold))
                             .foregroundStyle(MeroliColor.ink)
                         Spacer()
                         Button { Task { await session.loadFamily() } } label: {
@@ -740,8 +1455,8 @@ private struct FamilyScreen: View {
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(zh ? "我的家庭" : "My family")
-                            .font(.system(size: 29, weight: .bold, design: .serif))
+                        Text(zh ? "孩子的学校" : "Your schools")
+                            .font(.system(.largeTitle, design: .serif, weight: .bold))
                             .foregroundStyle(MeroliColor.ink)
                         Text(session.family?.name?.isEmpty == false ? session.family!.name! : session.email)
                             .font(.subheadline)
@@ -828,7 +1543,7 @@ private struct FamilyScreen: View {
 
                     HStack {
                         Text(zh ? "家庭成员" : "Children")
-                            .font(.system(size: 20, weight: .bold, design: .serif))
+                            .font(.system(.title3, design: .serif, weight: .bold))
                             .foregroundStyle(MeroliColor.ink)
                         Spacer()
                         Text("\(session.children.count)")
@@ -842,7 +1557,7 @@ private struct FamilyScreen: View {
                     } else if session.children.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Image(systemName: "person.crop.circle.badge.plus")
-                                .font(.system(size: 28))
+                                .font(.system(.title))
                                 .foregroundStyle(MeroliColor.ink)
                             Text(zh ? "添加家庭成员" : "Add a child to your family")
                                 .font(.headline)
@@ -873,7 +1588,7 @@ private struct FamilyScreen: View {
                                     Button { editingChild = child } label: {
                                         HStack(spacing: 13) {
                                             Image(systemName: "person.fill")
-                                                .font(.system(size: 17, weight: .semibold))
+                                                .font(.body.weight(.semibold))
                                                 .foregroundStyle(MeroliColor.ink)
                                                 .frame(width: 46, height: 46)
                                                 .background(MeroliColor.paleGreen, in: Circle())
@@ -963,7 +1678,7 @@ private struct FamilyScreen: View {
             .task { if session.family == nil { await session.loadFamily() } }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showsAddChild = true } label: { Image(systemName: "plus") }
+                    Button { showsAddChild = true } label: { Image(systemName: "plus").frame(width: 44, height: 44) }
                         .accessibilityLabel(zh ? "添加孩子" : "Add child")
                 }
             }
@@ -1028,7 +1743,6 @@ private struct NextSchoolTransitionSheet: View {
                         schoolId = ""
                         gradeCode = ""
                         selectedProgramIds = []
-                        guard !value.isEmpty else { return }
                         Task { await session.loadSchools(districtId: value) }
                     }
                     if session.isLoadingSchools {
@@ -1041,7 +1755,6 @@ private struct NextSchoolTransitionSheet: View {
                         .onChange(of: schoolId) { _, value in
                             gradeCode = ""
                             selectedProgramIds = []
-                            guard !value.isEmpty else { return }
                             Task { await session.loadTransitionPrograms(schoolId: value) }
                         }
                     }
@@ -1151,13 +1864,27 @@ private struct ScheduleProfileSheet: View {
     @State private var isLoading = true
     @State private var isSaving = false
     private var zh: Bool { session.usesChinese }
+    private var variantOptions: [ScheduleVariantOptionDTO] {
+        let options: [ScheduleVariantOptionDTO]
+        if let availableVariants = session.scheduleProfile?.availableVariants, !availableVariants.isEmpty {
+            options = availableVariants
+        } else {
+            options = session.scheduleProfile?.availableVariantCodes.map {
+                ScheduleVariantOptionDTO(variantCode: $0, variantName: nil)
+            } ?? []
+        }
+        guard options.contains(where: { $0.variantCode == "DEFAULT" }) else {
+            return [ScheduleVariantOptionDTO(variantCode: "DEFAULT", variantName: nil)] + options
+        }
+        return options
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text(zh ? "设置 \(child.nickname) 的学校作息" : "Set \(child.nickname)’s school schedule")
-                        .font(.system(size: 25, weight: .bold, design: .serif)).foregroundStyle(MeroliColor.ink)
+                        .font(.system(.title2, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
                     if isLoading {
                         ProgressView(zh ? "正在读取学校提供的选项…" : "Loading school options…")
                             .frame(maxWidth: .infinity, minHeight: 120)
@@ -1165,7 +1892,10 @@ private struct ScheduleProfileSheet: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(zh ? "课表变体" : "Schedule variant").font(.headline)
                             Picker(zh ? "课表变体" : "Schedule variant", selection: $variantCode) {
-                                ForEach(profile.availableVariantCodes, id: \.self) { code in Text(code).tag(code) }
+                                ForEach(variantOptions.indices, id: \.self) { index in
+                                    let option = variantOptions[index]
+                                    Text(variantDisplayName(option, index: index)).tag(option.variantCode)
+                                }
                             }
                             .pickerStyle(.menu)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1195,7 +1925,7 @@ private struct ScheduleProfileSheet: View {
                                             Text(zh && !program.displayNameZh.isEmpty ? program.displayNameZh : program.displayNameEn)
                                                 .font(.subheadline.weight(.medium))
                                             if program.affectsArrivalTime, let period = program.periodCode {
-                                                Text(zh ? "影響到校時間 · \(period)" : "Affects arrival · \(period)")
+                                                Text(zh ? "影响到校时间 · \(periodLabel(period))" : "Affects arrival · \(periodLabel(period))")
                                                     .font(.caption).foregroundStyle(MeroliColor.muted)
                                             }
                                         }
@@ -1235,6 +1965,20 @@ private struct ScheduleProfileSheet: View {
         }
     }
 
+    private func variantDisplayName(_ option: ScheduleVariantOptionDTO, index: Int) -> String {
+        if option.variantCode == "DEFAULT" { return zh ? "自动匹配学校作息" : "Automatically match school schedule" }
+        if let name = option.variantName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
+        return zh ? "作息方案 \(index)" : "Schedule option \(index)"
+    }
+
+    private func periodLabel(_ code: String) -> String {
+        let normalized = code.uppercased()
+        if normalized.first == "P", let number = Int(normalized.dropFirst()) {
+            return zh ? "第\(number)节" : "Period \(number)"
+        }
+        return zh ? "相关课时" : "Related period"
+    }
+
     private func save() {
         isSaving = true
         Task {
@@ -1249,6 +1993,7 @@ private struct ScheduleProfileSheet: View {
 private struct ParentSchoolOverviewSheet: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.dismiss) private var dismiss
+    @State private var showsFullBellSchedule = false
     let schoolId: String
     let schoolName: String
     private var zh: Bool { session.usesChinese }
@@ -1258,15 +2003,104 @@ private struct ParentSchoolOverviewSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text(session.schoolOverview?.schoolName ?? schoolName)
-                        .font(.system(size: 26, weight: .bold, design: .serif)).foregroundStyle(MeroliColor.ink)
+                        .font(.system(.title2, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
                     if session.isLoadingSchoolOverview {
                         ProgressView(zh ? "正在读取学校资料…" : "Loading school information…")
                             .frame(maxWidth: .infinity, minHeight: 140)
                     } else if let overview = session.schoolOverview {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(zh ? "学校资料" : "School information")
+                                .font(.headline).foregroundStyle(MeroliColor.ink)
+                            if let minimum = overview.minGrade, let maximum = overview.maxGrade {
+                                Text(gradeRange(minimum: minimum, maximum: maximum))
+                                    .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                            }
+                            let addressParts = [overview.address, overview.city, overview.state, overview.postalCode]
+                                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                .filter { !$0.isEmpty }
+                            if !addressParts.isEmpty {
+                                Label(addressParts.joined(separator: ", "), systemImage: "mappin.and.ellipse")
+                                    .font(.subheadline).foregroundStyle(MeroliColor.ink)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            if let phone = overview.phone, !phone.isEmpty {
+                                let phoneNumber = String(phone.filter { $0.isNumber || $0 == "+" })
+                                if let url = URL(string: "tel:\(phoneNumber)") {
+                                    Link(destination: url) { Label(phone, systemImage: "phone") }
+                                        .font(.subheadline)
+                                }
+                            }
+                            if let website = overview.websiteUrl, let url = URL(string: website) {
+                                Link(destination: url) {
+                                    Label(zh ? "学校官方网站" : "School website", systemImage: "arrow.up.right.square")
+                                }
+                                .font(.subheadline.weight(.semibold))
+                            }
+                            if let children = overview.children, !children.isEmpty {
+                                Divider().overlay(MeroliColor.line)
+                                Text(zh ? "关联孩子" : "Following for")
+                                    .font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                ForEach(children) { child in
+                                    HStack {
+                                        Text(child.childName).foregroundStyle(MeroliColor.ink)
+                                        Spacer()
+                                        Text(gradeLabel(child.gradeCode))
+                                            .foregroundStyle(MeroliColor.muted)
+                                        if let year = child.schoolYearName, !year.isEmpty {
+                                            Text(year).foregroundStyle(MeroliColor.muted)
+                                        }
+                                    }
+                                    .font(.subheadline)
+                                }
+                            }
+                        }
+                        .padding(17).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                        if let schedules = overview.dailySchedules, !schedules.isEmpty {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(zh ? "今天的学校作息" : "Today’s school schedule")
+                                    .font(.headline).foregroundStyle(MeroliColor.ink)
+                                ForEach(schedules) { schedule in
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(schedule.childName).font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                        Text(scheduleSummary(schedule))
+                                            .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                    }
+                                    if schedule.id != schedules.last?.id { Divider().overlay(MeroliColor.line) }
+                                }
+                            }
+                            .padding(17).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                        } else {
+                            Text(zh ? "学校时间待确认" : "School schedule unavailable")
+                                .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                .padding(17).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                        }
+                        if let bellSchedules = overview.bellSchedules, !bellSchedules.isEmpty {
+                            Button { showsFullBellSchedule = true } label: {
+                                HStack {
+                                    Label(zh ? "查看完整作息表" : "View full bell schedule", systemImage: "list.bullet.rectangle")
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                                }
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(MeroliColor.ink)
+                                .padding(16)
+                                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                                .background(.white, in: RoundedRectangle(cornerRadius: 15))
+                            }
+                            .buttonStyle(.plain)
+                            .sheet(isPresented: $showsFullBellSchedule) {
+                                ParentFullBellScheduleSheet(schoolName: overview.schoolName, schedules: bellSchedules)
+                            }
+                        }
                         if let attendance = overview.attendance {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text(zh ? "考勤与请假" : "Attendance and absence reporting").font(.headline).foregroundStyle(MeroliColor.ink)
                                 Text(attendance.attendanceMethod).font(.subheadline.weight(.semibold))
+                                Text(zh ? "Meroli 不会替你向学校提交请假。请以学校官方流程为准。" : "Meroli does not submit absences for you. Follow the school's official process.")
+                                    .font(.footnote).foregroundStyle(MeroliColor.muted)
                                 if !attendance.absenceInstruction.isEmpty {
                                     infoParagraph(title: zh ? "缺课" : "Absence", text: attendance.absenceInstruction)
                                 }
@@ -1277,10 +2111,17 @@ private struct ParentSchoolOverviewSheet: View {
                                     infoParagraph(title: zh ? "提前接送" : "Early pickup", text: attendance.earlyPickupInstruction)
                                 }
                                 if let phone = attendance.attendancePhone, !phone.isEmpty {
-                                    Label(phone, systemImage: "phone").font(.subheadline)
+                                    let phoneNumber = String(phone.filter { $0.isNumber || $0 == "+" })
+                                    if let url = URL(string: "tel:\(phoneNumber)") {
+                                        Link(destination: url) { Label(phone, systemImage: "phone") }
+                                            .font(.subheadline)
+                                    }
                                 }
                                 if let email = attendance.attendanceEmail, !email.isEmpty {
-                                    Label(email, systemImage: "envelope").font(.subheadline)
+                                    if let url = URL(string: "mailto:\(email)") {
+                                        Link(destination: url) { Label(email, systemImage: "envelope") }
+                                            .font(.subheadline)
+                                    }
                                 }
                                 if let url = URL(string: attendance.attendanceUrl ?? "") {
                                     Link(destination: url) { Label(zh ? "打开学校请假页面" : "Open school attendance page", systemImage: "arrow.up.right.square") }
@@ -1303,16 +2144,60 @@ private struct ParentSchoolOverviewSheet: View {
                                     ? (zh ? "旧版学校概览" : "Legacy school overview")
                                     : "\(performance.sourceName) · \(performance.reportingCycle)")
                                     .font(.caption).foregroundStyle(MeroliColor.muted)
+                                if performance.metrics.contains(where: { $0.officialColor != nil }) {
+                                    performanceLegend()
+                                }
                                 ForEach(performance.metrics) { metric in
-                                    HStack(alignment: .top) {
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(metric.metricName).font(.subheadline.weight(.medium)).foregroundStyle(MeroliColor.ink)
-                                            Text(metric.officialStatus.replacingOccurrences(of: "_", with: " "))
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack(alignment: .top) {
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(metric.presentation?.parentLabel ?? metric.metricName)
+                                                    .font(.subheadline.weight(.medium)).foregroundStyle(MeroliColor.ink)
+                                                Text(performanceStatusLabel(metric.officialStatus))
+                                                    .font(.caption).foregroundStyle(MeroliColor.muted)
+                                                if let definition = metric.presentation?.parentDefinition, !definition.isEmpty {
+                                                    Text(definition).font(.caption).foregroundStyle(MeroliColor.muted)
+                                                }
+                                            }
+                                            Spacer(minLength: 12)
+                                            VStack(alignment: .trailing, spacing: 4) {
+                                                if let level = metric.presentation?.performanceLevelLabel ?? performanceLevelLabel(metric.officialPerformanceLevel),
+                                                   let colorName = performanceColorLabel(metric.officialColor),
+                                                   let color = performanceColor(metric.officialColor) {
+                                                    HStack(spacing: 5) {
+                                                        Circle().fill(color).frame(width: 8, height: 8)
+                                                        Text("\(colorName) · \(level)")
+                                                            .font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                                    }
+                                                } else if let level = metric.presentation?.performanceLevelLabel ?? performanceLevelLabel(metric.officialPerformanceLevel) {
+                                                    Text(level).font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                                }
+                                                Text(metric.presentation?.displayValue ?? displayableOfficialValue(metric))
+                                                    .font(.subheadline.weight(.semibold)).multilineTextAlignment(.trailing)
+                                            }
+                                        }
+                                        if let change = metric.presentation?.displayChange, !change.isEmpty {
+                                            Text((zh ? "官方变化：" : "Official change: ") + change
+                                                + (metric.presentation?.changeMeaning.map { " · \(performanceChangeLabel($0))" } ?? ""))
                                                 .font(.caption).foregroundStyle(MeroliColor.muted)
                                         }
-                                        Spacer(minLength: 12)
-                                        Text(metric.officialValue ?? metric.officialPerformanceLevel ?? "—")
-                                            .font(.subheadline.weight(.semibold)).multilineTextAlignment(.trailing)
+                                        if let presentation = metric.presentation {
+                                            ForEach(presentation.comparisonValues) { value in
+                                                HStack {
+                                                    Text(value.label).foregroundStyle(MeroliColor.muted)
+                                                    Spacer()
+                                                    Text(value.value ?? "—").foregroundStyle(MeroliColor.ink)
+                                                }
+                                                .font(.caption)
+                                            }
+                                            if !presentation.comparisonValues.isEmpty,
+                                               let summary = presentation.comparisonSummary, !summary.isEmpty {
+                                                Text(summary).font(.caption2).foregroundStyle(MeroliColor.muted)
+                                            }
+                                            if let direction = presentation.directionExplanation, !direction.isEmpty {
+                                                Text(direction).font(.caption2).foregroundStyle(MeroliColor.muted)
+                                            }
+                                        }
                                     }
                                     Divider().overlay(MeroliColor.line)
                                 }
@@ -1325,19 +2210,72 @@ private struct ParentSchoolOverviewSheet: View {
                             .padding(17).frame(maxWidth: .infinity, alignment: .leading)
                             .background(.white, in: RoundedRectangle(cornerRadius: 17))
                         }
-                        if let history = session.schoolPerformanceHistory, history.cycles.count > 1 {
+                        if session.isLoadingSchoolPerformanceHistory {
+                            HStack(spacing: 12) {
+                                ProgressView()
+                                Text(zh ? "正在加载历年表现…" : "Loading performance history…")
+                                    .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(17)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                        } else if let historyError = session.schoolPerformanceHistoryErrorMessage {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(zh ? "历年表现暂时无法加载" : "Performance history could not be loaded")
+                                    .font(.headline).foregroundStyle(MeroliColor.ink)
+                                Text(historyError)
+                                    .font(.subheadline).foregroundStyle(MeroliColor.coral)
+                                Button {
+                                    Task { await session.loadSchoolPerformanceHistory(schoolId: schoolId) }
+                                } label: {
+                                    Label(zh ? "重试" : "Retry", systemImage: "arrow.clockwise")
+                                        .font(.subheadline.weight(.semibold))
+                                }
+                                .disabled(session.isLoadingSchoolPerformanceHistory)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(17)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                        } else if let history = session.schoolPerformanceHistory, history.cycles.count > 1 {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text(zh ? "历年官方表现" : "Official performance history")
-                                    .font(.system(size: 20, weight: .bold, design: .serif)).foregroundStyle(MeroliColor.ink)
+                                    .font(.system(.title3, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
+                                if history.cycles.contains(where: { cycle in cycle.metrics.contains(where: { $0.officialColor != nil }) }) {
+                                    performanceLegend()
+                                }
                                 ForEach(history.cycles.dropFirst(), id: \.reportingCycle) { cycle in
                                     DisclosureGroup {
                                         VStack(alignment: .leading, spacing: 9) {
                                             ForEach(cycle.metrics) { metric in
-                                                HStack(alignment: .top) {
-                                                    Text(metric.metricName).font(.caption).foregroundStyle(MeroliColor.ink)
-                                                    Spacer(minLength: 12)
-                                                    Text(metric.officialValue ?? metric.officialPerformanceLevel ?? "—")
-                                                        .font(.caption.weight(.semibold)).multilineTextAlignment(.trailing)
+                                                VStack(alignment: .leading, spacing: 5) {
+                                                    HStack(alignment: .top) {
+                                                        Text(metric.presentation?.parentLabel ?? metric.metricName)
+                                                            .font(.caption).foregroundStyle(MeroliColor.ink)
+                                                        Spacer(minLength: 12)
+                                                        VStack(alignment: .trailing, spacing: 3) {
+                                                            if let level = metric.presentation?.performanceLevelLabel ?? performanceLevelLabel(metric.officialPerformanceLevel),
+                                                               let colorName = performanceColorLabel(metric.officialColor),
+                                                               let color = performanceColor(metric.officialColor) {
+                                                                HStack(spacing: 4) {
+                                                                    Circle().fill(color).frame(width: 7, height: 7)
+                                                                    Text("\(colorName) · \(level)")
+                                                                        .font(.caption2.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                                                }
+                                                            } else if let level = metric.presentation?.performanceLevelLabel ?? performanceLevelLabel(metric.officialPerformanceLevel) {
+                                                                Text(level).font(.caption2.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                                            }
+                                                            Text(metric.presentation?.shortValue ?? displayableOfficialValue(metric))
+                                                                .font(.caption.weight(.semibold)).multilineTextAlignment(.trailing)
+                                                        }
+                                                    }
+                                                    ForEach(metric.presentation?.comparisonValues.filter { $0.scope != "SCHOOL" } ?? []) { value in
+                                                        HStack {
+                                                            Text(value.label).foregroundStyle(MeroliColor.muted)
+                                                            Spacer()
+                                                            Text(value.value ?? "—").foregroundStyle(MeroliColor.ink)
+                                                        }
+                                                        .font(.caption2)
+                                                    }
                                                 }
                                             }
                                             Text(cycle.disclaimer).font(.caption2).foregroundStyle(MeroliColor.muted)
@@ -1353,6 +2291,46 @@ private struct ParentSchoolOverviewSheet: View {
                                     .tint(MeroliColor.ink)
                                     Divider().overlay(MeroliColor.line)
                                 }
+                                if !history.metrics.isEmpty {
+                                    Text(zh ? "趋势与可比性" : "Trends and comparability")
+                                        .font(.headline).foregroundStyle(MeroliColor.ink)
+                                        .padding(.top, 4)
+                                    ForEach(history.metrics) { trend in
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text(performanceMetricLabel(trend.metricCode))
+                                                .font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                            Text(trend.recentComparisonSummary ?? performanceTrendLabel(trend.trendState))
+                                                .font(.caption).foregroundStyle(MeroliColor.muted)
+                                            ForEach(trend.historyBreaks) { item in
+                                                Label("\(item.afterCycle)–\(item.beforeCycle): \(item.label)", systemImage: "info.circle")
+                                                    .font(.caption).foregroundStyle(MeroliColor.muted)
+                                            }
+                                            ForEach(Array(trend.points.prefix(3))) { point in
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    HStack {
+                                                        Text(point.reportingCycle).foregroundStyle(MeroliColor.muted)
+                                                        Spacer()
+                                                        Text(point.presentation?.shortValue ?? point.officialValue ?? performanceStatusLabel(point.officialStatus))
+                                                            .foregroundStyle(MeroliColor.ink)
+                                                    }
+                                                    let comparisonValues = point.presentation?.comparisonValues.filter { $0.scope != "SCHOOL" } ?? []
+                                                    if !comparisonValues.isEmpty {
+                                                        HStack(spacing: 12) {
+                                                            ForEach(comparisonValues) { value in
+                                                                Text("\(value.label) · \(value.value ?? "—")")
+                                                                    .foregroundStyle(MeroliColor.muted)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                .font(.caption)
+                                            }
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.vertical, 8)
+                                        Divider().overlay(MeroliColor.line)
+                                    }
+                                }
                             }
                             .padding(17).frame(maxWidth: .infinity, alignment: .leading)
                             .background(.white, in: RoundedRectangle(cornerRadius: 17))
@@ -1363,8 +2341,25 @@ private struct ParentSchoolOverviewSheet: View {
                                 .padding(18).frame(maxWidth: .infinity, alignment: .leading)
                                 .background(.white, in: RoundedRectangle(cornerRadius: 16))
                         }
-                    } else if let error = session.errorMessage {
-                        Text(error).font(.subheadline).foregroundStyle(MeroliColor.coral)
+                    } else if let error = session.schoolOverviewErrorMessage ?? session.errorMessage {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(zh ? "学校资料暂时无法加载" : "School information could not be loaded")
+                                .font(.headline).foregroundStyle(MeroliColor.ink)
+                            Text(error).font(.subheadline).foregroundStyle(MeroliColor.coral)
+                            Button {
+                                Task {
+                                    await session.loadSchoolOverview(schoolId: schoolId)
+                                    await session.loadSchoolPerformanceHistory(schoolId: schoolId)
+                                }
+                            } label: {
+                                Label(zh ? "重试" : "Retry", systemImage: "arrow.clockwise")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            .disabled(session.isLoadingSchoolOverview || session.isLoadingSchoolPerformanceHistory)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(17)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 17))
                     }
                 }
                 .padding(20)
@@ -1384,6 +2379,252 @@ private struct ParentSchoolOverviewSheet: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.muted)
             Text(text).font(.subheadline).foregroundStyle(MeroliColor.ink).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func gradeRange(minimum: Int, maximum: Int) -> String {
+        "\(gradeLabel(gradeCode(minimum)))–\(gradeLabel(gradeCode(maximum)))"
+    }
+
+    private func gradeCode(_ grade: Int) -> String {
+        switch grade {
+        case -2: return "PK"
+        case -1: return "TK"
+        case 0: return "K"
+        default: return String(grade)
+        }
+    }
+
+    private func gradeLabel(_ grade: String) -> String {
+        guard zh else { return grade == "K" ? "Kindergarten" : grade }
+        switch grade {
+        case "PK": return "学前班"
+        case "TK": return "过渡幼儿园"
+        case "K": return "幼儿园"
+        default: return "\(grade) 年级"
+        }
+    }
+
+    private func performanceLegend() -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(zh ? "California School Dashboard 官方等级" : "California School Dashboard official levels")
+                .font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+            HStack(spacing: 9) {
+                ForEach(["BLUE", "GREEN", "YELLOW", "ORANGE", "RED"], id: \.self) { code in
+                    if let color = performanceColor(code), let label = performanceColorLabel(code) {
+                        HStack(spacing: 3) {
+                            Circle().fill(color).frame(width: 7, height: 7)
+                            Text(label).font(.caption2).foregroundStyle(MeroliColor.muted)
+                        }
+                    }
+                }
+            }
+            Text(zh
+                 ? "官方等级综合当前表现与较上一年的变化，不是 Meroli 对学校的评分或排名。"
+                 : "Official levels combine current performance and change from the prior year. They are not a Meroli rating or ranking.")
+                .font(.caption2).foregroundStyle(MeroliColor.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 3)
+    }
+
+    private func performanceChangeLabel(_ meaning: String) -> String {
+        switch meaning.uppercased() {
+        case "IMPROVING": return zh ? "改善" : "Improvement"
+        case "DECLINING": return zh ? "下降" : "Decline"
+        case "STABLE": return zh ? "变化不大" : "Little change"
+        default: return zh ? "官方变化" : "Official change"
+        }
+    }
+
+    private func performanceStatusLabel(_ status: String) -> String {
+        switch status.uppercased() {
+        case "REPORTED": return zh ? "已报告" : "Reported"
+        case "SUPPRESSED": return zh ? "数据受限" : "Suppressed"
+        case "NOT_REPORTED": return zh ? "尚未报告" : "Not reported"
+        case "NOT_APPLICABLE": return zh ? "不适用" : "Not applicable"
+        case "NOT_AVAILABLE_FOR_CYCLE": return zh ? "本报告周期无此指标" : "Not available this year"
+        case "LEGACY": return zh ? "旧版数据" : "Legacy data"
+        default: return zh ? "官方数据状态" : "Official data status"
+        }
+    }
+
+    private func performanceMetricLabel(_ code: String) -> String {
+        switch code.uppercased() {
+        case "ELA": return zh ? "英语语言艺术与读写" : "English Language Arts and Literacy"
+        case "MATH": return zh ? "数学" : "Mathematics"
+        case "SCIENCE": return zh ? "科学" : "Science"
+        case "CHRONIC_ABSENTEEISM": return zh ? "长期缺勤" : "Chronic Absenteeism"
+        case "SUSPENSION", "SUSPENSION_RATE": return zh ? "停学率" : "Suspension Rate"
+        case "EL_PROGRESS": return zh ? "英语学习者进展" : "English Learner Progress"
+        case "GRADUATION", "GRADUATION_RATE": return zh ? "毕业率" : "Graduation Rate"
+        case "COLLEGE_CAREER": return zh ? "大学与职业准备" : "College and Career Readiness"
+        default: return zh ? "官方表现指标" : "Official performance metric"
+        }
+    }
+
+    private func performanceTrendLabel(_ state: String) -> String {
+        switch state.uppercased() {
+        case "IMPROVING": return zh ? "改善" : "Improving"
+        case "DECLINING": return zh ? "下降" : "Declining"
+        case "STABLE": return zh ? "保持稳定" : "Stable"
+        case "METHODOLOGY_CHANGED": return zh ? "官方方法已变化" : "Official methodology changed"
+        case "INSUFFICIENT_DATA": return zh ? "可比较数据不足" : "Insufficient comparable data"
+        default: return zh ? "官方历史趋势" : "Official historical trend"
+        }
+    }
+
+    private func performanceLevelLabel(_ level: String?) -> String? {
+        guard let level else { return nil }
+        switch level.uppercased() {
+        case "VERY_HIGH": return zh ? "表现突出" : "Very high"
+        case "HIGH": return zh ? "表现较好" : "High"
+        case "MEDIUM": return zh ? "中等" : "Medium"
+        case "LOW": return zh ? "需要关注" : "Low"
+        case "VERY_LOW": return zh ? "表现较弱" : "Very low"
+        case "NOT_AVAILABLE": return zh ? "暂无数据" : "Not available"
+        default: return nil
+        }
+    }
+
+    private func performanceColorLabel(_ color: String?) -> String? {
+        guard let color else { return nil }
+        switch color.uppercased() {
+        case "BLUE": return zh ? "蓝色" : "Blue"
+        case "GREEN": return zh ? "绿色" : "Green"
+        case "YELLOW": return zh ? "黄色" : "Yellow"
+        case "ORANGE": return zh ? "橙色" : "Orange"
+        case "RED": return zh ? "红色" : "Red"
+        default: return nil
+        }
+    }
+
+    private func performanceColor(_ color: String?) -> Color? {
+        guard let color else { return nil }
+        switch color.uppercased() {
+        case "BLUE": return Color(red: 0.00, green: 0.38, blue: 0.68)
+        case "GREEN": return Color(red: 0.28, green: 0.52, blue: 0.25)
+        case "YELLOW": return Color(red: 0.88, green: 0.69, blue: 0.05)
+        case "ORANGE": return Color(red: 0.88, green: 0.38, blue: 0.10)
+        case "RED": return Color(red: 0.75, green: 0.14, blue: 0.13)
+        default: return nil
+        }
+    }
+
+    private func displayableOfficialValue(_ metric: ParentPerformanceMetricDTO) -> String {
+        let status = metric.officialStatus.uppercased()
+        guard status == "REPORTED" || status == "LEGACY" else { return "—" }
+        return metric.officialValue ?? "—"
+    }
+
+    private func scheduleSummary(_ schedule: DailyScheduleDTO) -> String {
+        switch schedule.status {
+        case "OK":
+            return zh
+                ? "到校 \(schedule.arrivalTime ?? "待确认") · 放学 \(schedule.dismissalTime ?? "待确认")"
+                : "Arrival \(schedule.arrivalTime ?? "To be confirmed") · Dismissal \(schedule.dismissalTime ?? "To be confirmed")"
+        case "NO_SCHOOL":
+            return zh ? "不上课" : "No school"
+        case "NON_INSTRUCTIONAL_DAY":
+            return zh ? "非上课日" : "Non-instructional day"
+        case "NO_ENROLLMENT":
+            return zh ? "尚未设置在读学校" : "No current school enrollment"
+        default:
+            return zh ? "学校时间待确认" : "School schedule unavailable"
+        }
+    }
+}
+
+private struct ParentFullBellScheduleSheet: View {
+    @Environment(SessionStore.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    let schoolName: String
+    let schedules: [ParentBellScheduleDTO]
+    private var zh: Bool { session.usesChinese }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text(schoolName)
+                        .font(.system(.title2, design: .serif, weight: .bold))
+                        .foregroundStyle(MeroliColor.ink)
+                    ForEach(schedules) { schedule in
+                        VStack(alignment: .leading, spacing: 14) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(categoryLabel(schedule.scheduleCategory))
+                                    .font(.headline).foregroundStyle(MeroliColor.ink)
+                                Text(schedule.name).font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                if schedule.effectiveFrom != nil || schedule.effectiveTo != nil {
+                                    Text("\(schedule.effectiveFrom ?? "—") – \(schedule.effectiveTo ?? "—")")
+                                        .font(.caption).foregroundStyle(MeroliColor.muted)
+                                }
+                            }
+                            ForEach(schedule.variants) { variant in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(variant.name).font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                    HStack {
+                                        if let arrival = variant.arrivalTime {
+                                            Label(zh ? "到校 \(arrival)" : "Arrival \(arrival)", systemImage: "sunrise")
+                                        }
+                                        Spacer(minLength: 6)
+                                        if let dismissal = variant.dismissalTime {
+                                            Label(zh ? "放学 \(dismissal)" : "Dismissal \(dismissal)", systemImage: "sunset")
+                                        }
+                                    }
+                                    .font(.caption).foregroundStyle(MeroliColor.muted)
+                                    if variant.periods.isEmpty {
+                                        Text(zh ? "学校尚未发布课时详情。" : "Period details have not been published.")
+                                            .font(.caption).foregroundStyle(MeroliColor.muted)
+                                    } else {
+                                        VStack(spacing: 0) {
+                                            ForEach(variant.periods) { period in
+                                                HStack(spacing: 10) {
+                                                    Text(zh && !period.labelZh.isEmpty ? period.labelZh : period.labelEn)
+                                                        .font(.subheadline).foregroundStyle(MeroliColor.ink)
+                                                    if period.isOptional {
+                                                        Text(zh ? "可选" : "Optional")
+                                                            .font(.caption2).foregroundStyle(MeroliColor.muted)
+                                                    }
+                                                    Spacer(minLength: 8)
+                                                    Text("\(period.startTime)–\(period.endTime)")
+                                                        .font(.caption.monospacedDigit()).foregroundStyle(MeroliColor.muted)
+                                                }
+                                                .padding(.vertical, 9)
+                                                if period.id != variant.periods.last?.id { Divider().overlay(MeroliColor.line) }
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(.top, 4)
+                                if variant.id != schedule.variants.last?.id { Divider().overlay(MeroliColor.line) }
+                            }
+                        }
+                        .padding(17)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                    }
+                    Text(zh ? "时段以学校当前发布的官方作息为准。" : "Times follow the school’s currently published schedule.")
+                        .font(.footnote).foregroundStyle(MeroliColor.muted)
+                }
+                .padding(20)
+            }
+            .background(MeroliColor.canvas)
+            .navigationTitle(zh ? "完整作息表" : "Full Bell Schedule")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { CloseSheetButton(zh: zh) } }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func categoryLabel(_ category: String) -> String {
+        switch category {
+        case "REGULAR": return zh ? "正常上课日" : "Regular day"
+        case "LATE_START": return zh ? "延迟到校" : "Late start"
+        case "MINIMUM_DAY": return zh ? "短日" : "Minimum day"
+        case "EARLY_RELEASE": return zh ? "提前放学" : "Early release"
+        case "WEDNESDAY": return zh ? "周三作息" : "Wednesday"
+        default: return zh ? "学校作息" : "School schedule"
         }
     }
 }
@@ -1408,6 +2649,31 @@ private struct EnrollmentEditorSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                if session.isLoadingCatalog && (session.districts.isEmpty || session.schoolYears.isEmpty) {
+                    Section {
+                        ProgressView(zh ? "正在读取学校资料…" : "Loading school information…")
+                    }
+                } else if let error = session.catalogErrorMessage {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(MeroliColor.coral)
+                        Button(zh ? "重试" : "Try again") {
+                            Task { await session.loadSchoolCatalog() }
+                        }
+                    }
+                } else if session.districts.isEmpty || session.schoolYears.isEmpty {
+                    Section {
+                        Text(session.districts.isEmpty
+                            ? (zh ? "目前还没有开放可选学区。请稍后刷新，或联系 Meroli 支持人员。" : "No school districts are available yet. Refresh later or contact Meroli support.")
+                            : (zh ? "学校学年资料暂不可用，请稍后刷新或联系 Meroli 支持人员。" : "School-year information is unavailable. Refresh later or contact Meroli support."))
+                            .font(.subheadline)
+                            .foregroundStyle(MeroliColor.muted)
+                        Button(zh ? "重新读取学校资料" : "Reload school information") {
+                            Task { await session.loadSchoolCatalog() }
+                        }
+                    }
+                }
                 Section(zh ? "学校" : "School") {
                     Picker(zh ? "学区" : "District", selection: $districtId) {
                         Text(zh ? "选择学区" : "Choose a district").tag("")
@@ -1419,7 +2685,6 @@ private struct EnrollmentEditorSheet: View {
                     .onChange(of: districtId) { _, value in
                         schoolId = ""
                         gradeCode = ""
-                        guard !value.isEmpty else { return }
                         Task { await session.loadSchools(districtId: value) }
                     }
 
@@ -1629,6 +2894,31 @@ private struct AddChildSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                if session.isLoadingCatalog && (session.districts.isEmpty || session.schoolYears.isEmpty) {
+                    Section {
+                        ProgressView(zh ? "正在读取学校资料…" : "Loading school information…")
+                    }
+                } else if let error = session.catalogErrorMessage {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(MeroliColor.coral)
+                        Button(zh ? "重试" : "Try again") {
+                            Task { await session.loadSchoolCatalog() }
+                        }
+                    }
+                } else if session.districts.isEmpty || session.schoolYears.isEmpty {
+                    Section {
+                        Text(session.districts.isEmpty
+                            ? (zh ? "目前还没有开放可选学区。请稍后刷新，或联系 Meroli 支持人员。" : "No school districts are available yet. Refresh later or contact Meroli support.")
+                            : (zh ? "学校学年资料暂不可用，请稍后刷新或联系 Meroli 支持人员。" : "School-year information is unavailable. Refresh later or contact Meroli support."))
+                            .font(.subheadline)
+                            .foregroundStyle(MeroliColor.muted)
+                        Button(zh ? "重新读取学校资料" : "Reload school information") {
+                            Task { await session.loadSchoolCatalog() }
+                        }
+                    }
+                }
                 Section {
                     TextField(zh ? "孩子的称呼" : "Child's name", text: $nickname)
                         .textContentType(.name)
@@ -1646,7 +2936,6 @@ private struct AddChildSheet: View {
                         schoolId = ""
                         gradeCode = ""
                         selectedProgramIds = []
-                        guard !value.isEmpty else { return }
                         Task { await session.loadSchools(districtId: value) }
                     }
                     Picker(zh ? "学校" : "School", selection: $schoolId) {
@@ -1658,7 +2947,7 @@ private struct AddChildSheet: View {
                         gradeCode = ""
                         selectionStatus = ""
                         selectedProgramIds = []
-                        if !value.isEmpty { Task { await session.loadTransitionPrograms(schoolId: value) } }
+                        Task { await session.loadTransitionPrograms(schoolId: value) }
                     }
                     Picker(zh ? "年级" : "Grade", selection: $gradeCode) {
                         Text(zh ? "选择年级" : "Choose a grade").tag("")
@@ -1803,7 +3092,7 @@ private struct RenameChildSheet: View {
                         Text(zh ? "保存" : "Save changes")
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 51)
+                    .frame(minHeight: 51)
                     .foregroundStyle(.white)
                     .background(MeroliColor.ink, in: RoundedRectangle(cornerRadius: 14))
                 }
@@ -1837,12 +3126,18 @@ private struct SettingsScreen: View {
                         Label(zh ? "已绑定 Apple 账号" : "Apple account linked", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(MeroliColor.ink)
                     } else {
-                        SignInWithAppleButton(.continue, onRequest: { request in
+                        MeroliAppleAuthorizationButton(
+                            type: .continue,
+                            title: zh ? "继续使用 Apple" : "Continue with Apple",
+                            height: 44,
+                            accessibilityIdentifier: "meroli.settings.bind-apple",
+                            onRequest: { request in
                             let nonce = AppleNonce.generate()
                             appleRawNonce = nonce
                             request.nonce = AppleNonce.sha256(nonce)
                             request.requestedScopes = [.email]
-                        }, onCompletion: { result in
+                            },
+                            onCompletion: { result in
                             guard case .success(let authorization) = result,
                                   let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                                   let tokenData = credential.identityToken,
@@ -1852,10 +3147,8 @@ private struct SettingsScreen: View {
                                 return
                             }
                             Task { await session.bindApple(identityToken: token, rawNonce: nonce) }
-                        })
-                        .signInWithAppleButtonStyle(.black)
-                        .frame(height: 44)
-                        .accessibilityIdentifier("meroli.settings.bind-apple")
+                            }
+                        )
                     }
                     if let family = session.family, !family.id.isEmpty {
                         LabeledContent(zh ? "家庭编号" : "Family ID", value: family.id)
@@ -1906,6 +3199,40 @@ private struct SettingsScreen: View {
     }
 }
 
+private struct MeroliAppleAuthorizationButton: View {
+    let type: SignInWithAppleButton.Label
+    let title: String
+    let height: CGFloat
+    let accessibilityIdentifier: String
+    let onRequest: (ASAuthorizationAppleIDRequest) -> Void
+    let onCompletion: (Result<ASAuthorization, any Error>) -> Void
+
+    var body: some View {
+        ZStack {
+            HStack(spacing: 8) {
+                Image(systemName: "apple.logo")
+                    .font(.body.weight(.medium))
+                Text(title)
+                    .font(.body.weight(.medium))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: height)
+            .background(.black, in: RoundedRectangle(cornerRadius: min(15, height / 3)))
+            .accessibilityHidden(true)
+
+            SignInWithAppleButton(type, onRequest: onRequest, onCompletion: onCompletion)
+                .signInWithAppleButtonStyle(.black)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: height)
+                .opacity(0.015)
+                .accessibilityLabel(title)
+                .accessibilityIdentifier(accessibilityIdentifier)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: min(15, height / 3)))
+    }
+}
+
 private enum AppleNonce {
     static func generate() -> String {
         let bytes = (0..<32).map { _ in UInt8.random(in: 0...255) }
@@ -1924,19 +3251,53 @@ private struct DeleteAccountSheet: View {
     @State private var password = ""
     @State private var confirming = false
     @State private var isDeleting = false
+    @State private var isCheckingAppleBinding = true
+    @State private var appleRawNonce: String?
+    @State private var appleIdentityToken: String?
     private var zh: Bool { session.usesChinese }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Text(zh ? "此操作无法撤销。请输入当前密码，确认删除 Meroli 账户。" : "This action cannot be undone. Enter your current password to confirm deletion of your Meroli account.")
+                    Text(zh ? "此操作无法撤销。请用当前密码或已绑定的 Apple 账号重新验证。" : "This action cannot be undone. Reauthenticate with your current password or linked Apple account.")
                         .foregroundStyle(MeroliColor.coral)
                     SecureField(zh ? "当前密码" : "Current password", text: $password)
                         .textContentType(.password)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("meroli.delete-account.password")
+                }
+                if isCheckingAppleBinding {
+                    Section { ProgressView(zh ? "正在检查 Apple 绑定…" : "Checking Apple account…") }
+                } else if session.isAppleLinked {
+                    Section(zh ? "使用 Apple 验证" : "Verify with Apple") {
+                        MeroliAppleAuthorizationButton(
+                            type: .continue,
+                            title: zh ? "继续使用 Apple" : "Continue with Apple",
+                            height: 44,
+                            accessibilityIdentifier: "meroli.delete-account.verify-apple",
+                            onRequest: { request in
+                            let nonce = AppleNonce.generate()
+                            appleRawNonce = nonce
+                            request.nonce = AppleNonce.sha256(nonce)
+                            request.requestedScopes = []
+                            },
+                            onCompletion: { result in
+                            guard case .success(let authorization) = result,
+                                  let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                                  let tokenData = credential.identityToken,
+                                  let token = String(data: tokenData, encoding: .utf8),
+                                  appleRawNonce != nil else {
+                                if case .failure(let error) = result { session.errorMessage = error.localizedDescription }
+                                return
+                            }
+                            appleIdentityToken = token
+                            confirming = true
+                            }
+                        )
+                        .disabled(isDeleting)
+                    }
                 }
                 if let error = session.errorMessage {
                     Section { Text(error).font(.subheadline).foregroundStyle(MeroliColor.coral) }
@@ -1962,13 +3323,17 @@ private struct DeleteAccountSheet: View {
                 Button(zh ? "删除账户" : "Delete account", role: .destructive) {
                     isDeleting = true
                     Task {
-                        if await session.deleteAccount(password: password) { dismiss() }
+                        if await session.deleteAccount(password: password, identityToken: appleIdentityToken, rawNonce: appleRawNonce) { dismiss() }
                         isDeleting = false
                     }
                 }
                 Button(zh ? "返回" : "Go back", role: .cancel) {}
             } message: {
-                Text(zh ? "删除后无法恢复。系统会先验证当前密码。" : "Deleted information cannot be restored. Your current password will be verified first.")
+                Text(zh ? "删除后无法恢复。系统会重新验证当前密码或 Apple 账号。" : "Deleted information cannot be restored. Your password or linked Apple account will be verified again.")
+            }
+            .task {
+                await session.loadAppleBinding()
+                isCheckingAppleBinding = false
             }
         }
         .presentationDetents([.medium, .large])
