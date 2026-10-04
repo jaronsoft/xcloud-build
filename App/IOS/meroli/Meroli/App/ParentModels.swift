@@ -71,6 +71,7 @@ struct DistrictDTO: Decodable, Identifiable {
 struct SchoolYearDTO: Decodable, Identifiable {
     let id: String
     let name: String
+    let districtId: String?
     let startDate: String
     let endDate: String
 }

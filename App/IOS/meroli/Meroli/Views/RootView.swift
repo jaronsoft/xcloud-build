@@ -611,15 +611,15 @@ private struct FamilyTabView: View {
 
     var body: some View {
         TabView(selection: $selected) {
-            HomeScreen(showFamily: { selected = 1 })
+            HomeScreen(showFamily: { selected = 2 })
                 .tag(0)
                 .tabItem { Label(zh ? "首页" : "Home", systemImage: "sun.max") }
-            FamilyScreen()
-                .tag(1)
-                .tabItem { Label(zh ? "学校" : "Schools", systemImage: "building.2") }
             CalendarScreen()
-                .tag(2)
+                .tag(1)
                 .tabItem { Label(zh ? "日历" : "Calendar", systemImage: "calendar") }
+            FamilyScreen()
+                .tag(2)
+                .tabItem { Label(zh ? "学校" : "Schools", systemImage: "building.2") }
             SettingsScreen()
                 .tag(3)
                 .tabItem { Label(zh ? "设置" : "Settings", systemImage: "gearshape") }
@@ -723,6 +723,14 @@ private struct HomeScreen: View {
                         .font(.system(.headline, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
                     Text(zh ? "今天的上学安排" : "Today at school")
                         .font(.system(.largeTitle, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
+                    sectionHeading(zh ? "今天学校动态" : "Today’s School Updates")
+                    if let error = session.homeEventsErrorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(MeroliColor.coral)
+                    }
+                    if !todayEvents.isEmpty {
+                        eventList(todayEvents)
+                    }
                     HStack {
                         Button { date = schoolCalendar.date(byAdding: .day, value: -1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
                             .accessibilityLabel(zh ? "前一天" : "Previous day")
@@ -846,14 +854,6 @@ private struct HomeScreen: View {
                             }
                             .padding(18).background(.white, in: RoundedRectangle(cornerRadius: 18))
                         }
-                    }
-                    if let error = session.homeEventsErrorMessage {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(MeroliColor.coral)
-                    }
-                    if !todayEvents.isEmpty {
-                        sectionHeading(zh ? "今天学校动态" : "Today’s School Updates")
-                        eventList(todayEvents)
                     }
                     sectionHeading(zh ? "明天" : "Tomorrow")
                     if session.isLoadingTomorrowSchedules && selectedTomorrowSchedules.isEmpty {
@@ -3037,7 +3037,7 @@ private struct EnrollmentEditorSheet: View {
                         Task { await loadSchedulePrograms(for: schoolId) }
                     }
 
-                    Picker(zh ? "年级" : "Grade", selection: $gradeCode) {
+                Picker(zh ? "年级" : "Grade", selection: $gradeCode) {
                         Text(zh ? "选择年级" : "Choose a grade").tag("")
                         ForEach(selectedSchool?.availableGrades ?? [], id: \.self) { grade in
                             Text(localizedGrade(grade)).tag(grade)
@@ -3045,7 +3045,6 @@ private struct EnrollmentEditorSheet: View {
                     }
                     .disabled(selectedSchool == nil)
                 }
-
                 if needsScheduleConfirmation {
                     Section(zh ? "影响到校时间的项目" : "Schedule-affecting programs") {
                         if isLoadingSchedulePrograms {
@@ -3290,9 +3289,30 @@ private struct AddChildSheet: View {
     @State private var selectionStatus = ""
     @State private var selectedProgramIds: Set<String> = []
     @State private var showsSchoolSearch = false
+    @State private var showsReview = false
     @FocusState private var isFocused: Bool
     private var zh: Bool { session.usesChinese }
     private var selectedSchool: ParentSchoolDTO? { session.schools.first { $0.id == schoolId } }
+    private var currentSchoolYear: SchoolYearDTO? {
+        guard !districtId.isEmpty else { return nil }
+        let timezoneId = session.districts.first(where: { $0.id == districtId })?.timezone
+            ?? "America/Los_Angeles"
+        guard let timezone = TimeZone(identifier: timezoneId) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timezone
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = timezone
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = formatter.string(from: Date())
+        let matchingYears = session.schoolYears.filter { year in
+            (year.districtId == nil || year.districtId == districtId)
+                && String(year.startDate.prefix(10)) <= today
+                && String(year.endDate.prefix(10)) >= today
+        }
+        return matchingYears.count == 1 ? matchingYears.first : nil
+    }
 
     var body: some View {
         NavigationStack {
@@ -3369,6 +3389,19 @@ private struct AddChildSheet: View {
                     }
                     .disabled(selectedSchool == nil)
                 }
+                if selectedSchool != nil {
+                    Section(zh ? "学年" : "School year") {
+                        if let currentSchoolYear {
+                            Text(currentSchoolYear.name).foregroundStyle(MeroliColor.ink)
+                        } else {
+                            Label(
+                                zh ? "该学区当前没有唯一有效学年，请联系支持人员。" : "A unique current school year is unavailable for this district. Contact support.",
+                                systemImage: "exclamationmark.triangle"
+                            )
+                            .font(.subheadline).foregroundStyle(MeroliColor.coral)
+                        }
+                    }
+                }
                 if !schoolId.isEmpty && !session.transitionPrograms.isEmpty {
                     Section(zh ? "作息项目" : "Schedule programs") {
                         Text(zh ? "选择会影响到校时间的项目；若不确定，可选择‘还不确定’。" : "Choose programs that affect arrival time, or select Not sure.")
@@ -3402,17 +3435,18 @@ private struct AddChildSheet: View {
                     Section { Text(error).font(.subheadline).foregroundStyle(MeroliColor.coral) }
                 }
                 Section {
-                    Button(action: save) {
+                    Button { showsReview = true } label: {
                         HStack {
                             Spacer()
-                            if session.isSavingChild { ProgressView().padding(.trailing, 7) }
-                            Text(zh ? "创建孩子并保存学校资料" : "Create child and save school")
+                            Text(zh ? "核对学校资料" : "Review school setup")
                             Spacer()
                         }
                         .foregroundStyle(.white)
                     }
+                    .accessibilityIdentifier("meroli.child.review")
                     .listRowBackground(MeroliColor.ink)
-                    .disabled(session.isSavingChild || selectedSchool == nil || gradeCode.isEmpty
+                    .disabled(session.isSavingChild || nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || selectedSchool == nil || currentSchoolYear == nil || gradeCode.isEmpty
                         || !session.hasLoadedTransitionPrograms || selectionStatus.isEmpty
                         || (selectionStatus == "SELECTED" && selectedProgramIds.isEmpty))
                 }
@@ -3433,6 +3467,21 @@ private struct AddChildSheet: View {
                     selectedProgramIds = []
                 }
             }
+            .navigationDestination(isPresented: $showsReview) {
+                SchoolSetupReviewView(
+                    nickname: nickname.trimmingCharacters(in: .whitespacesAndNewlines),
+                    districtName: session.districts.first(where: { $0.id == districtId })?.name ?? "",
+                    schoolName: selectedSchool?.name ?? "",
+                    schoolYearName: currentSchoolYear?.name ?? "",
+                    gradeName: localizedGrade(gradeCode),
+                    programNames: session.transitionPrograms
+                        .filter { selectedProgramIds.contains($0.id) }
+                        .map { zh && !$0.displayNameZh.isEmpty ? $0.displayNameZh : $0.displayNameEn },
+                    selectionStatus: selectionStatus,
+                    zh: zh,
+                    onConfirm: save
+                )
+            }
             .task { await load() }
         }
         .presentationDetents([.medium, .large])
@@ -3440,11 +3489,12 @@ private struct AddChildSheet: View {
 
     private func save() {
         isFocused = false
-        guard let school = selectedSchool else { return }
+        guard let school = selectedSchool, let schoolYear = currentSchoolYear else { return }
         Task {
             if await session.subscribeChild(
                 nickname: nickname,
                 school: school,
+                schoolYear: schoolYear,
                 gradeCode: gradeCode,
                 selectionStatus: selectionStatus,
                 programIds: selectedProgramIds.sorted()
@@ -3479,6 +3529,90 @@ private struct AddChildSheet: View {
         case "K": return "幼儿园"
         default: return "\(grade) 年级"
         }
+    }
+}
+
+private struct SchoolSetupReviewView: View {
+    @Environment(SessionStore.self) private var session
+    let nickname: String
+    let districtName: String
+    let schoolName: String
+    let schoolYearName: String
+    let gradeName: String
+    let programNames: [String]
+    let selectionStatus: String
+    let zh: Bool
+    let onConfirm: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text(zh ? "请确认孩子的学校资料" : "Review your child's school setup")
+                    .font(.system(.title, design: .serif, weight: .bold))
+                    .foregroundStyle(MeroliColor.ink)
+                VStack(spacing: 0) {
+                    row(zh ? "孩子" : "Child", value: nickname)
+                    Divider().overlay(MeroliColor.line)
+                    row(zh ? "学区" : "District", value: districtName)
+                    Divider().overlay(MeroliColor.line)
+                    row(zh ? "学校" : "School", value: schoolName)
+                    Divider().overlay(MeroliColor.line)
+                    row(zh ? "学年" : "School year", value: schoolYearName)
+                    Divider().overlay(MeroliColor.line)
+                    row(zh ? "年级" : "Grade", value: gradeName)
+                    Divider().overlay(MeroliColor.line)
+                    row(zh ? "作息项目" : "Schedule programs", value: programSummary)
+                }
+                .padding(16)
+                .background(.white, in: RoundedRectangle(cornerRadius: 18))
+
+                if let error = session.errorMessage {
+                    Label(error, systemImage: "exclamationmark.circle.fill")
+                        .font(.subheadline).foregroundStyle(MeroliColor.coral)
+                }
+
+                Text(zh ? "确认后会将孩子和学校资料保存到家庭中。" : "Confirm to save this child and school setup to your family.")
+                    .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                Button(action: onConfirm) {
+                    HStack {
+                        Spacer()
+                        if session.isSavingChild { ProgressView().padding(.trailing, 7) }
+                        Text(zh ? "确认并添加学校" : "Confirm and add school")
+                        Spacer()
+                    }
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(minHeight: 52)
+                    .background(MeroliColor.ink, in: RoundedRectangle(cornerRadius: 15))
+                }
+                .buttonStyle(.plain)
+                .disabled(session.isSavingChild)
+                .accessibilityIdentifier("meroli.child.confirmSetup")
+            }
+            .padding(22)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(MeroliColor.canvas.ignoresSafeArea())
+        .navigationTitle(zh ? "核对学校资料" : "Review setup")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var programSummary: String {
+        switch selectionStatus {
+        case "SELECTED": return programNames.joined(separator: ", ")
+        case "NONE": return zh ? "没有会影响到校时间的项目" : "No schedule-affecting programs"
+        default: return zh ? "暂不确定" : "Not sure yet"
+        }
+    }
+
+    private func row(_ title: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            Text(title).font(.subheadline).foregroundStyle(MeroliColor.muted)
+            Spacer(minLength: 8)
+            Text(value).font(.subheadline.weight(.medium)).foregroundStyle(MeroliColor.ink)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 11)
     }
 }
 

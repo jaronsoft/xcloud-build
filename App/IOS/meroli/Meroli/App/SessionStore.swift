@@ -33,6 +33,7 @@ private struct OnboardingSubscribeReceipt: Codable, Equatable {
     let idempotencyKey: String
     let nickname: String
     let schoolId: String
+    let schoolYearId: String?
     let gradeCode: String
     let selectionStatus: String
     let scheduleVariantCode: String
@@ -792,6 +793,7 @@ final class SessionStore {
     func subscribeChild(
         nickname: String,
         school: ParentSchoolDTO,
+        schoolYear: SchoolYearDTO,
         gradeCode: String,
         selectionStatus: String,
         programIds: [String]
@@ -814,6 +816,7 @@ final class SessionStore {
                   saved.userId == userId,
                   saved.nickname == normalizedName,
                   saved.schoolId == school.id,
+                  (saved.schoolYearId == nil || saved.schoolYearId == schoolYear.id),
                   saved.gradeCode == gradeCode,
                   saved.selectionStatus == selectionStatus,
                   saved.programIds == programIds.sorted() else {
@@ -829,6 +832,7 @@ final class SessionStore {
                 idempotencyKey: UUID().uuidString.lowercased(),
                 nickname: normalizedName,
                 schoolId: school.id,
+                schoolYearId: schoolYear.id,
                 gradeCode: gradeCode,
                 selectionStatus: selectionStatus,
                 scheduleVariantCode: "DEFAULT",
@@ -857,18 +861,22 @@ final class SessionStore {
         defer { isSavingChild = false }
         do {
             guard let accessToken else { throw APIClientError.unacceptableStatusCode(401) }
+            var request: [String: Any] = [
+                "nickname": receipt.nickname,
+                "school_id": receipt.schoolId,
+                "grade": grade,
+                "selection_status": receipt.selectionStatus,
+                "schedule_variant_code": receipt.scheduleVariantCode,
+                "program_ids": receipt.programIds
+            ]
+            if let schoolYearId = receipt.schoolYearId {
+                request["school_year_id"] = schoolYearId
+            }
             let data = try await send(
                 path: "onboarding/subscribe",
                 method: "POST",
                 authorization: accessToken,
-                json: [
-                    "nickname": receipt.nickname,
-                    "school_id": receipt.schoolId,
-                    "grade": grade,
-                    "selection_status": receipt.selectionStatus,
-                    "schedule_variant_code": receipt.scheduleVariantCode,
-                    "program_ids": receipt.programIds
-                ],
+                json: request,
                 headers: ["Idempotency-Key": receipt.idempotencyKey]
             )
             _ = try decoder.decode(APIEnvelope<OnboardingSubscribeDTO>.self, from: data).response
