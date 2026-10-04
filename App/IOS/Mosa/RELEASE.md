@@ -2,9 +2,11 @@
 
 ## 版本编号规则
 
-MOSA iOS 版本采用 `主版本.次版本[.修订版本] (Build 递增整数)`，当前基线为 `1.1 (Build 10)`。`MARKETING_VERSION` 表示用户可见的软件版本；`CURRENT_PROJECT_VERSION` 表示 App Store Connect Build Number，必须使用从 1 开始连续递增的正整数。每次上传前递增 Build Number，已上传的数字不得复用；不再使用 `YYYYMMDD`、`YYYYMMDD.N` 等日期型构建号。
+MOSA iOS 版本采用 `主版本.次版本[.修订版本] (Build 递增整数)`，当前基线为 `1.2 (Build 21)`。`MARKETING_VERSION` 表示用户可见的软件版本；`CURRENT_PROJECT_VERSION` 表示 App Store Connect Build Number，必须使用从 1 开始连续递增的正整数。每次上传前递增 Build Number，已上传的数字不得复用；不再使用 `YYYYMMDD`、`YYYYMMDD.N` 等日期型构建号。
 
 发布脚本会在归档和上传前校验这两项格式，但不会自动修改工程版本。产品版本发生变化时人工更新 `MARKETING_VERSION`，每次生成新的上传构建时人工递增 `CURRENT_PROJECT_VERSION`，并保持 Debug 与 Release 配置一致。
+
+2026-10-04，App Store Connect 拒绝 `1.1 (Build 20)`，提示 1.1 预发布列车已关闭，且 `CFBundleShortVersionString` 必须高于已批准的 1.1。工程已更新为 `1.2 (Build 21)`，供下一次 Xcode Cloud 上传使用。
 
 2026-08-10，Gallery 分享卡新增按账号隔离的本地持久缓存：优先展示最近一次成功版本，启动同步后静默预热，且仅在新图完整下载、解码校验成功后原子覆盖旧缓存。iOS `1.0 (20260810)` 已使用正式 Xcode 26.6（`17F113`）和 iPhoneOS 26.5 SDK 完成 iPhone 17 / iOS 27 Simulator XCTest 27/27、Release Archive、Bundle/Team/版本、代码签名和 Entitlements 校验，并上传 App Store Connect。Archive 为 `.release/archives/MOSA-1.0-20260810-20260810-081355.xcarchive`。本次只上传 Build，未提交审核、修改测试组或商店元数据。
 

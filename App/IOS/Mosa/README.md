@@ -10,7 +10,7 @@ MOSA iOS 是基于当前 `MOSA/H5/` 功能构建的原生 SwiftUI 客户端，�
 - Keychain 保存访问令牌与刷新令牌
 - Application Support JSON 保存本地资料和离线记录
 - Bundle ID：`com.wekarepartners.mosa.app`，与 App Store Connect 现有 App 记录一致。
-- 当前软件版本：`1.1 (Build 10)`。版本采用 `主版本.次版本[.修订版本] (Build 递增整数)`；Build Number 在每次上传前加 1，不再使用日期或小数后缀，已上传的数字不得复用。`V2.1/V2.4` 是产品文档和研发基线版本，不作为 App Store 软件版本。
+- 当前软件版本：`1.2 (Build 21)`。版本采用 `主版本.次版本[.修订版本] (Build 递增整数)`；Build Number 在每次上传前加 1，不再使用日期或小数后缀，已上传的数字不得复用。`V2.1/V2.4` 是产品文档和研发基线版本，不作为 App Store 软件版本。
 - 发布设备范围：仅 iPhone。工程不包含 Apple Watch target，也不向 App Store 声明 iPad 支持。
 
 ## 打开与运行
@@ -59,7 +59,7 @@ Xcode Cloud 使用仓库内的 `App/IOS/Mosa/MOSA.xcodeproj` 和共享 Scheme `M
 
 MOSA App Icon 已配置为 1024×1024 不透明母图，并由 Asset Catalog 生成各设备所需尺寸。正式签名与首轮商店元数据已配置；包含 Gallery `SUBMITTING`、`QUEUED`、`RUNNING` 分阶段反馈的 `1.0 (20260802)` 已使用正式 Xcode 26.6 上传 App Store Connect，Apple 已接收并开始处理；真机通知和后台刷新尚未配置。
 
-此前 `1.0 (20260810)` 已使用正式 Xcode 26.6（`17F113`）和 iPhoneOS 26.5 SDK 完成 iOS 17 目标的 XCTest 27/27、Release Archive、签名及 Entitlements 校验和 App Store Connect 上传。Archive 为 `.release/archives/MOSA-1.0-20260810-20260810-081355.xcarchive`；当前工程已切换到新的版本规则与 `1.1 (Build 10)` 基线，后续上传必须继续使用未占用的递增整数。
+此前 `1.0 (20260810)` 已使用正式 Xcode 26.6（`17F113`）和 iPhoneOS 26.5 SDK 完成 iOS 17 目标的 XCTest 27/27、Release Archive、签名及 Entitlements 校验和 App Store Connect 上传。Archive 为 `.release/archives/MOSA-1.0-20260810-20260810-081355.xcarchive`；App Store Connect 拒绝了 `1.1 (Build 20)`，原因是 1.1 预发布列车已关闭且 `CFBundleShortVersionString` 未高于已批准版本。当前已升级到 `1.2 (Build 21)`，后续上传必须继续使用未占用的递增整数。
 
 开发日志只记录请求时间、HTTP 方法、包含域名的完整 API URL、允许公开的日期查询、状态码、耗时、响应字节数及错误码/消息；不会记录 Authorization、Token、密码、验证码、请求正文、响应正文或其他查询参数，最多保留当前进程内最近 200 条。
 
