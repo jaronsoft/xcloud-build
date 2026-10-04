@@ -269,7 +269,7 @@ final class SessionStore {
             errorMessage = nil
         } catch {
             errorMessage = (error as? APIClientError)?.statusCode == 409
-                ? (usesChinese ? "此 Apple 账号已绑定到其他 Meroli 账户。" : "This Apple account is linked to another Meroli account.")
+                ? (usesChinese ? "Apple 绑定与现有账户关联冲突，请确认当前登录的 Apple 账号和 Meroli 账户。" : "This Apple binding conflicts with an existing account link. Check the Apple account and Meroli account you're using.")
                 : message(for: error)
         }
     }

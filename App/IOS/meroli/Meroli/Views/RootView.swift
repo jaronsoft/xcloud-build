@@ -2290,7 +2290,8 @@ private struct ParentSchoolOverviewSheet: View {
                         if let attendance = overview.attendance {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text(zh ? "考勤与请假" : "Attendance and absence reporting").font(.headline).foregroundStyle(MeroliColor.ink)
-                                Text(attendance.attendanceMethod).font(.subheadline.weight(.semibold))
+                                Text(attendanceMethodLabel(attendance.attendanceMethod))
+                                    .font(.subheadline.weight(.semibold))
                                 Text(zh ? "Meroli 不会替你向学校提交请假。请以学校官方流程为准。" : "Meroli does not submit absences for you. Follow the school's official process.")
                                     .font(.footnote).foregroundStyle(MeroliColor.muted)
                                 if !attendance.absenceInstruction.isEmpty {
@@ -2581,6 +2582,17 @@ private struct ParentSchoolOverviewSheet: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.muted)
             Text(text).font(.subheadline).foregroundStyle(MeroliColor.ink).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func attendanceMethodLabel(_ method: String) -> String {
+        switch method.uppercased() {
+        case "ONLINE": return zh ? "通过学校网站提交" : "Report through the school website"
+        case "PHONE": return zh ? "致电学校考勤办公室" : "Call the school attendance office"
+        case "EMAIL": return zh ? "通过电子邮件联系学校" : "Email the school"
+        case "ONLINE_OR_PHONE": return zh ? "通过学校网站或电话申报" : "Report online or by phone"
+        case "CONTACT_SCHOOL": return zh ? "请联系学校确认办理方式" : "Contact the school for instructions"
+        default: return zh ? "请按学校官方说明办理" : "Follow the school's official instructions"
         }
     }
 
