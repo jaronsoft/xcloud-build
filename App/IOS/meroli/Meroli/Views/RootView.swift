@@ -2941,6 +2941,28 @@ private struct EnrollmentEditorSheet: View {
     private var zh: Bool { session.usesChinese }
     private var selectedSchool: ParentSchoolDTO? { session.schools.first { $0.id == schoolId } }
     private var selectedYear: SchoolYearDTO? { session.schoolYears.first { $0.id == schoolYearId } }
+    private var availableSchoolYears: [SchoolYearDTO] {
+        session.schoolYears.filter { $0.districtId == nil || $0.districtId == districtId }
+    }
+    private var targetCurrentSchoolYear: SchoolYearDTO? {
+        guard !districtId.isEmpty else { return nil }
+        let timezoneId = session.districts.first(where: { $0.id == districtId })?.timezone
+            ?? "America/Los_Angeles"
+        guard let timezone = TimeZone(identifier: timezoneId) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timezone
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = timezone
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = formatter.string(from: Date())
+        let matchingYears = availableSchoolYears.filter { year in
+            String(year.startDate.prefix(10)) <= today
+                && String(year.endDate.prefix(10)) >= today
+        }
+        return matchingYears.count == 1 ? matchingYears.first : nil
+    }
     private var needsScheduleConfirmation: Bool { current == nil || schoolId != current?.schoolId }
     private var scheduleChoiceIncomplete: Bool {
         needsScheduleConfirmation && (!hasLoadedSchedulePrograms
@@ -2987,6 +3009,11 @@ private struct EnrollmentEditorSheet: View {
                     .onChange(of: districtId) { _, value in
                         schoolId = ""
                         gradeCode = ""
+                        if current == nil || value != current?.districtId {
+                            schoolYearId = targetCurrentSchoolYear?.id ?? ""
+                        } else {
+                            schoolYearId = current?.schoolYearId ?? ""
+                        }
                         Task { await session.loadSchools(districtId: value) }
                     }
 
@@ -3029,11 +3056,11 @@ private struct EnrollmentEditorSheet: View {
                 Section(zh ? "入学资料" : "Enrollment") {
                     Picker(zh ? "学年" : "School year", selection: $schoolYearId) {
                         Text(zh ? "选择学年" : "Choose a school year").tag("")
-                        ForEach(session.schoolYears) { year in Text(year.name).tag(year.id) }
+                        ForEach(availableSchoolYears) { year in Text(year.name).tag(year.id) }
                     }
-                    .disabled(current != nil || session.isLoadingCatalog)
+                    .disabled((current != nil && districtId == current?.districtId) || session.isLoadingCatalog)
                     .onChange(of: schoolYearId) { _, _ in
-                        guard current == nil, !schoolId.isEmpty else { return }
+                        guard needsScheduleConfirmation, !schoolId.isEmpty else { return }
                         Task { await loadSchedulePrograms(for: schoolId) }
                     }
 
@@ -3186,7 +3213,9 @@ private struct EnrollmentEditorSheet: View {
                 Button(zh ? "更换学校并保留历史" : "Change school and keep history") { save() }
                 Button(zh ? "取消" : "Cancel", role: .cancel) {}
             } message: {
-                Text(zh ? "当前学校记录会结束并保留在历史中，新学校将关联到当前学年。" : "The current school record will be completed and kept in history. The new school will use the current school year.")
+                Text(zh
+                    ? "当前学校记录会结束并保留在历史中，新学校将关联到所选学区的当前学年。"
+                    : "The current school record will be completed and kept in history. The new school will use the selected district’s current school year.")
             }
             .task { await load() }
         }
@@ -3209,7 +3238,7 @@ private struct EnrollmentEditorSheet: View {
             await session.restorePendingSchoolChange(childId: child.id)
         } else {
             districtId = session.districts.first?.id ?? ""
-            schoolYearId = session.schoolYears.first?.id ?? ""
+            schoolYearId = targetCurrentSchoolYear?.id ?? ""
             if !districtId.isEmpty {
                 await session.loadSchools(districtId: districtId)
                 schoolId = session.schools.first?.id ?? ""

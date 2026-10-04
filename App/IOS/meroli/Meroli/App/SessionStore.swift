@@ -75,6 +75,7 @@ struct EnrollmentSchoolChangeReceipt: Codable {
     let schoolYearId: String
     let oldGradeCode: String
     let targetSchoolId: String
+    let targetSchoolYearId: String?
     let targetGradeCode: String
     let knownEnrollmentIds: [String]
     let selectionStatus: String?
@@ -718,7 +719,7 @@ final class SessionStore {
                     let fresh = try await fetchEnrollments()
                     guard let source = fresh.first(where: {
                         $0.id == current.id && $0.childId == child.id && $0.schoolId == current.schoolId
-                    }), source.isCurrent, source.schoolYearId == schoolYear.id else {
+                    }), source.isCurrent, source.schoolYearId == current.schoolYearId else {
                         throw APIClientError.unacceptableStatusCode(409)
                     }
                     let receipt = EnrollmentSchoolChangeReceipt(
@@ -729,6 +730,7 @@ final class SessionStore {
                         schoolYearId: source.schoolYearId,
                         oldGradeCode: source.gradeCode,
                         targetSchoolId: school.id,
+                        targetSchoolYearId: schoolYear.id,
                         targetGradeCode: gradeCode,
                         knownEnrollmentIds: fresh.filter { $0.childId == child.id }.map(\.id).sorted(),
                         selectionStatus: selectionStatus,
@@ -741,6 +743,7 @@ final class SessionStore {
                     do {
                         _ = try await authorized(path: "enrollments/\(current.id)/school-settings", method: "PUT", json: [
                             "school_id": school.id,
+                            "school_year_id": schoolYear.id,
                             "grade": grade,
                             "selection_status": selectionStatus,
                             "program_ids": selectionStatus == "SELECTED" ? programIds.sorted() : []
@@ -1105,7 +1108,7 @@ final class SessionStore {
                   let next = additions.first,
                   next.status == "ACTIVE",
                   next.schoolId == receipt.targetSchoolId,
-                  next.schoolYearId == receipt.schoolYearId,
+                  next.schoolYearId == (receipt.targetSchoolYearId ?? receipt.schoolYearId),
                   next.gradeCode == receipt.targetGradeCode,
                   activeTargets.filter({ $0.status == "ACTIVE" }).count == 1 else {
                 pendingSchoolChange = receipt
