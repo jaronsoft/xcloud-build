@@ -15,9 +15,9 @@ Meroli 原生 iOS 客户端工程，使用 SwiftUI + URLSession，目录与配�
 
 ## 开发 API
 
-仓库 .NET API 在 `API/WebAPI/appsettings.json` 中监听 `http://*:8980`。`*` 表示服务监听所有网卡，不能作为客户端请求地址。模拟器默认使用 `http://localhost:8980`；真机请将 `Configuration/Debug.Local.xcconfig.example` 复制为 `Configuration/Debug.Local.xcconfig`，把地址改为运行 API 的开发机局域网 IP，例如 `http://192.168.1.20:8980`。
+Debug 与 Release 默认都使用正式 HTTPS 地址 `https://api.wekarepartners.com`，与 MOSA 共用 API 服务器。只有明确需要连接本地 API 时，才将 `Configuration/Debug.Local.xcconfig.example` 复制为 `Configuration/Debug.Local.xcconfig`，并改为运行 API 的开发机局域网 IP，例如 `http://192.168.1.20:8980`。本地覆盖文件已加入忽略规则，不会进入版本库。
 
-`Debug.Local.xcconfig` 已加入忽略规则，本机地址不会进入版本库。Debug 配置仅开放本地网络 HTTP；Release 没有默认 API 地址，配置正式 HTTPS API 前不能用于连接服务。
+Meroli API 通过 `/api/v1` 下的独立 Meroli 路由访问，不会覆盖 MOSA 的业务路由。
 
 ## 打开运行
 

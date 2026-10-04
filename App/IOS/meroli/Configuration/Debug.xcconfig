@@ -1,2 +1,2 @@
-MEROLI_API_BASE_URL = http:/$()/localhost:8980
+MEROLI_API_BASE_URL = https:/$()/api.wekarepartners.com
 #include? "Debug.Local.xcconfig"

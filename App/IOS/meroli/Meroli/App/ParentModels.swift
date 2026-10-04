@@ -124,6 +124,8 @@ struct SchoolYearTransitionDTO: Decodable, Identifiable {
     let suggestedGradeCode: String?
     let targetSchoolYearId: String?
     let targetSchoolYearLabel: String?
+    let transitionAvailable: Bool?
+    let transitionAvailableDate: String?
     let programReconfirmationRequired: Bool
 }
 
@@ -177,11 +179,18 @@ struct DailyScheduleDTO: Decodable, Identifiable {
     let scheduleType: String?
     let scheduleCode: String?
     let variantCode: String?
+    let firstPeriodCode: String?
+    let arrivalLabel: String?
+    let explanationKey: String?
     let arrivalTime: String?
     let dismissalTime: String?
     let reason: String?
     let eventTitles: [String]
     let periods: [DailySchedulePeriodDTO]?
+}
+
+struct NextInstructionalDayDTO: Decodable {
+    let date: String?
 }
 
 struct DailySchedulePeriodDTO: Decodable, Identifiable {

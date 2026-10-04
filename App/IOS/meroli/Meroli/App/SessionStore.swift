@@ -76,6 +76,8 @@ struct EnrollmentSchoolChangeReceipt: Codable {
     let targetSchoolId: String
     let targetGradeCode: String
     let knownEnrollmentIds: [String]
+    let selectionStatus: String?
+    let programIds: [String]?
 }
 
 @MainActor
@@ -90,6 +92,7 @@ final class SessionStore {
     private(set) var enrollments: [EnrollmentDTO] = []
     private(set) var schoolYearTransitions: [SchoolYearTransitionDTO] = []
     private(set) var transitionPrograms: [ScheduleProgramDTO] = []
+    private(set) var hasLoadedTransitionPrograms = false
     private(set) var districts: [DistrictDTO] = []
     private(set) var schoolYears: [SchoolYearDTO] = []
     private(set) var schools: [ParentSchoolDTO] = []
@@ -98,6 +101,9 @@ final class SessionStore {
     private(set) var isLoadingHomeEvents = false
     private(set) var homeEventsErrorMessage: String?
     private(set) var dailySchedules: [DailyScheduleDTO] = []
+    private(set) var nextInstructionalDay: String?
+    private(set) var isLoadingNextInstructionalDay = false
+    private(set) var nextInstructionalDayErrorMessage: String?
     private(set) var tomorrowDailySchedules: [DailyScheduleDTO] = []
     private(set) var isLoadingTomorrowSchedules = false
     private(set) var tomorrowSchedulesErrorMessage: String?
@@ -141,6 +147,9 @@ final class SessionStore {
     @ObservationIgnored private var lastCalendarRequest: (start: Date, end: Date, childId: String?)?
     @ObservationIgnored private var lastHomeEventsRequest: (start: Date, end: Date, childId: String?)?
     @ObservationIgnored private var lastDailyScheduleDate: Date?
+    @ObservationIgnored private var lastNextInstructionalDayRequest: String?
+    @ObservationIgnored private var pendingNextInstructionalDayRequest: String?
+    @ObservationIgnored private var nextInstructionalDayLoadGeneration = 0
     @ObservationIgnored private var lastTomorrowScheduleDate: Date?
     @ObservationIgnored private var lastSchoolOverviewId: String?
     @ObservationIgnored private var lastPerformanceHistorySchoolId: String?
@@ -344,19 +353,27 @@ final class SessionStore {
         }
     }
 
-    func loadTransitionPrograms(schoolId: String) async {
+    func loadTransitionPrograms(schoolId: String, schoolYearId: String? = nil) async -> [ScheduleProgramDTO]? {
         programsLoadGeneration += 1
         let generation = programsLoadGeneration
         transitionPrograms = []
-        guard !schoolId.isEmpty else { return }
+        hasLoadedTransitionPrograms = false
+        guard !schoolId.isEmpty else { return nil }
         do {
-            let data = try await send(path: "schools/\(schoolId)/schedule-programs")
+            var query: [URLQueryItem] = []
+            if let schoolYearId, !schoolYearId.isEmpty {
+                query.append(URLQueryItem(name: "schoolYearId", value: schoolYearId))
+            }
+            let data = try await send(path: "schools/\(schoolId)/schedule-programs", query: query)
             let result = try decoder.decode(APIEnvelope<[ScheduleProgramDTO]>.self, from: data).response
-            guard generation == programsLoadGeneration else { return }
+            guard generation == programsLoadGeneration else { return nil }
             transitionPrograms = result
+            hasLoadedTransitionPrograms = true
+            return result
         } catch {
-            guard generation == programsLoadGeneration else { return }
+            guard generation == programsLoadGeneration else { return nil }
             errorMessage = message(for: error)
+            return nil
         }
     }
 
@@ -440,12 +457,9 @@ final class SessionStore {
         }
         do {
             let value = schoolDateString(date)
-            var items: [DailyScheduleDTO] = []
-            for child in children {
-                let data = try await authorized(path: "children/\(child.id)/daily-schedule",
-                    query: [URLQueryItem(name: "date", value: value)])
-                items.append(try decoder.decode(APIEnvelope<DailyScheduleDTO>.self, from: data).response)
-            }
+            let data = try await authorized(path: "daily-schedules",
+                query: [URLQueryItem(name: "date", value: value)])
+            let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
             guard generation == dailySchedulesLoadGeneration, accessToken != nil else { return }
             dailySchedules = items
             homeErrorMessage = nil
@@ -454,6 +468,38 @@ final class SessionStore {
             guard generation == dailySchedulesLoadGeneration else { return }
             homeErrorMessage = message(for: error)
             errorMessage = message(for: error)
+        }
+    }
+
+    func loadNextInstructionalDay(after date: Date, childId: String? = nil) async {
+        guard api != nil, accessToken != nil else { return }
+        let value = schoolDateString(date)
+        let requestKey = "\(value)|\(childId ?? "")"
+        guard lastNextInstructionalDayRequest != requestKey, pendingNextInstructionalDayRequest != requestKey else { return }
+        nextInstructionalDayLoadGeneration += 1
+        let generation = nextInstructionalDayLoadGeneration
+        pendingNextInstructionalDayRequest = requestKey
+        nextInstructionalDay = nil
+        isLoadingNextInstructionalDay = true
+        nextInstructionalDayErrorMessage = nil
+        defer {
+            if generation == nextInstructionalDayLoadGeneration {
+                pendingNextInstructionalDayRequest = nil
+                isLoadingNextInstructionalDay = false
+            }
+        }
+        var query = [URLQueryItem(name: "date", value: value)]
+        if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
+        do {
+            let data = try await authorized(path: "next-instructional-day", query: query)
+            let result = try decoder.decode(APIEnvelope<NextInstructionalDayDTO>.self, from: data).response
+            guard generation == nextInstructionalDayLoadGeneration, accessToken != nil else { return }
+            nextInstructionalDay = result.date
+            lastNextInstructionalDayRequest = requestKey
+        } catch {
+            if generation == nextInstructionalDayLoadGeneration {
+                nextInstructionalDayErrorMessage = message(for: error)
+            }
         }
     }
 
@@ -468,12 +514,9 @@ final class SessionStore {
         }
         do {
             let value = schoolDateString(date)
-            var items: [DailyScheduleDTO] = []
-            for child in children {
-                let data = try await authorized(path: "children/\(child.id)/daily-schedule",
-                    query: [URLQueryItem(name: "date", value: value)])
-                items.append(try decoder.decode(APIEnvelope<DailyScheduleDTO>.self, from: data).response)
-            }
+            let data = try await authorized(path: "daily-schedules",
+                query: [URLQueryItem(name: "date", value: value)])
+            let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
             guard generation == tomorrowSchedulesLoadGeneration, accessToken != nil else { return }
             tomorrowDailySchedules = items
             tomorrowSchedulesErrorMessage = nil
@@ -588,7 +631,9 @@ final class SessionStore {
         current: EnrollmentDTO?,
         school: ParentSchoolDTO,
         schoolYear: SchoolYearDTO,
-        gradeCode: String
+        gradeCode: String,
+        selectionStatus: String = "NOT_SURE",
+        programIds: [String] = []
     ) async -> Bool {
         guard let grade = gradeNumber(for: gradeCode) else {
             errorMessage = usesChinese ? "请选择有效年级。" : "Choose a valid grade."
@@ -649,14 +694,21 @@ final class SessionStore {
                         oldGradeCode: source.gradeCode,
                         targetSchoolId: school.id,
                         targetGradeCode: gradeCode,
-                        knownEnrollmentIds: fresh.filter { $0.childId == child.id }.map(\.id).sorted()
+                        knownEnrollmentIds: fresh.filter { $0.childId == child.id }.map(\.id).sorted(),
+                        selectionStatus: selectionStatus,
+                        programIds: selectionStatus == "SELECTED" ? programIds.sorted() : []
                     )
                     guard KeychainRefreshToken.saveSchoolChangeReceipt(receipt, key: key) else {
                         throw APIClientError.secureStorageUnavailable
                     }
                     pendingSchoolChange = receipt
                     do {
-                        _ = try await authorized(path: "enrollments/\(current.id)/school-settings", method: "PUT", json: ["school_id": school.id, "grade": grade])
+                        _ = try await authorized(path: "enrollments/\(current.id)/school-settings", method: "PUT", json: [
+                            "school_id": school.id,
+                            "grade": grade,
+                            "selection_status": selectionStatus,
+                            "program_ids": selectionStatus == "SELECTED" ? programIds.sorted() : []
+                        ])
                     } catch let error as APIClientError where [401, 403, 404, 422].contains(error.statusCode ?? 0) {
                         _ = KeychainRefreshToken.deleteReceipt(key: key)
                         pendingSchoolChange = nil
@@ -673,7 +725,9 @@ final class SessionStore {
                     "child_id": child.id,
                     "school_id": school.id,
                     "school_year_id": schoolYear.id,
-                    "grade": grade
+                    "grade": grade,
+                    "selection_status": selectionStatus,
+                    "program_ids": selectionStatus == "SELECTED" ? programIds.sorted() : []
                 ])
             }
             let enrollment = try decoder.decode(APIEnvelope<EnrollmentDTO>.self, from: data).response
@@ -981,6 +1035,14 @@ final class SessionStore {
         return try decoder.decode(APIEnvelope<ChildDTO>.self, from: data).response
     }
 
+    private func fetchScheduleProfile(childId: String, schoolId: String) async throws -> ScheduleProfileDTO {
+        let data = try await authorized(
+            path: "children/\(childId)/schedule-profile",
+            query: [URLQueryItem(name: "school_id", value: schoolId)]
+        )
+        return try decoder.decode(APIEnvelope<ScheduleProfileDTO>.self, from: data).response
+    }
+
     private func reconcileSchoolChange(childId: String) async -> Bool {
         guard let receipt = pendingSchoolChange ?? KeychainRefreshToken.readSchoolChangeReceipt(key: schoolChangeKey(childId: childId)),
               receipt.userId == userId, receipt.childId == childId else { return false }
@@ -1008,6 +1070,18 @@ final class SessionStore {
                     ? "换校结果尚未核实。请只检查状态，不要重复提交。"
                     : "The school change is unconfirmed. Check its status; do not submit it again."
                 return false
+            }
+            if let expectedStatus = receipt.selectionStatus {
+                let profile = try await fetchScheduleProfile(childId: childId, schoolId: receipt.targetSchoolId)
+                let expectedPrograms = (receipt.programIds ?? []).sorted()
+                guard profile.selectionStatus == expectedStatus,
+                      profile.programIds.sorted() == expectedPrograms else {
+                    pendingSchoolChange = receipt
+                    errorMessage = usesChinese
+                        ? "新学校的作息项目尚未确认完成，请只检查状态，不要重复换校。"
+                        : "The new school's schedule choices are not confirmed. Check status; do not repeat the school change."
+                    return false
+                }
             }
             _ = KeychainRefreshToken.deleteReceipt(key: schoolChangeKey(childId: childId))
             pendingSchoolChange = nil
@@ -1303,6 +1377,7 @@ final class SessionStore {
         calendarLoadGeneration += 1
         homeEventsLoadGeneration += 1
         dailySchedulesLoadGeneration += 1
+        nextInstructionalDayLoadGeneration += 1
         tomorrowSchedulesLoadGeneration += 1
         schoolOverviewLoadGeneration += 1
         performanceHistoryLoadGeneration += 1
@@ -1311,6 +1386,8 @@ final class SessionStore {
         lastCalendarRequest = nil
         lastHomeEventsRequest = nil
         lastDailyScheduleDate = nil
+        lastNextInstructionalDayRequest = nil
+        pendingNextInstructionalDayRequest = nil
         lastTomorrowScheduleDate = nil
         lastSchoolOverviewId = nil
         lastPerformanceHistorySchoolId = nil
@@ -1325,6 +1402,7 @@ final class SessionStore {
         enrollments = []
         schoolYearTransitions = []
         transitionPrograms = []
+        hasLoadedTransitionPrograms = false
         districts = []
         schoolYears = []
         catalogErrorMessage = nil
@@ -1333,6 +1411,8 @@ final class SessionStore {
         homeEvents = []
         homeEventsErrorMessage = nil
         dailySchedules = []
+        nextInstructionalDay = nil
+        nextInstructionalDayErrorMessage = nil
         tomorrowDailySchedules = []
         tomorrowSchedulesErrorMessage = nil
         scheduleProfile = nil
@@ -1348,6 +1428,7 @@ final class SessionStore {
         isLoadingSchools = false
         isLoadingCalendar = false
         isLoadingHome = false
+        isLoadingNextInstructionalDay = false
         isLoadingHomeEvents = false
         isLoadingTomorrowSchedules = false
         isLoadingSchoolOverview = false

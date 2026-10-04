@@ -35,8 +35,6 @@
 	<dict>
 		<key>UIColorName</key>
 		<string>MeroliLaunchBackground</string>
-		<key>UIImageName</key>
-		<string>MeroliMark</string>
 	</dict>
 	<key>MeroliAPIBaseURL</key>
 	<string>$(MEROLI_API_BASE_URL)</string>

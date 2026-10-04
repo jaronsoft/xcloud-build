@@ -13,9 +13,19 @@ private enum MeroliColor {
     static let paleGreen = Color(red: 235 / 255, green: 243 / 255, blue: 238 / 255)
 }
 
+private func externalWebURL(_ value: String?) -> URL? {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !value.isEmpty,
+          let components = URLComponents(string: value),
+          ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+          components.host != nil else { return nil }
+    return components.url
+}
+
 struct RootView: View {
     @Environment(SessionStore.self) private var session
     @AppStorage("meroli.hasCompletedNetworkGuide") private var hasCompletedNetworkGuide = false
+    @State private var isStartupSplashVisible = true
 
     var body: some View {
         ZStack {
@@ -35,6 +45,11 @@ struct RootView: View {
                     }
                 }
             }
+            if isStartupSplashVisible {
+                StartupSplashView()
+                    .transition(.opacity)
+                    .zIndex(1)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MeroliColor.canvas.ignoresSafeArea())
@@ -49,11 +64,75 @@ struct RootView: View {
             }
         }
         .task {
+            try? await Task.sleep(nanoseconds: 850_000_000)
+            withAnimation(.easeOut(duration: 0.22)) {
+                isStartupSplashVisible = false
+            }
             if hasCompletedNetworkGuide {
                 await session.restore()
             }
         }
         .onOpenURL { session.handleIncomingURL($0) }
+    }
+}
+
+private struct StartupSplashView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var markIsVisible = false
+    @State private var haloIsVisible = false
+    @State private var titleIsVisible = false
+
+    var body: some View {
+        ZStack {
+            MeroliColor.canvas.ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                ZStack {
+                    Circle()
+                        .stroke(MeroliColor.gold.opacity(0.75), lineWidth: 1.5)
+                        .frame(width: 146, height: 146)
+                        .scaleEffect(haloIsVisible ? 1.12 : 0.72)
+                        .opacity(haloIsVisible ? 0 : 0.9)
+
+                    Image("MeroliMark")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 112, height: 112)
+                        .clipShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
+                        .shadow(color: MeroliColor.ink.opacity(0.16), radius: 18, y: 8)
+                        .scaleEffect(markIsVisible ? 1 : 0.72)
+                        .offset(y: markIsVisible ? 0 : 12)
+                        .opacity(markIsVisible ? 1 : 0)
+                }
+
+                Text("Meroli")
+                    .font(.system(size: 31, weight: .bold, design: .serif))
+                    .foregroundStyle(MeroliColor.ink)
+                    .opacity(titleIsVisible ? 1 : 0)
+                    .offset(y: titleIsVisible ? 0 : 7)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Meroli")
+        }
+        .onAppear {
+            if reduceMotion {
+                markIsVisible = true
+                haloIsVisible = true
+                titleIsVisible = true
+                return
+            }
+
+            withAnimation(.spring(response: 0.62, dampingFraction: 0.68)) {
+                markIsVisible = true
+            }
+            withAnimation(.easeOut(duration: 0.72)) {
+                haloIsVisible = true
+            }
+            withAnimation(.easeOut(duration: 0.32).delay(0.18)) {
+                titleIsVisible = true
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -537,7 +616,7 @@ private struct FamilyTabView: View {
                 .tabItem { Label(zh ? "首页" : "Home", systemImage: "sun.max") }
             FamilyScreen()
                 .tag(1)
-                .tabItem { Label(zh ? "家庭" : "Family", systemImage: "person.2") }
+                .tabItem { Label(zh ? "学校" : "Schools", systemImage: "building.2") }
             CalendarScreen()
                 .tag(2)
                 .tabItem { Label(zh ? "日历" : "Calendar", systemImage: "calendar") }
@@ -612,6 +691,11 @@ private struct HomeScreen: View {
     private var selectedSchedules: [DailyScheduleDTO] {
         selectedChildId.isEmpty ? session.dailySchedules : session.dailySchedules.filter { $0.childId == selectedChildId }
     }
+    private var selectedDayHasNoInstructionalSchedule: Bool {
+        !selectedSchedules.isEmpty && selectedSchedules.allSatisfy {
+            $0.status == "NO_SCHOOL" || $0.status == "NON_INSTRUCTIONAL_DAY"
+        }
+    }
     private var selectedTomorrowSchedules: [DailyScheduleDTO] {
         selectedChildId.isEmpty ? session.tomorrowDailySchedules : session.tomorrowDailySchedules.filter { $0.childId == selectedChildId }
     }
@@ -620,25 +704,20 @@ private struct HomeScreen: View {
             ? session.homeEvents
             : session.homeEvents.filter { $0.children.contains { $0.id == selectedChildId } })
     }
+    private var todayEvents: [ParentEventDTO] {
+        visibleEvents.filter { eventCovers($0, dateKey: dateKey(offset: 0)) }
+    }
     private var tomorrowEvents: [ParentEventDTO] {
         visibleEvents.filter { eventCovers($0, dateKey: dateKey(offset: 1)) }
     }
     private var thisWeekEvents: [ParentEventDTO] {
-        let tomorrowIds = Set(tomorrowEvents.map(\.id))
+        let earlierEventIds = Set(todayEvents.map(\.id) + tomorrowEvents.map(\.id))
         return visibleEvents.filter {
-            !tomorrowIds.contains($0.id)
+            !earlierEventIds.contains($0.id)
                 && ($0.endDate ?? $0.startDate) >= dateKey(offset: 2)
                 && $0.startDate <= dateKey(offset: 7)
         }
     }
-    private var needToKnowEvents: [ParentEventDTO] {
-        visibleEvents.filter {
-            $0.parentRelevance == "ACTION_REQUIRED"
-                && ($0.endDate ?? $0.startDate) >= dateKey(offset: 0)
-                && $0.startDate <= dateKey(offset: 7)
-        }
-    }
-
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -684,7 +763,26 @@ private struct HomeScreen: View {
                         .background(.white, in: RoundedRectangle(cornerRadius: 18))
                     } else {
                         sectionHeading(zh ? "今天" : "Today")
-                        ForEach(selectedSchedules) { item in
+                        if selectedDayHasNoInstructionalSchedule {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label(zh ? "这一天没有常规上课" : "No regular school on this day", systemImage: "sun.max")
+                                    .font(.headline).foregroundStyle(MeroliColor.ink)
+                                if session.isLoadingNextInstructionalDay {
+                                    ProgressView(zh ? "正在查找下一次上课日…" : "Finding the next school day…")
+                                } else if let nextDate = session.nextInstructionalDay {
+                                    Text(zh ? "下一次上课：\(nextInstructionalDateLabel(nextDate))" : "Next school day: \(nextInstructionalDateLabel(nextDate))")
+                                        .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                } else if let error = session.nextInstructionalDayErrorMessage {
+                                    Text(error).font(.subheadline).foregroundStyle(MeroliColor.coral)
+                                } else {
+                                    Text(zh ? "未来 21 天内暂未找到上课日。" : "No instructional day was found in the next 21 days.")
+                                        .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                }
+                            }
+                            .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 18))
+                        } else {
+                            ForEach(selectedSchedules) { item in
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 3) {
@@ -699,7 +797,7 @@ private struct HomeScreen: View {
                                 }
                                 if item.status == "OK" {
                                     HStack(spacing: 20) {
-                                        scheduleTime(title: zh ? "到校" : "Arrival", value: item.arrivalTime)
+                                        scheduleTime(title: arrivalTimeLabel(item), value: item.arrivalTime)
                                         scheduleTime(title: zh ? "放学" : "Dismissal", value: item.dismissalTime)
                                     }
                                     if let scheduleType = item.scheduleType {
@@ -725,21 +823,25 @@ private struct HomeScreen: View {
                                         }
                                         .padding(.top, 4)
                                     }
-                                }
-                                if !item.eventTitles.isEmpty {
-                                    ForEach(item.eventTitles, id: \.self) { title in Label(title, systemImage: "calendar.badge.exclamationmark").font(.subheadline) }
+                                    if session.homeEventsErrorMessage != nil, !item.eventTitles.isEmpty {
+                                        ForEach(item.eventTitles, id: \.self) { title in
+                                            Label(title, systemImage: "calendar.badge.exclamationmark")
+                                                .font(.subheadline)
+                                        }
+                                    }
                                 }
                             }
                             .padding(18).background(.white, in: RoundedRectangle(cornerRadius: 18))
+                            }
                         }
                     }
                     if let error = session.homeEventsErrorMessage {
                         Label(error, systemImage: "exclamationmark.triangle")
                             .font(.caption).foregroundStyle(MeroliColor.coral)
                     }
-                    if !needToKnowEvents.isEmpty {
-                        sectionHeading(zh ? "需要留意" : "Need to Know")
-                        eventList(needToKnowEvents)
+                    if !todayEvents.isEmpty {
+                        sectionHeading(zh ? "今天学校动态" : "Today’s School Updates")
+                        eventList(todayEvents)
                     }
                     sectionHeading(zh ? "明天" : "Tomorrow")
                     if session.isLoadingTomorrowSchedules && selectedTomorrowSchedules.isEmpty {
@@ -764,16 +866,17 @@ private struct HomeScreen: View {
                             }
                             if item.status == "OK" {
                                 HStack(spacing: 20) {
-                                    scheduleTime(title: zh ? "到校" : "Arrival", value: item.arrivalTime)
+                                    scheduleTime(title: arrivalTimeLabel(item), value: item.arrivalTime)
                                     scheduleTime(title: zh ? "放学" : "Dismissal", value: item.dismissalTime)
                                 }
                                 if let scheduleType = item.scheduleType {
                                     Text(scheduleTypeLabel(scheduleType)).font(.caption).foregroundStyle(MeroliColor.muted)
                                 }
                             }
-                            if !item.eventTitles.isEmpty {
+                            if session.homeEventsErrorMessage != nil, !item.eventTitles.isEmpty {
                                 ForEach(item.eventTitles, id: \.self) { title in
-                                    Label(title, systemImage: "calendar.badge.exclamationmark").font(.subheadline)
+                                    Label(title, systemImage: "calendar.badge.exclamationmark")
+                                        .font(.subheadline)
                                 }
                             }
                         }
@@ -802,6 +905,7 @@ private struct HomeScreen: View {
             .refreshable {
                 await session.loadFamily()
                 await session.loadDailySchedules(for: date)
+                await loadNextInstructionalDayIfNeeded()
                 await session.loadTomorrowDailySchedules(for: tomorrowDate)
                 await loadHomeEvents()
             }
@@ -825,9 +929,15 @@ private struct HomeScreen: View {
     private func refresh() {
         Task {
             await session.loadDailySchedules(for: date)
+            await loadNextInstructionalDayIfNeeded()
             await session.loadTomorrowDailySchedules(for: tomorrowDate)
             await loadHomeEvents()
         }
+    }
+
+    private func loadNextInstructionalDayIfNeeded() async {
+        guard selectedDayHasNoInstructionalSchedule else { return }
+        await session.loadNextInstructionalDay(after: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
     }
 
     private var tomorrowDate: Date {
@@ -898,6 +1008,18 @@ private struct HomeScreen: View {
         return formatter.string(from: date)
     }
 
+    private func nextInstructionalDateLabel(_ value: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
+        formatter.calendar = Self.schoolCalendar
+        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        guard let date = formatter.date(from: value) else { return value }
+        formatter.dateStyle = .full
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
+    }
+
     private func statusLabel(_ status: String) -> String {
         switch status {
         case "OK": return zh ? "正常上课" : "School day"
@@ -927,6 +1049,13 @@ private struct HomeScreen: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).font(.caption).foregroundStyle(MeroliColor.muted)
             Text(value ?? "—").font(.title3.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+        }
+    }
+
+    private func arrivalTimeLabel(_ schedule: DailyScheduleDTO) -> String {
+        switch schedule.arrivalLabel ?? (schedule.firstPeriodCode == "P0" ? "PERIOD_0_START" : "SCHOOL_START") {
+        case "PERIOD_0_START": return zh ? "第0节开始" : "Period 0 starts"
+        default: return zh ? "到校" : "Arrival"
         }
     }
 }
@@ -1513,7 +1642,7 @@ private struct FamilyScreen: View {
                                                 .buttonStyle(.bordered)
                                             }
                                         }
-                                        .disabled(session.isSavingSchoolYearTransition)
+                                        .disabled(session.isSavingSchoolYearTransition || transition.transitionAvailable != true)
                                     } else if let targetYearId = transition.targetSchoolYearId, let grade = transition.suggestedGrade {
                                         Button {
                                             Task {
@@ -1527,7 +1656,14 @@ private struct FamilyScreen: View {
                                         }
                                         .buttonStyle(.borderedProminent)
                                         .tint(MeroliColor.ink)
-                                        .disabled(session.isSavingSchoolYearTransition)
+                                        .disabled(session.isSavingSchoolYearTransition || transition.transitionAvailable != true)
+                                    }
+                                    if transition.transitionAvailable != true {
+                                        Text(zh
+                                             ? "可在当前学年结束后（\(transition.transitionAvailableDate ?? "")）确认下一学年安排。"
+                                             : "You can confirm next year after this school year ends (\(transition.transitionAvailableDate ?? "")).")
+                                            .font(.caption)
+                                            .foregroundStyle(MeroliColor.muted)
                                     }
                                 }
                                 .padding(.vertical, 3)
@@ -1617,15 +1753,19 @@ private struct FamilyScreen: View {
                                             Image(systemName: "building.2")
                                                 .foregroundStyle(MeroliColor.ink)
                                             VStack(alignment: .leading, spacing: 3) {
-                                                Text(currentEnrollment(for: child)?.schoolName ?? (zh ? "尚未关联学校" : "No school linked yet"))
+                                                Text(displayedEnrollment(for: child)?.schoolName ?? (zh ? "尚未关联学校" : "No school linked yet"))
                                                     .font(.subheadline.weight(.semibold))
                                                     .foregroundStyle(MeroliColor.ink)
-                                                Text(currentEnrollment(for: child).map { "\($0.schoolYearName) · \(localizedGrade($0.gradeCode))" } ?? (zh ? "添加孩子的学校与年级" : "Add this child’s school and grade"))
+                                                Text(displayedEnrollment(for: child).map {
+                                                    $0.status == "AWAITING_NEXT_SCHOOL"
+                                                        ? (zh ? "等待选择下一所学校 · \($0.schoolYearName) · \(localizedGrade($0.gradeCode))" : "Choose the next school · \($0.schoolYearName) · Grade \($0.gradeCode)")
+                                                        : "\($0.schoolYearName) · \(localizedGrade($0.gradeCode))"
+                                                } ?? (zh ? "添加孩子的学校与年级" : "Add this child’s school and grade"))
                                                     .font(.caption)
                                                     .foregroundStyle(MeroliColor.muted)
                                             }
                                             Spacer()
-                                            Text(currentEnrollment(for: child) == nil ? (zh ? "添加" : "Add") : (zh ? "管理" : "Manage"))
+                                            Text(displayedEnrollment(for: child) == nil ? (zh ? "添加" : "Add") : (zh ? "管理" : "Manage"))
                                                 .font(.caption.weight(.semibold))
                                                 .foregroundStyle(MeroliColor.ink)
                                             Image(systemName: "chevron.right")
@@ -1635,15 +1775,41 @@ private struct FamilyScreen: View {
                                         .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
+                                    .disabled(displayedEnrollment(for: child)?.status == "AWAITING_NEXT_SCHOOL")
                                     .accessibilityIdentifier("meroli.child.school.\(child.id)")
 
-                                    if let enrollment = currentEnrollment(for: child) {
+                                    if let enrollment = displayedEnrollment(for: child) {
                                         Button { viewingSchoolInfo = enrollment } label: {
                                             Label(zh ? "学校考勤与表现资料" : "Attendance and school information", systemImage: "building.2.crop.circle")
                                                 .font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
                                         }
                                         .buttonStyle(.plain)
                                         .padding(.top, 11)
+                                    }
+
+                                    let previousEnrollments = historicalEnrollments(for: child)
+                                    if !previousEnrollments.isEmpty {
+                                        Divider().overlay(MeroliColor.line).padding(.vertical, 12)
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text(zh ? "历史学校" : "Previous schools")
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(MeroliColor.muted)
+                                            ForEach(previousEnrollments) { enrollment in
+                                                HStack(alignment: .top, spacing: 9) {
+                                                    Image(systemName: "building.2.crop.circle")
+                                                        .foregroundStyle(MeroliColor.muted)
+                                                    VStack(alignment: .leading, spacing: 2) {
+                                                        Text(enrollment.schoolName)
+                                                            .font(.subheadline.weight(.medium))
+                                                            .foregroundStyle(MeroliColor.ink)
+                                                        Text("\(enrollment.schoolYearName) · \(localizedGrade(enrollment.gradeCode))")
+                                                            .font(.caption)
+                                                            .foregroundStyle(MeroliColor.muted)
+                                                    }
+                                                    Spacer(minLength: 0)
+                                                }
+                                            }
+                                        }
                                     }
 
                                     if currentEnrollment(for: child) != nil {
@@ -1705,6 +1871,17 @@ private struct FamilyScreen: View {
         session.enrollments.first { $0.childId == child.id && $0.isCurrent }
     }
 
+    private func displayedEnrollment(for child: ChildDTO) -> EnrollmentDTO? {
+        currentEnrollment(for: child)
+            ?? session.enrollments.first { $0.childId == child.id && $0.status == "AWAITING_NEXT_SCHOOL" }
+    }
+
+    private func historicalEnrollments(for child: ChildDTO) -> [EnrollmentDTO] {
+        session.enrollments
+            .filter { $0.childId == child.id && $0.status == "COMPLETED" }
+            .sorted { ($0.endedAt ?? $0.startedAt) > ($1.endedAt ?? $1.startedAt) }
+    }
+
     private func localizedGrade(_ grade: String) -> String {
         guard zh else { return grade == "K" ? "Kindergarten" : grade }
         switch grade {
@@ -1723,8 +1900,10 @@ private struct NextSchoolTransitionSheet: View {
     @State private var districtId = ""
     @State private var schoolId = ""
     @State private var gradeCode = ""
+    @State private var selectionStatus = ""
     @State private var selectedProgramIds: Set<String> = []
     @State private var didLoad = false
+    @State private var showsSchoolSearch = false
     private var zh: Bool { session.usesChinese }
     private var school: ParentSchoolDTO? { session.schools.first { $0.id == schoolId } }
 
@@ -1745,19 +1924,16 @@ private struct NextSchoolTransitionSheet: View {
                         selectedProgramIds = []
                         Task { await session.loadSchools(districtId: value) }
                     }
-                    if session.isLoadingSchools {
-                        ProgressView(zh ? "正在读取学校…" : "Loading schools…")
-                    } else {
-                        Picker(zh ? "学校" : "School", selection: $schoolId) {
-                            Text(zh ? "请选择学校" : "Choose a school").tag("")
-                            ForEach(session.schools) { Text($0.name).tag($0.id) }
-                        }
-                        .onChange(of: schoolId) { _, value in
-                            gradeCode = ""
-                            selectedProgramIds = []
-                            Task { await session.loadTransitionPrograms(schoolId: value) }
+                    Button { showsSchoolSearch = true } label: {
+                        HStack {
+                            Text(zh ? "学校" : "School").foregroundStyle(MeroliColor.ink)
+                            Spacer()
+                            Text(school?.name ?? (zh ? "搜索并选择学校" : "Search and choose a school"))
+                                .foregroundStyle(school == nil ? MeroliColor.muted : MeroliColor.ink)
+                            Image(systemName: "magnifyingglass").foregroundStyle(MeroliColor.muted)
                         }
                     }
+                    .disabled(districtId.isEmpty || session.isLoadingSchools)
                     if let school {
                         Picker(zh ? "年级" : "Grade", selection: $gradeCode) {
                             Text(zh ? "请选择年级" : "Choose a grade").tag("")
@@ -1765,13 +1941,9 @@ private struct NextSchoolTransitionSheet: View {
                         }
                     }
                 }
-                if !schoolId.isEmpty {
+                if !schoolId.isEmpty && !session.transitionPrograms.isEmpty {
                     Section(zh ? "课后项目（可选）" : "After-school programs (optional)") {
-                        if session.transitionPrograms.isEmpty {
-                            Text(zh ? "该校目前没有可选项目；稍后可在家庭页补充。" : "No programs are currently listed. You can update this later.")
-                                .font(.footnote).foregroundStyle(MeroliColor.muted)
-                        } else {
-                            ForEach(session.transitionPrograms) { program in
+                        ForEach(session.transitionPrograms) { program in
                                 Button {
                                     if selectedProgramIds.contains(program.id) {
                                         selectedProgramIds.remove(program.id)
@@ -1789,7 +1961,6 @@ private struct NextSchoolTransitionSheet: View {
                                     }
                                 }
                                 .buttonStyle(.plain)
-                            }
                         }
                     }
                 }
@@ -1799,7 +1970,10 @@ private struct NextSchoolTransitionSheet: View {
                 Section {
                     Button(zh ? "确认下一学年学校" : "Confirm next school") { save() }
                         .frame(maxWidth: .infinity)
-                        .disabled(session.isSavingSchoolYearTransition || school == nil || gradeCode.isEmpty || transition.targetSchoolYearId == nil)
+                        .disabled(session.isSavingSchoolYearTransition || school == nil || gradeCode.isEmpty
+                            || transition.targetSchoolYearId == nil || !session.hasLoadedTransitionPrograms
+                            || !session.transitionPrograms.isEmpty && (selectionStatus.isEmpty
+                                || selectionStatus == "SELECTED" && selectedProgramIds.isEmpty))
                 }
             }
             .scrollContentBackground(.hidden)
@@ -1807,6 +1981,23 @@ private struct NextSchoolTransitionSheet: View {
             .navigationTitle(zh ? "选择下一所学校" : "Choose next school")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(zh ? "关闭" : "Close") { dismiss() } } }
+            .sheet(isPresented: $showsSchoolSearch, onDismiss: {
+                guard !districtId.isEmpty else { return }
+                Task { await session.loadSchools(districtId: districtId) }
+            }) {
+                SchoolSearchSheet(districtId: districtId, selectedSchoolId: schoolId) { selected in
+                    schoolId = selected.id
+                    gradeCode = ""
+                    selectionStatus = ""
+                    selectedProgramIds = []
+                    Task {
+                        if let programs = await session.loadTransitionPrograms(schoolId: selected.id,
+                            schoolYearId: transition.targetSchoolYearId), programs.isEmpty {
+                            selectionStatus = "NONE"
+                        }
+                    }
+                }
+            }
             .task { await load() }
         }
         .presentationDetents([.medium, .large])
@@ -1827,6 +2018,7 @@ private struct NextSchoolTransitionSheet: View {
                 action: "next-school", targetYearId: yearId, extraPayload: [
                     "school_id": schoolId,
                     "grade": grade,
+                    "selection_status": selectionStatus.isEmpty ? "NOT_SURE" : selectionStatus,
                     "program_ids": Array(selectedProgramIds)
                 ])
             if saved { dismiss() }
@@ -1903,16 +2095,16 @@ private struct ScheduleProfileSheet: View {
                         }
                         VStack(alignment: .leading, spacing: 10) {
                             Text(zh ? "课后项目" : "After-school programs").font(.headline)
-                            Picker(zh ? "项目选择" : "Program selection", selection: $selectionStatus) {
-                                Text(zh ? "需要选择" : "Select programs").tag("SELECTED")
-                                Text(zh ? "没有项目" : "No programs").tag("NONE")
-                                Text(zh ? "暂不确定" : "Not sure yet").tag("NOT_SURE")
-                            }
-                            .pickerStyle(.segmented)
                             if profile.programs.isEmpty {
-                                Text(zh ? "学校还没有发布可选的课后项目。" : "The school has not published any selectable programs.")
+                                Text(zh ? "学校目前没有需要选择的到校时间项目。" : "No arrival-time programs need a selection right now.")
                                     .font(.subheadline).foregroundStyle(MeroliColor.muted)
                             } else {
+                                Picker(zh ? "项目选择" : "Program selection", selection: $selectionStatus) {
+                                    Text(zh ? "需要选择" : "Select programs").tag("SELECTED")
+                                    Text(zh ? "没有项目" : "No programs").tag("NONE")
+                                    Text(zh ? "暂不确定" : "Not sure yet").tag("NOT_SURE")
+                                }
+                                .pickerStyle(.segmented)
                                 ForEach(profile.programs) { program in
                                     Toggle(isOn: Binding(
                                         get: { programIds.contains(program.id) },
@@ -1956,9 +2148,9 @@ private struct ScheduleProfileSheet: View {
             .task {
                 await session.loadScheduleProfile(child: child, schoolId: schoolId)
                 if let profile = session.scheduleProfile, profile.childId == child.id, profile.schoolId == schoolId {
-                    selectionStatus = profile.selectionStatus
+                    selectionStatus = profile.programs.isEmpty ? "NONE" : profile.selectionStatus
                     variantCode = profile.scheduleVariantCode
-                    programIds = Set(profile.programIds)
+                    programIds = profile.programs.isEmpty ? [] : Set(profile.programIds)
                 }
                 isLoading = false
             }
@@ -2030,7 +2222,7 @@ private struct ParentSchoolOverviewSheet: View {
                                         .font(.subheadline)
                                 }
                             }
-                            if let website = overview.websiteUrl, let url = URL(string: website) {
+                            if let url = externalWebURL(overview.websiteUrl) {
                                 Link(destination: url) {
                                     Label(zh ? "学校官方网站" : "School website", systemImage: "arrow.up.right.square")
                                 }
@@ -2123,7 +2315,7 @@ private struct ParentSchoolOverviewSheet: View {
                                             .font(.subheadline)
                                     }
                                 }
-                                if let url = URL(string: attendance.attendanceUrl ?? "") {
+                                if let url = externalWebURL(attendance.attendanceUrl) {
                                     Link(destination: url) { Label(zh ? "打开学校请假页面" : "Open school attendance page", systemImage: "arrow.up.right.square") }
                                         .font(.subheadline.weight(.semibold))
                                 }
@@ -2202,7 +2394,7 @@ private struct ParentSchoolOverviewSheet: View {
                                     Divider().overlay(MeroliColor.line)
                                 }
                                 Text(performance.disclaimer).font(.caption).foregroundStyle(MeroliColor.muted)
-                                if let url = URL(string: performance.sourceUrl) {
+                                if let url = externalWebURL(performance.sourceUrl) {
                                     Link(destination: url) { Label(zh ? "查看官方来源" : "View official source", systemImage: "arrow.up.right.square") }
                                         .font(.subheadline.weight(.semibold))
                                 }
@@ -2236,7 +2428,8 @@ private struct ParentSchoolOverviewSheet: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(17)
                             .background(.white, in: RoundedRectangle(cornerRadius: 17))
-                        } else if let history = session.schoolPerformanceHistory, history.cycles.count > 1 {
+                        } else if let history = session.schoolPerformanceHistory,
+                                  history.cycles.count > 1 || !history.metrics.isEmpty {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text(zh ? "历年官方表现" : "Official performance history")
                                     .font(.system(.title3, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
@@ -2331,6 +2524,15 @@ private struct ParentSchoolOverviewSheet: View {
                                         Divider().overlay(MeroliColor.line)
                                     }
                                 }
+                            }
+                            .padding(17).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                        } else if session.schoolPerformanceHistory != nil {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(zh ? "历年官方表现" : "Official performance history")
+                                    .font(.headline).foregroundStyle(MeroliColor.ink)
+                                Text(zh ? "学校目前只有本报告周期的资料，尚无更多年度数据可供比较。" : "Only the current reporting cycle is available. There is not enough historical data to compare yet.")
+                                    .font(.subheadline).foregroundStyle(MeroliColor.muted)
                             }
                             .padding(17).frame(maxWidth: .infinity, alignment: .leading)
                             .background(.white, in: RoundedRectangle(cornerRadius: 17))
@@ -2468,6 +2670,7 @@ private struct ParentSchoolOverviewSheet: View {
         case "IMPROVING": return zh ? "改善" : "Improving"
         case "DECLINING": return zh ? "下降" : "Declining"
         case "STABLE": return zh ? "保持稳定" : "Stable"
+        case "METHODOLOGY_PENDING": return zh ? "等待核实官方口径" : "Official methodology pending"
         case "METHODOLOGY_CHANGED": return zh ? "官方方法已变化" : "Official methodology changed"
         case "INSUFFICIENT_DATA": return zh ? "可比较数据不足" : "Insufficient comparable data"
         default: return zh ? "官方历史趋势" : "Official historical trend"
@@ -2520,9 +2723,10 @@ private struct ParentSchoolOverviewSheet: View {
     private func scheduleSummary(_ schedule: DailyScheduleDTO) -> String {
         switch schedule.status {
         case "OK":
+            let arrivalLabel = arrivalTimeLabel(schedule)
             return zh
-                ? "到校 \(schedule.arrivalTime ?? "待确认") · 放学 \(schedule.dismissalTime ?? "待确认")"
-                : "Arrival \(schedule.arrivalTime ?? "To be confirmed") · Dismissal \(schedule.dismissalTime ?? "To be confirmed")"
+                ? "\(arrivalLabel) \(schedule.arrivalTime ?? "待确认") · 放学 \(schedule.dismissalTime ?? "待确认")"
+                : "\(arrivalLabel) \(schedule.arrivalTime ?? "To be confirmed") · Dismissal \(schedule.dismissalTime ?? "To be confirmed")"
         case "NO_SCHOOL":
             return zh ? "不上课" : "No school"
         case "NON_INSTRUCTIONAL_DAY":
@@ -2531,6 +2735,13 @@ private struct ParentSchoolOverviewSheet: View {
             return zh ? "尚未设置在读学校" : "No current school enrollment"
         default:
             return zh ? "学校时间待确认" : "School schedule unavailable"
+        }
+    }
+
+    private func arrivalTimeLabel(_ schedule: DailyScheduleDTO) -> String {
+        switch schedule.arrivalLabel ?? (schedule.firstPeriodCode == "P0" ? "PERIOD_0_START" : "SCHOOL_START") {
+        case "PERIOD_0_START": return zh ? "第0节开始" : "Period 0 starts"
+        default: return zh ? "到校" : "Arrival"
         }
     }
 }
@@ -2638,13 +2849,25 @@ private struct EnrollmentEditorSheet: View {
     @State private var schoolId = ""
     @State private var schoolYearId = ""
     @State private var gradeCode = ""
+    @State private var schedulePrograms: [ScheduleProgramDTO] = []
+    @State private var selectedProgramIds: Set<String> = []
+    @State private var selectionStatus = ""
+    @State private var isLoadingSchedulePrograms = false
+    @State private var hasLoadedSchedulePrograms = false
     @State private var hasLoaded = false
     @State private var confirmingEnrollmentAction = false
     @State private var confirmingSchoolChange = false
+    @State private var showsSchoolSearch = false
     @State private var enrollmentAction = "remove"
     private var zh: Bool { session.usesChinese }
     private var selectedSchool: ParentSchoolDTO? { session.schools.first { $0.id == schoolId } }
     private var selectedYear: SchoolYearDTO? { session.schoolYears.first { $0.id == schoolYearId } }
+    private var needsScheduleConfirmation: Bool { current == nil || schoolId != current?.schoolId }
+    private var scheduleChoiceIncomplete: Bool {
+        needsScheduleConfirmation && (!hasLoadedSchedulePrograms
+            || !schedulePrograms.isEmpty && (selectionStatus.isEmpty
+                || selectionStatus == "SELECTED" && selectedProgramIds.isEmpty))
+    }
 
     var body: some View {
         NavigationStack {
@@ -2688,19 +2911,26 @@ private struct EnrollmentEditorSheet: View {
                         Task { await session.loadSchools(districtId: value) }
                     }
 
-                    if session.schools.isEmpty && !districtId.isEmpty && session.isLoadingSchools {
-                        ProgressView(zh ? "正在读取学校…" : "Loading schools…")
-                    } else {
-                        Picker(zh ? "学校" : "School", selection: $schoolId) {
-                            Text(zh ? "选择学校" : "Choose a school").tag("")
-                            ForEach(session.schools) { school in
-                                Text(school.name).tag(school.id)
-                            }
+                    Button { showsSchoolSearch = true } label: {
+                        HStack {
+                            Text(zh ? "学校" : "School").foregroundStyle(MeroliColor.ink)
+                            Spacer()
+                            Text(selectedSchool?.name ?? (zh ? "搜索并选择学校" : "Search and choose a school"))
+                                .foregroundStyle(selectedSchool == nil ? MeroliColor.muted : MeroliColor.ink)
+                            Image(systemName: "magnifyingglass").foregroundStyle(MeroliColor.muted)
                         }
-                        .disabled(districtId.isEmpty || session.isLoadingSchools)
-                        .onChange(of: schoolId) { _, value in
-                            let grades = session.schools.first(where: { $0.id == value })?.availableGrades ?? []
-                            if !grades.contains(gradeCode) { gradeCode = grades.first ?? "" }
+                    }
+                    .disabled(districtId.isEmpty || session.isLoadingSchools)
+                    .onChange(of: schoolId) { _, value in
+                        let grades = session.schools.first(where: { $0.id == value })?.availableGrades ?? []
+                        if !grades.contains(gradeCode) { gradeCode = grades.first ?? "" }
+                        if value != current?.schoolId {
+                            Task { await loadSchedulePrograms(for: value) }
+                        } else {
+                            schedulePrograms = []
+                            selectedProgramIds = []
+                            selectionStatus = ""
+                            hasLoadedSchedulePrograms = false
                         }
                     }
 
@@ -2723,6 +2953,10 @@ private struct EnrollmentEditorSheet: View {
                         ForEach(session.schoolYears) { year in Text(year.name).tag(year.id) }
                     }
                     .disabled(current != nil || session.isLoadingCatalog)
+                    .onChange(of: schoolYearId) { _, _ in
+                        guard current == nil, !schoolId.isEmpty else { return }
+                        Task { await loadSchedulePrograms(for: schoolId) }
+                    }
 
                     Picker(zh ? "年级" : "Grade", selection: $gradeCode) {
                         Text(zh ? "选择年级" : "Choose a grade").tag("")
@@ -2731,6 +2965,44 @@ private struct EnrollmentEditorSheet: View {
                         }
                     }
                     .disabled(selectedSchool == nil)
+                }
+
+                if needsScheduleConfirmation {
+                    Section(zh ? "影响到校时间的项目" : "Schedule-affecting programs") {
+                        if isLoadingSchedulePrograms {
+                            ProgressView(zh ? "正在读取学校项目…" : "Loading school programs…")
+                        } else if hasLoadedSchedulePrograms && !schedulePrograms.isEmpty {
+                            Text(zh ? "请重新确认会影响到校时间的课程或项目。" : "Confirm any programs that affect arrival time at the new school.")
+                                .font(.caption).foregroundStyle(MeroliColor.muted)
+                            scheduleChoice("SELECTED", title: zh ? "选择项目" : "Choose programs")
+                            scheduleChoice("NONE", title: zh ? "没有项目" : "No programs")
+                            scheduleChoice("NOT_SURE", title: zh ? "还不确定" : "Not sure yet")
+                            if selectionStatus == "SELECTED" {
+                                ForEach(schedulePrograms) { program in
+                                    Button {
+                                        if selectedProgramIds.contains(program.id) {
+                                            selectedProgramIds.remove(program.id)
+                                        } else {
+                                            selectedProgramIds.insert(program.id)
+                                        }
+                                    } label: {
+                                        HStack {
+                                            Text(zh && !program.displayNameZh.isEmpty ? program.displayNameZh : program.displayNameEn)
+                                                .foregroundStyle(MeroliColor.ink)
+                                            Spacer()
+                                            if selectedProgramIds.contains(program.id) {
+                                                Image(systemName: "checkmark.circle.fill").foregroundStyle(MeroliColor.ink)
+                                            }
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        } else if hasLoadedSchedulePrograms {
+                            Text(zh ? "这所学校目前没有需要确认的到校时间项目。" : "This school has no arrival-time programs to confirm.")
+                                .font(.caption).foregroundStyle(MeroliColor.muted)
+                        }
+                    }
                 }
 
                 if let error = session.errorMessage {
@@ -2752,7 +3024,7 @@ private struct EnrollmentEditorSheet: View {
                             Spacer()
                         }
                     }
-                    .disabled(session.isSavingChild || session.hasPendingSchoolChange(childId: child.id) || selectedSchool == nil || selectedYear == nil || gradeCode.isEmpty)
+                    .disabled(session.isSavingChild || session.hasPendingSchoolChange(childId: child.id) || selectedSchool == nil || selectedYear == nil || gradeCode.isEmpty || scheduleChoiceIncomplete)
                 }
                 if current != nil {
                     Section(zh ? "记录管理" : "Enrollment record") {
@@ -2799,6 +3071,14 @@ private struct EnrollmentEditorSheet: View {
             .navigationTitle(zh ? "\(child.nickname) 的学校" : "\(child.nickname)’s school")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(zh ? "关闭" : "Close") { dismiss() } } }
+            .sheet(isPresented: $showsSchoolSearch, onDismiss: {
+                guard !districtId.isEmpty else { return }
+                Task { await session.loadSchools(districtId: districtId) }
+            }) {
+                SchoolSearchSheet(districtId: districtId, selectedSchoolId: schoolId) { selected in
+                    schoolId = selected.id
+                }
+            }
             .confirmationDialog(zh ? "确认更新入学记录？" : "Update this enrollment?", isPresented: $confirmingEnrollmentAction, titleVisibility: .visible) {
                 if enrollmentAction == "remove" && session.hasPendingSchoolRemoval(childId: child.id) {
                     Button(zh ? "检查移除状态" : "Check removal status") {
@@ -2845,6 +3125,8 @@ private struct EnrollmentEditorSheet: View {
             gradeCode = current.gradeCode
             await session.loadSchools(districtId: current.districtId)
             schoolId = current.schoolId
+            schedulePrograms = []
+            hasLoadedSchedulePrograms = false
             await session.restorePendingSchoolRemoval(childId: child.id)
             await session.restorePendingSchoolChange(childId: child.id)
         } else {
@@ -2854,17 +3136,58 @@ private struct EnrollmentEditorSheet: View {
                 await session.loadSchools(districtId: districtId)
                 schoolId = session.schools.first?.id ?? ""
                 gradeCode = selectedSchool?.availableGrades.first ?? ""
+                await loadSchedulePrograms(for: schoolId)
             }
         }
+    }
+
+    private func loadSchedulePrograms(for targetSchoolId: String) async {
+        schedulePrograms = []
+        selectedProgramIds = []
+        selectionStatus = ""
+        hasLoadedSchedulePrograms = false
+        guard !targetSchoolId.isEmpty, needsScheduleConfirmation else { return }
+        isLoadingSchedulePrograms = true
+        defer { isLoadingSchedulePrograms = false }
+        guard let programs = await session.loadTransitionPrograms(
+            schoolId: targetSchoolId,
+            schoolYearId: schoolYearId.isEmpty ? nil : schoolYearId
+        ), targetSchoolId == schoolId else { return }
+        schedulePrograms = programs
+        selectionStatus = programs.isEmpty ? "NONE" : ""
+        hasLoadedSchedulePrograms = true
     }
 
     private func save() {
         guard let school = selectedSchool, let year = selectedYear else { return }
         Task {
-            if await session.saveEnrollment(child: child, current: current, school: school, schoolYear: year, gradeCode: gradeCode) {
+            if await session.saveEnrollment(
+                child: child,
+                current: current,
+                school: school,
+                schoolYear: year,
+                gradeCode: gradeCode,
+                selectionStatus: needsScheduleConfirmation ? selectionStatus : "NOT_SURE",
+                programIds: Array(selectedProgramIds)
+            ) {
                 dismiss()
             }
         }
+    }
+
+    private func scheduleChoice(_ value: String, title: String) -> some View {
+        Button {
+            selectionStatus = value
+            if value != "SELECTED" { selectedProgramIds = [] }
+        } label: {
+            HStack {
+                Text(title)
+                Spacer()
+                if selectionStatus == value { Image(systemName: "checkmark.circle.fill") }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selectionStatus == value ? .isSelected : [])
     }
 
     private func localizedGrade(_ grade: String) -> String {
@@ -2887,6 +3210,7 @@ private struct AddChildSheet: View {
     @State private var gradeCode = ""
     @State private var selectionStatus = ""
     @State private var selectedProgramIds: Set<String> = []
+    @State private var showsSchoolSearch = false
     @FocusState private var isFocused: Bool
     private var zh: Bool { session.usesChinese }
     private var selectedSchool: ParentSchoolDTO? { session.schools.first { $0.id == schoolId } }
@@ -2938,16 +3262,25 @@ private struct AddChildSheet: View {
                         selectedProgramIds = []
                         Task { await session.loadSchools(districtId: value) }
                     }
-                    Picker(zh ? "学校" : "School", selection: $schoolId) {
-                        Text(zh ? "选择学校" : "Choose a school").tag("")
-                        ForEach(session.schools) { Text($0.name).tag($0.id) }
+                    Button { showsSchoolSearch = true } label: {
+                        HStack {
+                            Text(zh ? "学校" : "School").foregroundStyle(MeroliColor.ink)
+                            Spacer()
+                            Text(selectedSchool?.name ?? (zh ? "搜索并选择学校" : "Search and choose a school"))
+                                .foregroundStyle(selectedSchool == nil ? MeroliColor.muted : MeroliColor.ink)
+                            Image(systemName: "magnifyingglass").foregroundStyle(MeroliColor.muted)
+                        }
                     }
                     .disabled(districtId.isEmpty || session.isLoadingSchools)
                     .onChange(of: schoolId) { _, value in
                         gradeCode = ""
                         selectionStatus = ""
                         selectedProgramIds = []
-                        Task { await session.loadTransitionPrograms(schoolId: value) }
+                        Task {
+                            if let programs = await session.loadTransitionPrograms(schoolId: value), programs.isEmpty {
+                                selectionStatus = "NONE"
+                            }
+                        }
                     }
                     Picker(zh ? "年级" : "Grade", selection: $gradeCode) {
                         Text(zh ? "选择年级" : "Choose a grade").tag("")
@@ -2957,30 +3290,32 @@ private struct AddChildSheet: View {
                     }
                     .disabled(selectedSchool == nil)
                 }
-                Section(zh ? "作息项目" : "Schedule programs") {
-                    Text(zh ? "选择学校提供的项目；若不确定，可明确选择‘还不确定’。" : "Choose the programs offered by the school, or select Not sure.")
-                        .font(.caption).foregroundStyle(MeroliColor.muted)
-                    choiceButton("SELECTED", title: zh ? "选择项目" : "Choose programs")
-                    choiceButton("NONE", title: zh ? "没有项目" : "No programs")
-                    choiceButton("NOT_SURE", title: zh ? "还不确定" : "Not sure")
-                    if selectionStatus == "SELECTED" {
-                        ForEach(session.transitionPrograms) { program in
-                            Button {
-                                if selectedProgramIds.contains(program.id) {
-                                    selectedProgramIds.remove(program.id)
-                                } else {
-                                    selectedProgramIds.insert(program.id)
-                                }
-                            } label: {
-                                HStack {
-                                    Text(zh && !program.displayNameZh.isEmpty ? program.displayNameZh : program.displayNameEn)
-                                    Spacer()
+                if !schoolId.isEmpty && !session.transitionPrograms.isEmpty {
+                    Section(zh ? "作息项目" : "Schedule programs") {
+                        Text(zh ? "选择会影响到校时间的项目；若不确定，可选择‘还不确定’。" : "Choose programs that affect arrival time, or select Not sure.")
+                            .font(.caption).foregroundStyle(MeroliColor.muted)
+                        choiceButton("SELECTED", title: zh ? "选择项目" : "Choose programs")
+                        choiceButton("NONE", title: zh ? "没有项目" : "No programs")
+                        choiceButton("NOT_SURE", title: zh ? "还不确定" : "Not sure")
+                        if selectionStatus == "SELECTED" {
+                            ForEach(session.transitionPrograms) { program in
+                                Button {
                                     if selectedProgramIds.contains(program.id) {
-                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(MeroliColor.ink)
+                                        selectedProgramIds.remove(program.id)
+                                    } else {
+                                        selectedProgramIds.insert(program.id)
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(zh && !program.displayNameZh.isEmpty ? program.displayNameZh : program.displayNameEn)
+                                        Spacer()
+                                        if selectedProgramIds.contains(program.id) {
+                                            Image(systemName: "checkmark.circle.fill").foregroundStyle(MeroliColor.ink)
+                                        }
                                     }
                                 }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -2999,7 +3334,8 @@ private struct AddChildSheet: View {
                     }
                     .listRowBackground(MeroliColor.ink)
                     .disabled(session.isSavingChild || selectedSchool == nil || gradeCode.isEmpty
-                        || selectionStatus.isEmpty || (selectionStatus == "SELECTED" && selectedProgramIds.isEmpty))
+                        || !session.hasLoadedTransitionPrograms || selectionStatus.isEmpty
+                        || (selectionStatus == "SELECTED" && selectedProgramIds.isEmpty))
                 }
             }
             .scrollContentBackground(.hidden)
@@ -3007,6 +3343,17 @@ private struct AddChildSheet: View {
             .navigationTitle(zh ? "新建孩子资料" : "Add a child")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(zh ? "取消" : "Cancel") { dismiss() } } }
+            .sheet(isPresented: $showsSchoolSearch, onDismiss: {
+                guard !districtId.isEmpty else { return }
+                Task { await session.loadSchools(districtId: districtId) }
+            }) {
+                SchoolSearchSheet(districtId: districtId, selectedSchoolId: schoolId) { selected in
+                    schoolId = selected.id
+                    gradeCode = ""
+                    selectionStatus = ""
+                    selectedProgramIds = []
+                }
+            }
             .task { await load() }
         }
         .presentationDetents([.medium, .large])
@@ -3346,5 +3693,86 @@ private struct MeroliFieldStyle: TextFieldStyle {
             .padding(15)
             .background(.white, in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(MeroliColor.line, lineWidth: 1))
+    }
+}
+
+private struct SchoolSearchSheet: View {
+    @Environment(SessionStore.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    let districtId: String
+    let selectedSchoolId: String
+    let onSelect: (ParentSchoolDTO) -> Void
+    @State private var searchText = ""
+    private var zh: Bool { session.usesChinese }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if session.isLoadingSchools && session.schools.isEmpty {
+                    HStack {
+                        Spacer()
+                        ProgressView(zh ? "正在搜索学校…" : "Searching schools…")
+                        Spacer()
+                    }
+                    .listRowBackground(Color.clear)
+                } else if let error = session.errorMessage, session.schools.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(MeroliColor.coral)
+                        Button(zh ? "重试" : "Try again") { Task { await search() } }
+                    }
+                } else if session.schools.isEmpty {
+                    Text(zh ? "没有找到匹配的学校" : "No schools match your search")
+                        .foregroundStyle(MeroliColor.muted)
+                } else {
+                    ForEach(session.schools) { school in
+                        Button {
+                            onSelect(school)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(school.name)
+                                        .font(.body.weight(.medium))
+                                        .foregroundStyle(MeroliColor.ink)
+                                    let location = [school.city, school.state].filter { !$0.isEmpty }.joined(separator: ", ")
+                                    if !location.isEmpty {
+                                        Text(location).font(.caption).foregroundStyle(MeroliColor.muted)
+                                    }
+                                }
+                                Spacer(minLength: 8)
+                                if school.id == selectedSchoolId {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(MeroliColor.ink)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("meroli.school.option.\(school.id)")
+                    }
+                }
+            }
+            .overlay(alignment: .top) {
+                if session.isLoadingSchools && !session.schools.isEmpty {
+                    ProgressView().padding(.top, 8)
+                }
+            }
+            .searchable(text: $searchText, prompt: zh ? "搜索学校名称" : "Search school names")
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .navigationTitle(zh ? "选择学校" : "Choose a school")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(zh ? "完成" : "Done") { dismiss() } } }
+            .task(id: searchText) {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+                await search()
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func search() async {
+        await session.loadSchools(districtId: districtId, keyword: searchText)
     }
 }
