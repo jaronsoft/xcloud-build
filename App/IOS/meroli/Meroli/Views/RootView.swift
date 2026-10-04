@@ -1540,16 +1540,33 @@ private struct EventDetailSheet: View {
                 Text(event.title).font(.system(.title, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
                 Label(eventDateLabel(for: event), systemImage: event.allDay ? "calendar" : "clock")
                     .font(.subheadline).foregroundStyle(MeroliColor.muted)
-                if let originalTitle = event.originalTitle, !originalTitle.isEmpty, originalTitle != event.title {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(zh ? "来源标题" : "Source title").font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.muted)
-                        Text(originalTitle).font(.subheadline).foregroundStyle(MeroliColor.ink)
+                if zh, let originalTitle = event.originalTitle, !originalTitle.isEmpty, originalTitle != event.title {
+                    DisclosureGroup(zh ? "查看英文原标题" : "View original title") {
+                        Text(originalTitle).font(.subheadline).foregroundStyle(MeroliColor.ink).padding(.top, 5)
                     }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MeroliColor.muted)
                 }
                 if !event.explanation.isEmpty { Text(event.explanation).font(.body).foregroundStyle(MeroliColor.ink) }
+                if zh, let originalExplanation = event.originalExplanation, !originalExplanation.isEmpty,
+                   originalExplanation != event.explanation {
+                    DisclosureGroup("查看英文原文") {
+                        Text(originalExplanation).font(.subheadline).foregroundStyle(MeroliColor.ink).padding(.top, 5)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MeroliColor.muted)
+                }
                 if !event.action.isEmpty {
                     Label(event.action, systemImage: "checkmark.circle")
                         .font(.body.weight(.medium)).foregroundStyle(MeroliColor.coral)
+                }
+                if zh, let originalAction = event.originalAction, !originalAction.isEmpty,
+                   originalAction != event.action {
+                    DisclosureGroup("查看英文行动提示") {
+                        Text(originalAction).font(.subheadline).foregroundStyle(MeroliColor.ink).padding(.top, 5)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MeroliColor.muted)
                 }
                 if let location = event.location, !location.isEmpty {
                     Label(location, systemImage: "mappin.and.ellipse").font(.subheadline).foregroundStyle(MeroliColor.muted)
@@ -2408,6 +2425,15 @@ private struct ParentSchoolOverviewSheet: View {
                                     ? (zh ? "旧版学校概览" : "Legacy school overview")
                                     : "\(performance.sourceName) · \(performance.reportingCycle)")
                                     .font(.caption).foregroundStyle(MeroliColor.muted)
+                                if let summary = performance.summary, !summary.isEmpty {
+                                    Text(summary)
+                                        .font(.subheadline).foregroundStyle(MeroliColor.ink)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                if let lastUpdatedAt = performance.lastUpdatedAt, !lastUpdatedAt.isEmpty {
+                                    Text((zh ? "最后更新：" : "Last updated: ") + String(lastUpdatedAt.prefix(10)))
+                                        .font(.caption).foregroundStyle(MeroliColor.muted)
+                                }
                                 if performance.metrics.contains(where: { $0.officialColor != nil }) {
                                     performanceLegend()
                                 }

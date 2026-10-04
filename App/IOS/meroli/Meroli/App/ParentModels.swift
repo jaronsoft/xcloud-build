@@ -149,7 +149,9 @@ struct ParentEventDTO: Decodable, Identifiable {
     let scheduleAction: String
     let scheduleCodeOverride: String?
     let explanation: String
+    let originalExplanation: String?
     let action: String
+    let originalAction: String?
     let location: String?
     let sourceName: String
     let sourceUrl: String
@@ -303,7 +305,9 @@ struct ParentPerformanceDTO: Decodable {
     let availability: String
     let sourceName: String
     let sourceUrl: String
+    let summary: String?
     let publishedAt: String
+    let lastUpdatedAt: String?
     let disclaimer: String
     let metrics: [ParentPerformanceMetricDTO]
 }
