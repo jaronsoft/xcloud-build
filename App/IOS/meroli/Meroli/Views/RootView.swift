@@ -907,9 +907,9 @@ private struct HomeScreen: View {
             }
             .refreshable {
                 await session.loadFamily()
-                await session.loadDailySchedules(for: date)
+                await session.loadDailySchedules(for: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
                 await loadNextInstructionalDayIfNeeded()
-                await session.loadTomorrowDailySchedules(for: tomorrowDate)
+                await session.loadTomorrowDailySchedules(for: tomorrowDate, childId: selectedChildId.isEmpty ? nil : selectedChildId)
                 await loadHomeEvents()
             }
             .task { if session.dailySchedules.isEmpty || session.homeEvents.isEmpty { refresh() } }
@@ -932,9 +932,9 @@ private struct HomeScreen: View {
 
     private func refresh() {
         Task {
-            await session.loadDailySchedules(for: date)
+            await session.loadDailySchedules(for: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
             await loadNextInstructionalDayIfNeeded()
-            await session.loadTomorrowDailySchedules(for: tomorrowDate)
+            await session.loadTomorrowDailySchedules(for: tomorrowDate, childId: selectedChildId.isEmpty ? nil : selectedChildId)
             await loadHomeEvents()
         }
     }
@@ -992,7 +992,7 @@ private struct HomeScreen: View {
             Button(zh ? "重试" : "Try again") {
                 Task {
                     await session.loadFamily()
-                    await session.loadDailySchedules(for: date)
+                    await session.loadDailySchedules(for: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
                 }
             }
             .buttonStyle(.bordered)

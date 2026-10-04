@@ -147,10 +147,12 @@ final class SessionStore {
     @ObservationIgnored private var lastCalendarRequest: (start: Date, end: Date, childId: String?)?
     @ObservationIgnored private var lastHomeEventsRequest: (start: Date, end: Date, childId: String?)?
     @ObservationIgnored private var lastDailyScheduleDate: Date?
+    @ObservationIgnored private var lastDailyScheduleChildId: String?
     @ObservationIgnored private var lastNextInstructionalDayRequest: String?
     @ObservationIgnored private var pendingNextInstructionalDayRequest: String?
     @ObservationIgnored private var nextInstructionalDayLoadGeneration = 0
     @ObservationIgnored private var lastTomorrowScheduleDate: Date?
+    @ObservationIgnored private var lastTomorrowScheduleChildId: String?
     @ObservationIgnored private var lastSchoolOverviewId: String?
     @ObservationIgnored private var lastPerformanceHistorySchoolId: String?
     @ObservationIgnored private let decoder: JSONDecoder
@@ -401,8 +403,8 @@ final class SessionStore {
             if generation == calendarLoadGeneration { isLoadingCalendar = false }
         }
         var query = [
-            URLQueryItem(name: "start_date", value: schoolDateString(startDate)),
-            URLQueryItem(name: "end_date", value: schoolDateString(endDate))
+            URLQueryItem(name: "start_date", value: schoolDateString(startDate, childId: childId)),
+            URLQueryItem(name: "end_date", value: schoolDateString(endDate, childId: childId))
         ]
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
@@ -442,8 +444,8 @@ final class SessionStore {
             if generation == homeEventsLoadGeneration { isLoadingHomeEvents = false }
         }
         var query = [
-            URLQueryItem(name: "start_date", value: schoolDateString(startDate)),
-            URLQueryItem(name: "end_date", value: schoolDateString(endDate))
+            URLQueryItem(name: "start_date", value: schoolDateString(startDate, childId: childId)),
+            URLQueryItem(name: "end_date", value: schoolDateString(endDate, childId: childId))
         ]
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
@@ -458,9 +460,10 @@ final class SessionStore {
         }
     }
 
-    func loadDailySchedules(for date: Date) async {
+    func loadDailySchedules(for date: Date, childId: String? = nil) async {
         guard api != nil, accessToken != nil else { return }
         lastDailyScheduleDate = date
+        lastDailyScheduleChildId = childId
         dailySchedulesLoadGeneration += 1
         let generation = dailySchedulesLoadGeneration
         isLoadingHome = true
@@ -468,7 +471,7 @@ final class SessionStore {
             if generation == dailySchedulesLoadGeneration { isLoadingHome = false }
         }
         do {
-            let value = schoolDateString(date)
+            let value = schoolDateString(date, childId: childId)
             let data = try await authorized(path: "daily-schedules",
                 query: [URLQueryItem(name: "date", value: value)])
             let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
@@ -485,7 +488,7 @@ final class SessionStore {
 
     func loadNextInstructionalDay(after date: Date, childId: String? = nil) async {
         guard api != nil, accessToken != nil else { return }
-        let value = schoolDateString(date)
+        let value = schoolDateString(date, childId: childId)
         let requestKey = "\(value)|\(childId ?? "")"
         guard lastNextInstructionalDayRequest != requestKey, pendingNextInstructionalDayRequest != requestKey else { return }
         nextInstructionalDayLoadGeneration += 1
@@ -515,9 +518,10 @@ final class SessionStore {
         }
     }
 
-    func loadTomorrowDailySchedules(for date: Date) async {
+    func loadTomorrowDailySchedules(for date: Date, childId: String? = nil) async {
         guard api != nil, accessToken != nil else { return }
         lastTomorrowScheduleDate = date
+        lastTomorrowScheduleChildId = childId
         tomorrowSchedulesLoadGeneration += 1
         let generation = tomorrowSchedulesLoadGeneration
         isLoadingTomorrowSchedules = true
@@ -525,7 +529,7 @@ final class SessionStore {
             if generation == tomorrowSchedulesLoadGeneration { isLoadingTomorrowSchedules = false }
         }
         do {
-            let value = schoolDateString(date)
+            let value = schoolDateString(date, childId: childId)
             let data = try await authorized(path: "daily-schedules",
                 query: [URLQueryItem(name: "date", value: value)])
             let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
@@ -1183,8 +1187,12 @@ final class SessionStore {
         if let request = lastHomeEventsRequest {
             await loadHomeEvents(from: request.start, to: request.end, childId: request.childId)
         }
-        if let date = lastDailyScheduleDate { await loadDailySchedules(for: date) }
-        if let date = lastTomorrowScheduleDate { await loadTomorrowDailySchedules(for: date) }
+        if let date = lastDailyScheduleDate {
+            await loadDailySchedules(for: date, childId: lastDailyScheduleChildId)
+        }
+        if let date = lastTomorrowScheduleDate {
+            await loadTomorrowDailySchedules(for: date, childId: lastTomorrowScheduleChildId)
+        }
         if let schoolId = lastSchoolOverviewId { await loadSchoolOverview(schoolId: schoolId) }
         if let schoolId = lastPerformanceHistorySchoolId {
             await loadSchoolPerformanceHistory(schoolId: schoolId)
@@ -1398,9 +1406,11 @@ final class SessionStore {
         lastCalendarRequest = nil
         lastHomeEventsRequest = nil
         lastDailyScheduleDate = nil
+        lastDailyScheduleChildId = nil
         lastNextInstructionalDayRequest = nil
         pendingNextInstructionalDayRequest = nil
         lastTomorrowScheduleDate = nil
+        lastTomorrowScheduleChildId = nil
         lastSchoolOverviewId = nil
         lastPerformanceHistorySchoolId = nil
         accessToken = nil
@@ -1480,11 +1490,11 @@ final class SessionStore {
         }
     }
 
-    private func schoolDateString(_ date: Date) -> String {
+    private func schoolDateString(_ date: Date, childId: String? = nil) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = TimeZone(identifier: "America/Los_Angeles")
+        formatter.timeZone = schoolTimezone(for: childId)
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
