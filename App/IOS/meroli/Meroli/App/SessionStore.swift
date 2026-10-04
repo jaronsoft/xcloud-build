@@ -177,6 +177,8 @@ final class SessionStore {
             userId = cached.userId
             email = cached.email
             language = cached.language
+            await refreshCachedLanguagePreference()
+            if phase == .signedOut { return }
             await finishSessionRestore()
             if phase == .signedIn { await resumePendingSubscription() }
             return
@@ -1204,6 +1206,7 @@ final class SessionStore {
             let updatedLanguage = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: data).response.language
             let languageChanged = language != updatedLanguage
             language = updatedLanguage
+            persistCachedSession()
             if languageChanged { await reloadLocalizedContent() }
         } catch {
             errorMessage = message(for: error)
@@ -1333,6 +1336,23 @@ final class SessionStore {
         let preferencesData = try await authorized(path: "preferences")
         language = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: preferencesData).response.language
         persistCachedSession()
+    }
+
+    private func refreshCachedLanguagePreference() async {
+        do {
+            let data = try await authorized(path: "preferences")
+            let preference = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: data).response
+            guard ["en", "zh-CN"].contains(preference.language) else { return }
+            let languageChanged = language != preference.language
+            language = preference.language
+            persistCachedSession()
+            if languageChanged { await reloadLocalizedContent() }
+        } catch {
+            if requiresReauthentication(error) {
+                clearLocalSession()
+                phase = .signedOut
+            }
+        }
     }
 
     private func authorized(
