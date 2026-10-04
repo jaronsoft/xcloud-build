@@ -686,6 +686,7 @@ private struct HomeScreen: View {
     private var schoolCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = session.schoolTimezone(for: selectedChildId.isEmpty ? nil : selectedChildId)
+        calendar.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
         return calendar
     }
     private var selectedSchedules: [DailyScheduleDTO] {
@@ -1133,6 +1134,7 @@ private struct CalendarScreen: View {
     private var schoolCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = session.schoolTimezone(for: selectedChildId.isEmpty ? nil : selectedChildId)
+        calendar.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
         return calendar
     }
     private var monthTitle: String {
