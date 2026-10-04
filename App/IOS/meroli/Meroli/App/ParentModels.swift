@@ -65,6 +65,7 @@ struct DistrictDTO: Decodable, Identifiable {
     let name: String
     let shortName: String
     let state: String
+    let timezone: String?
 }
 
 struct SchoolYearDTO: Decodable, Identifiable {

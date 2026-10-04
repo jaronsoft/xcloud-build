@@ -683,9 +683,9 @@ private struct HomeScreen: View {
     @AppStorage("meroli.home.childId") private var selectedChildId = ""
     @State private var selectedEvent: ParentEventDTO?
     private var zh: Bool { session.usesChinese }
-    private static var schoolCalendar: Calendar {
+    private var schoolCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles") ?? .current
+        calendar.timeZone = session.schoolTimezone(for: selectedChildId.isEmpty ? nil : selectedChildId)
         return calendar
     }
     private var selectedSchedules: [DailyScheduleDTO] {
@@ -727,18 +727,21 @@ private struct HomeScreen: View {
                     Text(zh ? "今天的上学安排" : "Today at school")
                         .font(.system(.largeTitle, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
                     HStack {
-                        Button { date = Self.schoolCalendar.date(byAdding: .day, value: -1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
+                        Button { date = schoolCalendar.date(byAdding: .day, value: -1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
                             .accessibilityLabel(zh ? "前一天" : "Previous day")
                         Spacer()
                         Text(schoolDateLabel(date))
                             .font(.headline)
                         Spacer()
-                        Button { date = Self.schoolCalendar.date(byAdding: .day, value: 1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
+                        Button { date = schoolCalendar.date(byAdding: .day, value: 1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
                             .accessibilityLabel(zh ? "后一天" : "Next day")
                     }
                     if session.children.count > 1 {
                         MeroliChildFilter(children: session.children, selection: $selectedChildId, zh: zh)
-                        .onChange(of: selectedChildId) { _, _ in refresh() }
+                        .onChange(of: selectedChildId) { _, _ in
+                            date = schoolCalendar.startOfDay(for: .now)
+                            refresh()
+                        }
                     }
                     if let error = session.homeErrorMessage, !session.dailySchedules.isEmpty {
                         homeErrorCard(error)
@@ -912,14 +915,15 @@ private struct HomeScreen: View {
             .task { if session.dailySchedules.isEmpty || session.homeEvents.isEmpty { refresh() } }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
-                let today = Self.schoolCalendar.startOfDay(for: .now)
-                if !Self.schoolCalendar.isDate(date, inSameDayAs: today) { date = today }
+                let today = schoolCalendar.startOfDay(for: .now)
+                if !schoolCalendar.isDate(date, inSameDayAs: today) { date = today }
                 refresh()
             }
             .onChange(of: session.children.map(\.id)) { _, childIds in
                 if !selectedChildId.isEmpty && !childIds.contains(selectedChildId) {
                     selectedChildId = ""
                 }
+                date = schoolCalendar.startOfDay(for: .now)
                 refresh()
             }
             .sheet(item: $selectedEvent) { event in EventDetailSheet(event: event, zh: zh) }
@@ -941,20 +945,20 @@ private struct HomeScreen: View {
     }
 
     private var tomorrowDate: Date {
-        Self.schoolCalendar.date(byAdding: .day, value: 1, to: date) ?? date
+        schoolCalendar.date(byAdding: .day, value: 1, to: date) ?? date
     }
 
     private func loadHomeEvents() async {
-        let end = Self.schoolCalendar.date(byAdding: .day, value: 7, to: date) ?? date
+        let end = schoolCalendar.date(byAdding: .day, value: 7, to: date) ?? date
         await session.loadHomeEvents(from: date, to: end, childId: selectedChildId.isEmpty ? nil : selectedChildId)
     }
 
     private func dateKey(offset: Int) -> String {
-        let target = Self.schoolCalendar.date(byAdding: .day, value: offset, to: date) ?? date
+        let target = schoolCalendar.date(byAdding: .day, value: offset, to: date) ?? date
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Self.schoolCalendar
-        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.calendar = schoolCalendar
+        formatter.timeZone = schoolCalendar.timeZone
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: target)
     }
@@ -1000,8 +1004,8 @@ private struct HomeScreen: View {
 
     private func schoolDateLabel(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.calendar = Self.schoolCalendar
-        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.calendar = schoolCalendar
+        formatter.timeZone = schoolCalendar.timeZone
         formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
         formatter.dateStyle = .full
         formatter.timeStyle = .none
@@ -1011,8 +1015,8 @@ private struct HomeScreen: View {
     private func nextInstructionalDateLabel(_ value: String) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
-        formatter.calendar = Self.schoolCalendar
-        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.calendar = schoolCalendar
+        formatter.timeZone = schoolCalendar.timeZone
         formatter.dateFormat = "yyyy-MM-dd"
         guard let date = formatter.date(from: value) else { return value }
         formatter.dateStyle = .full
@@ -1069,26 +1073,26 @@ private struct CalendarScreen: View {
     @State private var selectedEvent: ParentEventDTO?
     @AppStorage("meroli.calendar.displayMode") private var displayMode = "month"
     private var zh: Bool { session.usesChinese }
-    private static var schoolCalendar: Calendar {
+    private var schoolCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles") ?? .current
+        calendar.timeZone = session.schoolTimezone(for: selectedChildId.isEmpty ? nil : selectedChildId)
         return calendar
     }
     private var monthTitle: String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
-        formatter.calendar = Self.schoolCalendar
-        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.calendar = schoolCalendar
+        formatter.timeZone = schoolCalendar.timeZone
         formatter.dateFormat = zh ? "yyyy年M月" : "MMMM yyyy"
         return formatter.string(from: month)
     }
     private var range: (Date, Date) {
-        let components = Self.schoolCalendar.dateComponents([.year, .month], from: month)
-        let start = Self.schoolCalendar.date(from: components) ?? month
+        let components = schoolCalendar.dateComponents([.year, .month], from: month)
+        let start = schoolCalendar.date(from: components) ?? month
         var next = DateComponents()
         next.month = 1
         next.day = -1
-        let end = Self.schoolCalendar.date(byAdding: next, to: start) ?? start
+        let end = schoolCalendar.date(byAdding: next, to: start) ?? start
         return (start, end)
     }
     private var groupedEvents: [(String, [ParentEventDTO])] {
@@ -1096,19 +1100,19 @@ private struct CalendarScreen: View {
         return groups.keys.sorted().map { ($0, groups[$0, default: []]) }
     }
     private var monthCells: [Date?] {
-        guard let dayRange = Self.schoolCalendar.range(of: .day, in: .month, for: month),
-              let firstDay = Self.schoolCalendar.date(from: Self.schoolCalendar.dateComponents([.year, .month], from: month)) else { return [] }
-        let leading = (Self.schoolCalendar.component(.weekday, from: firstDay) - Self.schoolCalendar.firstWeekday + 7) % 7
-        let days = dayRange.compactMap { Self.schoolCalendar.date(byAdding: .day, value: $0 - 1, to: firstDay) }
+        guard let dayRange = schoolCalendar.range(of: .day, in: .month, for: month),
+              let firstDay = schoolCalendar.date(from: schoolCalendar.dateComponents([.year, .month], from: month)) else { return [] }
+        let leading = (schoolCalendar.component(.weekday, from: firstDay) - schoolCalendar.firstWeekday + 7) % 7
+        let days = dayRange.compactMap { schoolCalendar.date(byAdding: .day, value: $0 - 1, to: firstDay) }
         return Array<Date?>(repeating: nil, count: leading) + days.map(Optional.some)
     }
     private var selectedDateEvents: [ParentEventDTO] {
         MeroliEventPresentation.sorted(session.calendarEvents.filter { eventCovers($0, date: selectedDate) })
     }
     private var selectedWeek: [Date] {
-        let parts = Self.schoolCalendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate)
-        guard let start = Self.schoolCalendar.date(from: parts) else { return [selectedDate] }
-        return (0..<7).compactMap { Self.schoolCalendar.date(byAdding: .day, value: $0, to: start) }
+        let parts = schoolCalendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate)
+        guard let start = schoolCalendar.date(from: parts) else { return [selectedDate] }
+        return (0..<7).compactMap { schoolCalendar.date(byAdding: .day, value: $0, to: start) }
     }
 
     var body: some View {
@@ -1138,7 +1142,11 @@ private struct CalendarScreen: View {
                     MeroliChildFilter(children: session.children, selection: $selectedChildId, zh: zh)
                     .padding(.horizontal, 19)
                     .padding(.top, 8)
-                    .onChange(of: selectedChildId) { _, _ in Task { await load() } }
+                    .onChange(of: selectedChildId) { _, _ in
+                        month = monthStart(.now)
+                        selectedDate = schoolCalendar.startOfDay(for: .now)
+                        Task { await load() }
+                    }
                 }
 
                 if session.isLoadingCalendar && session.calendarEvents.isEmpty {
@@ -1210,7 +1218,7 @@ private struct CalendarScreen: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(zh ? "今天" : "Today") {
                         month = monthStart(.now)
-                        selectedDate = Self.schoolCalendar.startOfDay(for: .now)
+                        selectedDate = schoolCalendar.startOfDay(for: .now)
                         Task { await load() }
                     }
                 }
@@ -1225,13 +1233,15 @@ private struct CalendarScreen: View {
                 if !selectedChildId.isEmpty && !childIds.contains(selectedChildId) {
                     selectedChildId = ""
                 }
+                month = monthStart(.now)
+                selectedDate = schoolCalendar.startOfDay(for: .now)
                 Task { await load() }
             }
         }
     }
 
     private func shiftMonth(_ amount: Int) {
-        month = Self.schoolCalendar.date(byAdding: .month, value: amount, to: month) ?? month
+        month = schoolCalendar.date(byAdding: .month, value: amount, to: month) ?? month
         selectedDate = monthStart(month)
         Task { await load() }
     }
@@ -1242,14 +1252,14 @@ private struct CalendarScreen: View {
     }
 
     private func monthStart(_ date: Date) -> Date {
-        let parts = Self.schoolCalendar.dateComponents([.year, .month], from: date)
-        return Self.schoolCalendar.date(from: parts) ?? date
+        let parts = schoolCalendar.dateComponents([.year, .month], from: date)
+        return schoolCalendar.date(from: parts) ?? date
     }
 
     private func formattedDate(_ value: String) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.timeZone = schoolCalendar.timeZone
         formatter.dateFormat = "yyyy-MM-dd"
         guard let date = formatter.date(from: value) else { return value }
         formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
@@ -1260,7 +1270,7 @@ private struct CalendarScreen: View {
     private var monthCalendar: some View {
         VStack(spacing: 12) {
             HStack(spacing: 0) {
-                ForEach(Self.schoolCalendar.veryShortStandaloneWeekdaySymbols, id: \.self) { day in
+                ForEach(schoolCalendar.veryShortStandaloneWeekdaySymbols, id: \.self) { day in
                     Text(day).font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.muted).frame(maxWidth: .infinity)
                 }
             }
@@ -1270,17 +1280,17 @@ private struct CalendarScreen: View {
                         let dayEvents = session.calendarEvents.filter { eventCovers($0, date: day) }
                         Button { selectDay(day) } label: {
                             VStack(spacing: 3) {
-                                Text("\(Self.schoolCalendar.component(.day, from: day))")
-                                    .font(.subheadline.weight(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .bold : .regular))
-                                    .foregroundStyle(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .white : MeroliColor.ink)
+                                Text("\(schoolCalendar.component(.day, from: day))")
+                                    .font(.subheadline.weight(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .bold : .regular))
+                                    .foregroundStyle(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .white : MeroliColor.ink)
                                 Circle().fill(dayEvents.isEmpty ? .clear : MeroliColor.gold).frame(width: 5, height: 5)
                             }
                             .frame(maxWidth: .infinity, minHeight: 44)
-                            .background(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? MeroliColor.ink : .clear, in: RoundedRectangle(cornerRadius: 11))
+                            .background(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? MeroliColor.ink : .clear, in: RoundedRectangle(cornerRadius: 11))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(dateHeading(day) + (dayEvents.isEmpty ? "" : (zh ? "，有活动" : ", events")))
-                        .accessibilityAddTraits(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .isSelected : [])
+                        .accessibilityAddTraits(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .isSelected : [])
                     } else {
                         Color.clear.frame(maxWidth: .infinity, minHeight: 44)
                     }
@@ -1293,17 +1303,17 @@ private struct CalendarScreen: View {
                         VStack(spacing: 4) {
                             Text(weekdayLabel(day))
                                 .font(.caption2).foregroundStyle(MeroliColor.muted)
-                            Text("\(Self.schoolCalendar.component(.day, from: day))")
+                            Text("\(schoolCalendar.component(.day, from: day))")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .white : MeroliColor.ink)
+                                .foregroundStyle(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .white : MeroliColor.ink)
                             Circle().fill(dayEvents.isEmpty ? .clear : MeroliColor.gold).frame(width: 4, height: 4)
                         }
                         .frame(maxWidth: .infinity, minHeight: 56)
-                        .background(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? MeroliColor.ink : .clear, in: RoundedRectangle(cornerRadius: 12))
+                        .background(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? MeroliColor.ink : .clear, in: RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(dateHeading(day) + (dayEvents.isEmpty ? "" : (zh ? "，有活动" : ", events")))
-                    .accessibilityAddTraits(Self.schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .isSelected : [])
+                    .accessibilityAddTraits(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .isSelected : [])
                 }
             }
         }
@@ -1315,8 +1325,8 @@ private struct CalendarScreen: View {
     private func dateKey(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Self.schoolCalendar
-        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.calendar = schoolCalendar
+        formatter.timeZone = schoolCalendar.timeZone
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
@@ -1327,9 +1337,9 @@ private struct CalendarScreen: View {
     }
 
     private func selectDay(_ day: Date) {
-        selectedDate = Self.schoolCalendar.startOfDay(for: day)
+        selectedDate = schoolCalendar.startOfDay(for: day)
         let selectedMonth = monthStart(day)
-        guard !Self.schoolCalendar.isDate(selectedMonth, equalTo: month, toGranularity: .month) else { return }
+        guard !schoolCalendar.isDate(selectedMonth, equalTo: month, toGranularity: .month) else { return }
         month = selectedMonth
         Task { await load() }
     }
@@ -1337,8 +1347,8 @@ private struct CalendarScreen: View {
     private func dateHeading(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
-        formatter.calendar = Self.schoolCalendar
-        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.calendar = schoolCalendar
+        formatter.timeZone = schoolCalendar.timeZone
         formatter.dateStyle = .full
         return formatter.string(from: date)
     }
@@ -1346,8 +1356,8 @@ private struct CalendarScreen: View {
     private func weekdayLabel(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
-        formatter.calendar = Self.schoolCalendar
-        formatter.timeZone = Self.schoolCalendar.timeZone
+        formatter.calendar = schoolCalendar
+        formatter.timeZone = schoolCalendar.timeZone
         formatter.dateFormat = "EEEEE"
         return formatter.string(from: date)
     }

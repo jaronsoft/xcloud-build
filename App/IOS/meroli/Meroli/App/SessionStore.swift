@@ -325,6 +325,18 @@ final class SessionStore {
         }
     }
 
+    func schoolTimezone(for childId: String? = nil) -> TimeZone {
+        let enrollment = enrollments.first {
+            $0.isCurrent && (childId == nil || $0.childId == childId)
+        }
+        let identifier = enrollment.flatMap { enrollment in
+            districts.first(where: { $0.id == enrollment.districtId })?.timezone
+        }
+        return TimeZone(identifier: identifier ?? "")
+            ?? TimeZone(identifier: "America/Los_Angeles")
+            ?? .current
+    }
+
     func loadSchools(districtId: String, keyword: String = "") async {
         schoolsLoadGeneration += 1
         let generation = schoolsLoadGeneration
