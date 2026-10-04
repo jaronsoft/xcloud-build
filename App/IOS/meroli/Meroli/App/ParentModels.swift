@@ -192,6 +192,14 @@ struct DailyScheduleDTO: Decodable, Identifiable {
 
 struct NextInstructionalDayDTO: Decodable {
     let date: String?
+    let children: [ChildNextInstructionalDayDTO]?
+}
+
+struct ChildNextInstructionalDayDTO: Decodable, Identifiable {
+    let childId: String
+    var id: String { childId }
+    let childName: String
+    let date: String?
 }
 
 struct DailySchedulePeriodDTO: Decodable, Identifiable {

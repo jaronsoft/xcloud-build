@@ -691,10 +691,8 @@ private struct HomeScreen: View {
     private var selectedSchedules: [DailyScheduleDTO] {
         selectedChildId.isEmpty ? session.dailySchedules : session.dailySchedules.filter { $0.childId == selectedChildId }
     }
-    private var selectedDayHasNoInstructionalSchedule: Bool {
-        !selectedSchedules.isEmpty && selectedSchedules.allSatisfy {
-            $0.status == "NO_SCHOOL" || $0.status == "NON_INSTRUCTIONAL_DAY"
-        }
+    private var childrenWithoutSchoolToday: [DailyScheduleDTO] {
+        selectedSchedules.filter { $0.status == "NO_SCHOOL" || $0.status == "NON_INSTRUCTIONAL_DAY" }
     }
     private var selectedTomorrowSchedules: [DailyScheduleDTO] {
         selectedChildId.isEmpty ? session.tomorrowDailySchedules : session.tomorrowDailySchedules.filter { $0.childId == selectedChildId }
@@ -765,26 +763,7 @@ private struct HomeScreen: View {
                         .background(.white, in: RoundedRectangle(cornerRadius: 18))
                     } else {
                         sectionHeading(zh ? "今天" : "Today")
-                        if selectedDayHasNoInstructionalSchedule {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Label(zh ? "这一天没有常规上课" : "No regular school on this day", systemImage: "sun.max")
-                                    .font(.headline).foregroundStyle(MeroliColor.ink)
-                                if session.isLoadingNextInstructionalDay {
-                                    ProgressView(zh ? "正在查找下一次上课日…" : "Finding the next school day…")
-                                } else if let nextDate = session.nextInstructionalDay {
-                                    Text(zh ? "下一次上课：\(nextInstructionalDateLabel(nextDate))" : "Next school day: \(nextInstructionalDateLabel(nextDate))")
-                                        .font(.subheadline).foregroundStyle(MeroliColor.muted)
-                                } else if let error = session.nextInstructionalDayErrorMessage {
-                                    Text(error).font(.subheadline).foregroundStyle(MeroliColor.coral)
-                                } else {
-                                    Text(zh ? "未来 21 天内暂未找到上课日。" : "No instructional day was found in the next 21 days.")
-                                        .font(.subheadline).foregroundStyle(MeroliColor.muted)
-                                }
-                            }
-                            .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 18))
-                        } else {
-                            ForEach(selectedSchedules) { item in
+                        ForEach(selectedSchedules) { item in
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 3) {
@@ -801,7 +780,32 @@ private struct HomeScreen: View {
                                         .padding(.horizontal, 10).padding(.vertical, 6)
                                         .background(MeroliColor.paleGreen, in: Capsule())
                                 }
-                                if item.status == "OK" {
+                                if item.status == "NO_SCHOOL" || item.status == "NON_INSTRUCTIONAL_DAY" {
+                                    Label(zh ? "这一天没有常规上课" : "No regular school on this day", systemImage: "sun.max")
+                                        .font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                    if session.isLoadingNextInstructionalDay {
+                                        ProgressView(zh ? "正在查找下一次上课日…" : "Finding the next school day…")
+                                    } else if let nextDay = session.nextInstructionalDays.first(where: { $0.childId == item.childId }) {
+                                        if let nextDate = nextDay.date {
+                                            Text((zh ? "下一次上课：" : "Next school day: ")
+                                                + nextInstructionalDateLabel(nextDate, childId: item.childId))
+                                                .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                        } else {
+                                            Text(zh ? "未来 21 天内暂无上课日。" : "No school day in the next 21 days.")
+                                                .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                        }
+                                    } else if !selectedChildId.isEmpty, let nextDate = session.nextInstructionalDay {
+                                        Text((zh ? "下一次上课：" : "Next school day: ")
+                                            + nextInstructionalDateLabel(nextDate, childId: item.childId))
+                                            .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                    } else if let error = session.nextInstructionalDayErrorMessage {
+                                        Text(error).font(.subheadline).foregroundStyle(MeroliColor.coral)
+                                    }
+                                    ForEach(item.eventTitles, id: \.self) { title in
+                                        Label(title, systemImage: "calendar")
+                                            .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                    }
+                                } else if item.status == "OK" {
                                     HStack(spacing: 20) {
                                         scheduleTime(title: arrivalTimeLabel(item), value: item.arrivalTime)
                                         scheduleTime(title: zh ? "放学" : "Dismissal", value: item.dismissalTime)
@@ -835,10 +839,12 @@ private struct HomeScreen: View {
                                                 .font(.subheadline)
                                         }
                                     }
+                                } else {
+                                    Text(statusLabel(item.status))
+                                        .font(.subheadline).foregroundStyle(MeroliColor.muted)
                                 }
                             }
                             .padding(18).background(.white, in: RoundedRectangle(cornerRadius: 18))
-                            }
                         }
                     }
                     if let error = session.homeEventsErrorMessage {
@@ -947,7 +953,7 @@ private struct HomeScreen: View {
     }
 
     private func loadNextInstructionalDayIfNeeded() async {
-        guard selectedDayHasNoInstructionalSchedule else { return }
+        guard !childrenWithoutSchoolToday.isEmpty else { return }
         await session.loadNextInstructionalDay(after: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
     }
 
@@ -1061,11 +1067,13 @@ private struct HomeScreen: View {
         return formatter.string(from: date)
     }
 
-    private func nextInstructionalDateLabel(_ value: String) -> String {
+    private func nextInstructionalDateLabel(_ value: String, childId: String? = nil) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
-        formatter.calendar = schoolCalendar
-        formatter.timeZone = schoolCalendar.timeZone
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = session.schoolTimezone(for: childId)
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
         formatter.dateFormat = "yyyy-MM-dd"
         guard let date = formatter.date(from: value) else { return value }
         formatter.dateStyle = .full

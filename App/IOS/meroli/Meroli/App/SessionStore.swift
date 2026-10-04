@@ -102,6 +102,7 @@ final class SessionStore {
     private(set) var homeEventsErrorMessage: String?
     private(set) var dailySchedules: [DailyScheduleDTO] = []
     private(set) var nextInstructionalDay: String?
+    private(set) var nextInstructionalDays: [ChildNextInstructionalDayDTO] = []
     private(set) var isLoadingNextInstructionalDay = false
     private(set) var nextInstructionalDayErrorMessage: String?
     private(set) var tomorrowDailySchedules: [DailyScheduleDTO] = []
@@ -510,6 +511,7 @@ final class SessionStore {
         let generation = nextInstructionalDayLoadGeneration
         pendingNextInstructionalDayRequest = requestKey
         nextInstructionalDay = nil
+        nextInstructionalDays = []
         isLoadingNextInstructionalDay = true
         nextInstructionalDayErrorMessage = nil
         defer {
@@ -525,6 +527,7 @@ final class SessionStore {
             let result = try decoder.decode(APIEnvelope<NextInstructionalDayDTO>.self, from: data).response
             guard generation == nextInstructionalDayLoadGeneration, accessToken != nil else { return }
             nextInstructionalDay = result.date
+            nextInstructionalDays = result.children ?? []
             lastNextInstructionalDayRequest = requestKey
         } catch {
             if generation == nextInstructionalDayLoadGeneration {
@@ -1450,6 +1453,7 @@ final class SessionStore {
         homeEventsErrorMessage = nil
         dailySchedules = []
         nextInstructionalDay = nil
+        nextInstructionalDays = []
         nextInstructionalDayErrorMessage = nil
         tomorrowDailySchedules = []
         tomorrowSchedulesErrorMessage = nil
