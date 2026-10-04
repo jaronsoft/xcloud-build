@@ -174,8 +174,7 @@ final class SessionStore {
             userId = cached.userId
             email = cached.email
             language = cached.language
-            phase = .signedIn
-            await loadFamily()
+            await finishSessionRestore()
             if phase == .signedIn { await resumePendingSubscription() }
             return
         }
@@ -186,8 +185,7 @@ final class SessionStore {
         do {
             try await rotate(refreshToken: refreshToken)
             try await loadIdentity()
-            phase = .signedIn
-            await loadFamily()
+            await finishSessionRestore()
             if phase == .signedIn { await resumePendingSubscription() }
         } catch {
             if requiresReauthentication(error) {
@@ -219,8 +217,7 @@ final class SessionStore {
             let response = try decoder.decode(APIEnvelope<AuthPayload>.self, from: data)
             try store(tokens: response.response.tokens)
             try await loadIdentity()
-            phase = .signedIn
-            await loadFamily()
+            await finishSessionRestore()
         } catch {
             errorMessage = message(for: error)
         }
@@ -239,8 +236,7 @@ final class SessionStore {
             let response = try decoder.decode(APIEnvelope<AuthPayload>.self, from: data)
             try store(tokens: response.response.tokens)
             try await loadIdentity()
-            phase = .signedIn
-            await loadFamily()
+            await finishSessionRestore()
         } catch {
             if (error as? APIClientError)?.statusCode == 409 {
                 errorMessage = usesChinese
@@ -312,7 +308,8 @@ final class SessionStore {
         }
     }
 
-    func loadSchoolCatalog() async {
+    @discardableResult
+    func loadSchoolCatalog() async -> Bool {
         isLoadingCatalog = true
         catalogErrorMessage = nil
         defer { isLoadingCatalog = false }
@@ -322,9 +319,26 @@ final class SessionStore {
             districts = try decoder.decode(APIEnvelope<[DistrictDTO]>.self, from: await districtData).response
             schoolYears = try decoder.decode(APIEnvelope<[SchoolYearDTO]>.self, from: await yearData).response
             catalogErrorMessage = nil
+            return true
         } catch {
             catalogErrorMessage = message(for: error)
+            return false
         }
+    }
+
+    private func finishSessionRestore() async {
+        phase = .restoring
+        await loadFamily()
+        guard phase != .signedOut else { return }
+
+        let catalogLoaded = await loadSchoolCatalog()
+        let hasCurrentEnrollment = enrollments.contains(where: \.isCurrent)
+        guard catalogLoaded || !hasCurrentEnrollment else {
+            errorMessage = catalogErrorMessage
+            phase = .restoreUnavailable
+            return
+        }
+        phase = .signedIn
     }
 
     func schoolTimezone(for childId: String? = nil) -> TimeZone {
@@ -472,8 +486,9 @@ final class SessionStore {
         }
         do {
             let value = schoolDateString(date, childId: childId)
-            let data = try await authorized(path: "daily-schedules",
-                query: [URLQueryItem(name: "date", value: value)])
+            var query = [URLQueryItem(name: "date", value: value)]
+            if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
+            let data = try await authorized(path: "daily-schedules", query: query)
             let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
             guard generation == dailySchedulesLoadGeneration, accessToken != nil else { return }
             dailySchedules = items
@@ -530,8 +545,9 @@ final class SessionStore {
         }
         do {
             let value = schoolDateString(date, childId: childId)
-            let data = try await authorized(path: "daily-schedules",
-                query: [URLQueryItem(name: "date", value: value)])
+            var query = [URLQueryItem(name: "date", value: value)]
+            if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
+            let data = try await authorized(path: "daily-schedules", query: query)
             let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
             guard generation == tomorrowSchedulesLoadGeneration, accessToken != nil else { return }
             tomorrowDailySchedules = items

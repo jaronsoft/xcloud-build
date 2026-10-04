@@ -705,17 +705,16 @@ private struct HomeScreen: View {
             : session.homeEvents.filter { $0.children.contains { $0.id == selectedChildId } })
     }
     private var todayEvents: [ParentEventDTO] {
-        visibleEvents.filter { eventCovers($0, dateKey: dateKey(offset: 0)) }
+        visibleEvents.filter { eventOccurs($0, offsets: 0...0) }
     }
     private var tomorrowEvents: [ParentEventDTO] {
-        visibleEvents.filter { eventCovers($0, dateKey: dateKey(offset: 1)) }
+        visibleEvents.filter { eventOccurs($0, offsets: 1...1) }
     }
     private var thisWeekEvents: [ParentEventDTO] {
         let earlierEventIds = Set(todayEvents.map(\.id) + tomorrowEvents.map(\.id))
         return visibleEvents.filter {
             !earlierEventIds.contains($0.id)
-                && ($0.endDate ?? $0.startDate) >= dateKey(offset: 2)
-                && $0.startDate <= dateKey(offset: 7)
+                && eventOccurs($0, offsets: 2...7)
         }
     }
     var body: some View {
@@ -792,6 +791,10 @@ private struct HomeScreen: View {
                                         Text(item.childName).font(.headline).foregroundStyle(MeroliColor.ink)
                                         Text(item.schoolName ?? (zh ? "未设置学校" : "No school selected"))
                                             .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                        if item.date != dateKey(offset: 0) {
+                                            Text(schoolLocalDateNote(item.date))
+                                                .font(.caption2).foregroundStyle(MeroliColor.muted)
+                                        }
                                     }
                                     Spacer()
                                     Text(statusLabel(item.status)).font(.caption.weight(.semibold))
@@ -861,6 +864,10 @@ private struct HomeScreen: View {
                                     Text(item.childName).font(.headline).foregroundStyle(MeroliColor.ink)
                                     Text(item.schoolName ?? (zh ? "未设置学校" : "No school selected"))
                                         .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                    if item.date != dateKey(offset: 1) {
+                                        Text(schoolLocalDateNote(item.date))
+                                            .font(.caption2).foregroundStyle(MeroliColor.muted)
+                                    }
                                 }
                                 Spacer()
                                 Text(statusLabel(item.status)).font(.caption.weight(.semibold))
@@ -949,18 +956,60 @@ private struct HomeScreen: View {
     }
 
     private func loadHomeEvents() async {
-        let end = schoolCalendar.date(byAdding: .day, value: 7, to: date) ?? date
-        await session.loadHomeEvents(from: date, to: end, childId: selectedChildId.isEmpty ? nil : selectedChildId)
+        let childIds = selectedChildId.isEmpty ? session.children.map(\.id) : [selectedChildId]
+        let startKey = childIds.map { dateKey(offset: 0, childId: $0) }.min() ?? dateKey(offset: 0)
+        let endKey = childIds.map { dateKey(offset: 7, childId: $0) }.max() ?? dateKey(offset: 7)
+        await session.loadHomeEvents(
+            from: dateFromKey(startKey), to: dateFromKey(endKey),
+            childId: selectedChildId.isEmpty ? nil : selectedChildId
+        )
     }
 
-    private func dateKey(offset: Int) -> String {
-        let target = schoolCalendar.date(byAdding: .day, value: offset, to: date) ?? date
+    private func dateFromKey(_ key: String) -> Date {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = schoolCalendar
         formatter.timeZone = schoolCalendar.timeZone
         formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: key) ?? date
+    }
+
+    private func dateKey(offset: Int, childId: String? = nil) -> String {
+        let referenceOffset = schoolCalendar.dateComponents(
+            [.day], from: schoolCalendar.startOfDay(for: .now), to: schoolCalendar.startOfDay(for: date)
+        ).day ?? 0
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = session.schoolTimezone(for: childId)
+        let localToday = calendar.startOfDay(for: .now)
+        let target = calendar.date(byAdding: .day, value: referenceOffset + offset, to: localToday) ?? localToday
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: target)
+    }
+
+    private func eventOccurs(_ event: ParentEventDTO, offsets: ClosedRange<Int>) -> Bool {
+        let childIds = selectedChildId.isEmpty ? event.children.map(\.id) : [selectedChildId]
+        let targets = childIds.isEmpty ? [nil] : childIds.map(Optional.some)
+        return targets.contains { childId in
+            offsets.contains { offset in
+                eventCovers(event, dateKey: dateKey(offset: offset, childId: childId))
+            }
+        }
+    }
+
+    private func schoolLocalDateNote(_ key: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
+        formatter.calendar = schoolCalendar
+        formatter.timeZone = schoolCalendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        guard let date = formatter.date(from: key) else { return key }
+        formatter.dateFormat = zh ? "M月d日 EEEE" : "EEEE, MMM d"
+        let label = formatter.string(from: date)
+        return zh ? "学校当地日期：\(label)" : "School local date: \(label)"
     }
 
     private func eventCovers(_ event: ParentEventDTO, dateKey: String) -> Bool {
