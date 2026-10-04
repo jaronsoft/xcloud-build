@@ -780,7 +780,7 @@ private struct HomeScreen: View {
                                         Text(item.schoolName ?? (zh ? "未设置学校" : "No school selected"))
                                             .font(.subheadline).foregroundStyle(MeroliColor.muted)
                                         if item.date != dateKey(offset: 0) {
-                                            Text(schoolLocalDateNote(item.date))
+                                            Text(schoolLocalDateNote(item.date, childId: item.childId))
                                                 .font(.caption2).foregroundStyle(MeroliColor.muted)
                                         }
                                     }
@@ -872,7 +872,7 @@ private struct HomeScreen: View {
                                     Text(item.schoolName ?? (zh ? "未设置学校" : "No school selected"))
                                         .font(.subheadline).foregroundStyle(MeroliColor.muted)
                                     if item.date != dateKey(offset: 1) {
-                                        Text(schoolLocalDateNote(item.date))
+                                            Text(schoolLocalDateNote(item.date, childId: item.childId))
                                             .font(.caption2).foregroundStyle(MeroliColor.muted)
                                     }
                                 }
@@ -1007,11 +1007,13 @@ private struct HomeScreen: View {
         }
     }
 
-    private func schoolLocalDateNote(_ key: String) -> String {
+    private func schoolLocalDateNote(_ key: String, childId: String? = nil) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = session.schoolTimezone(for: childId)
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
-        formatter.calendar = schoolCalendar
-        formatter.timeZone = schoolCalendar.timeZone
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
         formatter.dateFormat = "yyyy-MM-dd"
         guard let date = formatter.date(from: key) else { return key }
         formatter.dateFormat = zh ? "M月d日 EEEE" : "EEEE, MMM d"
@@ -1090,8 +1092,8 @@ private struct HomeScreen: View {
         case "NON_INSTRUCTIONAL_DAY": return zh ? "非上课日" : "Non-instructional day"
         case "EVENT_SCHEDULE_CONFLICT": return zh ? "活动课表冲突" : "Event schedule conflict"
         case "SCHEDULE_TEMPLATE_UNRESOLVED", "SCHEDULE_VARIANT_UNRESOLVED": return zh ? "课表需要确认" : "Schedule needs review"
-        case "SCHEDULE_DATA_UNAVAILABLE", "SCHEDULE_UNAVAILABLE", "SCHEDULE_DATA_INCOMPLETE": return zh ? "暂无可靠课表" : "Schedule unavailable"
-        default: return zh ? "暂无课表" : "Schedule unavailable"
+        case "SCHEDULE_DATA_UNAVAILABLE", "SCHEDULE_UNAVAILABLE", "SCHEDULE_DATA_INCOMPLETE": return zh ? "学校时间待确认" : "School schedule unavailable"
+        default: return zh ? "学校时间待确认" : "School schedule unavailable"
         }
     }
 
