@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import CryptoKit
 import Security
 
 enum AppPhase: Equatable {
@@ -28,6 +29,67 @@ private struct CachedAuthSession: Codable {
     let language: String
 }
 
+private struct CachedAPIResponse: Codable {
+    let data: Data?
+    var lastCheckedAt: Date
+}
+
+private struct ResponseCacheSummary {
+    let itemCount: Int
+    let byteCount: Int64
+}
+
+private final class DailyAPIResponseCache {
+    private let fileManager = FileManager.default
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+
+    func read(key: String, userId: String) -> CachedAPIResponse? {
+        guard let url = fileURL(key: key, userId: userId),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return try? decoder.decode(CachedAPIResponse.self, from: data)
+    }
+
+    func write(_ response: CachedAPIResponse, key: String, userId: String) {
+        guard let url = fileURL(key: key, userId: userId),
+              let data = try? encoder.encode(response) else { return }
+        try? data.write(to: url, options: .atomic)
+        try? fileManager.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
+    }
+
+    func removeAll(userId: String) {
+        guard let directory = directoryURL(userId: userId) else { return }
+        try? fileManager.removeItem(at: directory)
+    }
+
+    func summary(userId: String) -> ResponseCacheSummary {
+        guard let directory = directoryURL(userId: userId),
+              let files = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey]) else {
+            return ResponseCacheSummary(itemCount: 0, byteCount: 0)
+        }
+        let byteCount = files.reduce(Int64.zero) { total, url in
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            return total + Int64(size)
+        }
+        return ResponseCacheSummary(itemCount: files.count, byteCount: byteCount)
+    }
+
+    private func fileURL(key: String, userId: String) -> URL? {
+        guard let directory = directoryURL(userId: userId) else { return nil }
+        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent(digest(key)).appendingPathExtension("json")
+    }
+
+    private func directoryURL(userId: String) -> URL? {
+        guard let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        return support.appendingPathComponent("Meroli/ResponseCache", isDirectory: true)
+            .appendingPathComponent(digest(userId), isDirectory: true)
+    }
+
+    private func digest(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+}
 private struct OnboardingSubscribeReceipt: Codable, Equatable {
     let userId: String
     let idempotencyKey: String
@@ -98,6 +160,7 @@ final class SessionStore {
     private(set) var districts: [DistrictDTO] = []
     private(set) var schoolYears: [SchoolYearDTO] = []
     private(set) var schools: [ParentSchoolDTO] = []
+    private(set) var selectedSchoolDetails: [String: ParentSchoolDTO] = [:]
     private(set) var calendarEvents: [ParentEventDTO] = []
     private(set) var homeEvents: [ParentEventDTO] = []
     private(set) var isLoadingHomeEvents = false
@@ -140,6 +203,8 @@ final class SessionStore {
     @ObservationIgnored private var isRemovingEnrollment = false
     @ObservationIgnored private var familyLoadGeneration = 0
     @ObservationIgnored private var schoolsLoadGeneration = 0
+    @ObservationIgnored private var schoolDirectoryByDistrict: [String: [ParentSchoolDTO]] = [:]
+    @ObservationIgnored private var loadedSchoolDistrictId: String?
     @ObservationIgnored private var programsLoadGeneration = 0
     @ObservationIgnored private var calendarLoadGeneration = 0
     @ObservationIgnored private var homeEventsLoadGeneration = 0
@@ -159,11 +224,28 @@ final class SessionStore {
     @ObservationIgnored private var lastSchoolOverviewId: String?
     @ObservationIgnored private var lastPerformanceHistorySchoolId: String?
     @ObservationIgnored private let decoder: JSONDecoder
+    @ObservationIgnored private let responseCache = DailyAPIResponseCache()
+    @ObservationIgnored private var inFlightReadRequests: [String: Task<Data, Error>] = [:]
 
     init() {
         api = try? APIClient()
         decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
+    }
+
+    var cachedResponseCount: Int { responseCache.summary(userId: userId).itemCount }
+    var cachedResponseByteCount: Int64 { responseCache.summary(userId: userId).byteCount }
+
+    func school(for id: String) -> ParentSchoolDTO? {
+        selectedSchoolDetails[id] ?? schools.first { $0.id == id }
+    }
+
+    func clearCachedRemoteData() {
+        guard !userId.isEmpty else { return }
+        responseCache.removeAll(userId: userId)
+        schoolDirectoryByDistrict.removeAll()
+        selectedSchoolDetails.removeAll()
+        loadedSchoolDistrictId = nil
     }
 
     var usesChinese: Bool { language == "zh-CN" }
@@ -277,7 +359,7 @@ final class SessionStore {
         }
     }
 
-    func loadFamily() async {
+    func loadFamily(forceRefresh: Bool = false) async {
         guard phase == .signedIn || accessToken != nil else { return }
         familyLoadGeneration += 1
         let generation = familyLoadGeneration
@@ -286,13 +368,13 @@ final class SessionStore {
             if generation == familyLoadGeneration { isLoadingFamily = false }
         }
         do {
-            let familyData = try await authorized(path: "family")
+            let familyData = try await authorized(path: "family", forceRefresh: forceRefresh)
             let familyResult = try decoder.decode(APIEnvelope<FamilyDTO>.self, from: familyData).response
-            let childData = try await authorized(path: "children")
+            let childData = try await authorized(path: "children", forceRefresh: forceRefresh)
             let childrenResult = try decoder.decode(APIEnvelope<[ChildDTO]>.self, from: childData).response
-            let enrollmentData = try await authorized(path: "enrollments")
+            let enrollmentData = try await authorized(path: "enrollments", forceRefresh: forceRefresh)
             let enrollmentsResult = try decoder.decode(APIEnvelope<[EnrollmentDTO]>.self, from: enrollmentData).response
-            let transitionData = try await authorized(path: "school-year-transition/preview")
+            let transitionData = try await authorized(path: "school-year-transition/preview", forceRefresh: forceRefresh)
             let transitionsResult = try decoder.decode(APIEnvelope<[SchoolYearTransitionDTO]>.self, from: transitionData).response
             guard generation == familyLoadGeneration, accessToken != nil else { return }
             family = familyResult
@@ -314,13 +396,13 @@ final class SessionStore {
     }
 
     @discardableResult
-    func loadSchoolCatalog() async -> Bool {
+    func loadSchoolCatalog(forceRefresh: Bool = false) async -> Bool {
         isLoadingCatalog = true
         catalogErrorMessage = nil
         defer { isLoadingCatalog = false }
         do {
-            async let districtData = send(path: "districts")
-            async let yearData = send(path: "school-years")
+            async let districtData = send(path: "districts", forceRefresh: forceRefresh)
+            async let yearData = send(path: "school-years", forceRefresh: forceRefresh)
             districts = try decoder.decode(APIEnvelope<[DistrictDTO]>.self, from: await districtData).response
             schoolYears = try decoder.decode(APIEnvelope<[SchoolYearDTO]>.self, from: await yearData).response
             catalogErrorMessage = nil
@@ -328,6 +410,20 @@ final class SessionStore {
         } catch {
             catalogErrorMessage = message(for: error)
             return false
+        }
+    }
+
+    func loadSchoolDetails(schoolId: String, forceRefresh: Bool = false) async -> ParentSchoolDTO? {
+        guard !schoolId.isEmpty else { return nil }
+        if !forceRefresh, let cached = selectedSchoolDetails[schoolId] { return cached }
+        do {
+            let data = try await send(path: "schools/\(schoolId)", forceRefresh: forceRefresh)
+            let result = try decoder.decode(APIEnvelope<ParentSchoolDTO>.self, from: data).response
+            selectedSchoolDetails[schoolId] = result
+            return result
+        } catch {
+            errorMessage = message(for: error)
+            return selectedSchoolDetails[schoolId] ?? schools.first { $0.id == schoolId }
         }
     }
 
@@ -363,12 +459,22 @@ final class SessionStore {
             ?? .current
     }
 
-    func loadSchools(districtId: String, keyword: String = "") async {
+    func loadSchools(districtId: String, keyword: String = "", forceRefresh: Bool = false) async {
         schoolsLoadGeneration += 1
         let generation = schoolsLoadGeneration
-        schools = []
         errorMessage = nil
         guard !districtId.isEmpty else {
+            schools = []
+            loadedSchoolDistrictId = nil
+            isLoadingSchools = false
+            return
+        }
+        if loadedSchoolDistrictId != districtId {
+            schools = []
+            loadedSchoolDistrictId = districtId
+        }
+        if !forceRefresh, let directory = schoolDirectoryByDistrict[districtId] {
+            schools = filterSchools(directory, keyword: keyword)
             isLoadingSchools = false
             return
         }
@@ -377,17 +483,26 @@ final class SessionStore {
             if generation == schoolsLoadGeneration { isLoadingSchools = false }
         }
         do {
-            var query: [URLQueryItem] = []
-            let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { query.append(URLQueryItem(name: "keyword", value: trimmed)) }
-            guard let api else { throw APIClientError.invalidBaseURL }
-            let data = try await api.request(path: "districts/\(districtId)/schools", query: query)
-            let result = try decoder.decode(APIEnvelope<[ParentSchoolDTO]>.self, from: data).response
+            let data = try await send(path: "districts/\(districtId)/schools", forceRefresh: forceRefresh)
+            let directory = try decoder.decode(APIEnvelope<[ParentSchoolDTO]>.self, from: data).response
             guard generation == schoolsLoadGeneration else { return }
-            schools = result
+            schoolDirectoryByDistrict[districtId] = directory
+            schools = filterSchools(directory, keyword: keyword)
         } catch {
             guard generation == schoolsLoadGeneration else { return }
             errorMessage = message(for: error)
+        }
+    }
+
+    private func filterSchools(_ directory: [ParentSchoolDTO], keyword: String) -> [ParentSchoolDTO] {
+        let normalizedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        guard !normalizedKeyword.isEmpty else { return directory }
+        return directory.filter { school in
+            [school.name, school.city, school.state]
+                .joined(separator: " ")
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                .contains(normalizedKeyword)
         }
     }
 
@@ -1387,21 +1502,22 @@ final class SessionStore {
         path: String,
         method: String = "GET",
         json: [String: Any]? = nil,
-        query: [URLQueryItem] = []
+        query: [URLQueryItem] = [],
+        forceRefresh: Bool = false
     ) async throws -> Data {
         guard let token = accessToken else { throw APIClientError.unacceptableStatusCode(401) }
         do {
-            return try await send(path: path, method: method, authorization: token, json: json, query: query)
+            return try await send(path: path, method: method, authorization: token, json: json, query: query, forceRefresh: forceRefresh)
         } catch let error as APIClientError where error.statusCode == 401 {
             guard method == "GET" else { throw error }
             if let currentToken = accessToken, currentToken != token {
-                return try await send(path: path, method: method, authorization: currentToken, json: json, query: query)
+                return try await send(path: path, method: method, authorization: currentToken, json: json, query: query, forceRefresh: forceRefresh)
             }
             guard let refreshToken = KeychainRefreshToken.read() else { throw error }
             try await rotate(refreshToken: refreshToken)
             guard let newToken = accessToken else { throw error }
             do {
-                return try await send(path: path, method: method, authorization: newToken, json: json, query: query)
+                return try await send(path: path, method: method, authorization: newToken, json: json, query: query, forceRefresh: forceRefresh)
             } catch let retryError as APIClientError where retryError.statusCode == 401 {
                 clearLocalSession()
                 phase = .signedOut
@@ -1461,14 +1577,69 @@ final class SessionStore {
         authorization: String? = nil,
         json: [String: Any]? = nil,
         query: [URLQueryItem] = [],
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        forceRefresh: Bool = false
     ) async throws -> Data {
         guard let api else { throw APIClientError.invalidBaseURL }
+        let isCacheableRead = method.uppercased() == "GET" && !userId.isEmpty
+        let cacheUserId = isCacheableRead ? userId : nil
+        let key = cacheKey(path: path, query: query)
+        let inFlightKey = cacheUserId.map { "\($0)|\(key)" } ?? key
+        let cached = cacheUserId.flatMap { responseCache.read(key: key, userId: $0) }
+        let now = Date()
+        if !forceRefresh, let data = cached?.data {
+            return data
+        }
+        if !forceRefresh, let pending = inFlightReadRequests[inFlightKey] {
+            return try await pending.value
+        }
         let body = try json.map { try JSONSerialization.data(withJSONObject: $0) }
-        return try await api.request(path: path, method: method, query: query, authorization: authorization, headers: headers, body: body)
+        let request = Task {
+            try await api.request(path: path, method: method, query: query, authorization: authorization, headers: headers, body: body)
+        }
+        if isCacheableRead { inFlightReadRequests[inFlightKey] = request }
+        do {
+            let data = try await request.value
+            if isCacheableRead { inFlightReadRequests[inFlightKey] = nil }
+            if let cacheUserId, userId == cacheUserId {
+                responseCache.write(CachedAPIResponse(data: data, lastCheckedAt: now), key: key, userId: userId)
+            } else if method.uppercased() != "GET", !userId.isEmpty {
+                responseCache.removeAll(userId: userId)
+                schoolDirectoryByDistrict.removeAll()
+                selectedSchoolDetails.removeAll()
+            }
+            return data
+        } catch {
+            if isCacheableRead { inFlightReadRequests[inFlightKey] = nil }
+            if let statusCode = (error as? APIClientError)?.statusCode, statusCode < 500 {
+                throw error
+            }
+            if let cacheUserId, userId == cacheUserId {
+                if let cached, let data = cached.data {
+                    responseCache.write(CachedAPIResponse(data: data, lastCheckedAt: now), key: key, userId: cacheUserId)
+                    return data
+                }
+            }
+            throw error
+        }
+    }
+
+    private func cacheKey(path: String, query: [URLQueryItem]) -> String {
+        var components = URLComponents()
+        components.queryItems = query.sorted {
+            if $0.name != $1.name { return $0.name < $1.name }
+            return ($0.value ?? "") < ($1.value ?? "")
+        }
+        return path + "?" + (components.percentEncodedQuery ?? "")
     }
 
     private func clearLocalSession() {
+        if !userId.isEmpty { responseCache.removeAll(userId: userId) }
+        schoolDirectoryByDistrict.removeAll()
+        selectedSchoolDetails.removeAll()
+        loadedSchoolDistrictId = nil
+        inFlightReadRequests.values.forEach { $0.cancel() }
+        inFlightReadRequests.removeAll()
         familyLoadGeneration += 1
         schoolsLoadGeneration += 1
         programsLoadGeneration += 1

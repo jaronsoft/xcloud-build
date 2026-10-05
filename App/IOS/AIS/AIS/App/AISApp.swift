@@ -51,6 +51,7 @@ private struct AISRootContainerView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: showsSplash)
+        .accessibilityIdentifier("xcloud-pipeline-test-2026-10-05")
         .task {
             if let status = await AISMaintenanceService.checkGeneration() {
                 maintenanceStatus = status

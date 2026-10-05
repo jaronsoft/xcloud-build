@@ -20,6 +20,7 @@ private struct AIKRootContainer: View {
             RootView(session: session, tenants: tenants)
         }
         .tint(AIKTheme.accent)
+            .accessibilityIdentifier("xcloud-pipeline-test-2026-10-05")
             .task {
                 async let restore: Void = session.restore()
                 async let releaseCheck: Void = releaseStore.check()

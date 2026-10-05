@@ -321,6 +321,7 @@ struct PixaRivoApp: App {
         )
 
         WindowGroup {
+            Group {
 #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-PixaIAPReviewScreenshot") {
                 PixaIAPReviewScreenshotView(
@@ -334,6 +335,8 @@ struct PixaRivoApp: App {
 #else
             rootView
 #endif
+            }
+            .accessibilityIdentifier("xcloud-pipeline-test-2026-10-05")
         }
     }
 

@@ -1988,13 +1988,16 @@ private struct FamilyScreen: View {
                                     Divider().overlay(MeroliColor.line).padding(.vertical, 12)
 
                                     Button { managingSchoolChild = child } label: {
-                                        HStack(spacing: 9) {
+                                        HStack(alignment: .center, spacing: 12) {
                                             Image(systemName: "building.2")
+                                                .frame(width: 24)
                                                 .foregroundStyle(MeroliColor.ink)
                                             VStack(alignment: .leading, spacing: 3) {
                                                 Text(displayedEnrollment(for: child)?.schoolName ?? (zh ? "尚未关联学校" : "No school linked yet"))
                                                     .font(.subheadline.weight(.semibold))
                                                     .foregroundStyle(MeroliColor.ink)
+                                                    .lineLimit(2)
+                                                    .fixedSize(horizontal: false, vertical: true)
                                                 Text(displayedEnrollment(for: child).map {
                                                     $0.status == "AWAITING_NEXT_SCHOOL"
                                                         ? (zh ? "等待选择下一所学校 · \($0.schoolYearName) · \(localizedGrade($0.gradeCode))" : "Choose the next school · \($0.schoolYearName) · Grade \($0.gradeCode)")
@@ -2002,15 +2005,22 @@ private struct FamilyScreen: View {
                                                 } ?? (zh ? "添加孩子的学校与年级" : "Add this child’s school and grade"))
                                                     .font(.caption)
                                                     .foregroundStyle(MeroliColor.muted)
+                                                    .lineLimit(2)
+                                                    .fixedSize(horizontal: false, vertical: true)
                                             }
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .layoutPriority(1)
                                             Spacer()
-                                            Text(displayedEnrollment(for: child) == nil ? (zh ? "添加" : "Add") : (zh ? "管理" : "Manage"))
-                                                .font(.caption.weight(.semibold))
-                                                .foregroundStyle(MeroliColor.ink)
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption.weight(.semibold))
-                                                .foregroundStyle(MeroliColor.muted)
+                                            HStack(spacing: 5) {
+                                                Text(displayedEnrollment(for: child) == nil ? (zh ? "添加" : "Add") : (zh ? "管理" : "Manage"))
+                                                    .font(.caption.weight(.semibold))
+                                                    .foregroundStyle(MeroliColor.ink)
+                                                Image(systemName: "chevron.right")
+                                                    .font(.caption.weight(.semibold))
+                                                    .foregroundStyle(MeroliColor.muted)
+                                            }
                                         }
+                                        .padding(.vertical, 3)
                                         .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
@@ -2023,12 +2033,12 @@ private struct FamilyScreen: View {
                                                 .font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
                                         }
                                         .buttonStyle(.plain)
-                                        .padding(.top, 11)
+                                        .padding(.top, 14)
                                     }
 
                                     let previousEnrollments = historicalEnrollments(for: child)
                                     if !previousEnrollments.isEmpty {
-                                        Divider().overlay(MeroliColor.line).padding(.vertical, 12)
+                                        Divider().overlay(MeroliColor.line).padding(.vertical, 14)
                                         VStack(alignment: .leading, spacing: 8) {
                                             Text(zh ? "历史学校" : "Previous schools")
                                                 .font(.caption.weight(.semibold))
@@ -2052,20 +2062,25 @@ private struct FamilyScreen: View {
                                     }
 
                                     if currentEnrollment(for: child) != nil {
-                                        Divider().overlay(MeroliColor.line).padding(.vertical, 12)
+                                        Divider().overlay(MeroliColor.line).padding(.vertical, 14)
                                         Button { managingScheduleChild = child } label: {
-                                            HStack(spacing: 9) {
-                                                Image(systemName: "clock.badge.checkmark").foregroundStyle(MeroliColor.ink)
+                                            HStack(spacing: 12) {
+                                                Image(systemName: "clock.badge.checkmark")
+                                                    .frame(width: 24)
+                                                    .foregroundStyle(MeroliColor.ink)
                                                 Text(zh ? "个性化作息与课后项目" : "Schedule and after-school programs")
-                                                    .font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                                    .font(.subheadline.weight(.semibold))
+                                                    .foregroundStyle(MeroliColor.ink)
+                                                    .fixedSize(horizontal: false, vertical: true)
                                                 Spacer()
                                                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.muted)
                                             }
+                                            .padding(.vertical, 3)
                                         }
                                         .buttonStyle(.plain)
                                     }
                                 }
-                                .padding(14)
+                                .padding(16)
                                 .background(.white, in: RoundedRectangle(cornerRadius: 15))
                                 .overlay(RoundedRectangle(cornerRadius: 15).stroke(MeroliColor.line.opacity(0.75), lineWidth: 1))
                             }
@@ -2079,7 +2094,14 @@ private struct FamilyScreen: View {
             .background(MeroliColor.canvas)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
-            .refreshable { await session.loadFamily() }
+            .refreshable {
+                await session.loadFamily(forceRefresh: true)
+                await session.loadSchoolCatalog(forceRefresh: true)
+                let districtIds = Set(session.enrollments.filter(\.isCurrent).map(\.districtId))
+                for districtId in districtIds {
+                    await session.loadSchools(districtId: districtId, forceRefresh: true)
+                }
+            }
             .task { if session.family == nil { await session.loadFamily() } }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -2144,7 +2166,7 @@ private struct NextSchoolTransitionSheet: View {
     @State private var didLoad = false
     @State private var showsSchoolSearch = false
     private var zh: Bool { session.usesChinese }
-    private var school: ParentSchoolDTO? { session.schools.first { $0.id == schoolId } }
+    private var school: ParentSchoolDTO? { session.school(for: schoolId) }
 
     var body: some View {
         NavigationStack {
@@ -3120,7 +3142,12 @@ private struct EnrollmentEditorSheet: View {
     @State private var showsSchoolSearch = false
     @State private var enrollmentAction = "remove"
     private var zh: Bool { session.usesChinese }
-    private var selectedSchool: ParentSchoolDTO? { session.schools.first { $0.id == schoolId } }
+    private var selectedSchool: ParentSchoolDTO? { session.school(for: schoolId) }
+    private var gradeOptions: [String] {
+        var grades = selectedSchool?.availableGrades ?? []
+        if !gradeCode.isEmpty && !grades.contains(gradeCode) { grades.append(gradeCode) }
+        return grades
+    }
     private var selectedYear: SchoolYearDTO? { session.schoolYears.first { $0.id == schoolYearId } }
     private var availableSchoolYears: [SchoolYearDTO] {
         session.schoolYears.filter { $0.districtId == nil || $0.districtId == districtId }
@@ -3209,10 +3236,18 @@ private struct EnrollmentEditorSheet: View {
                     }
                     .disabled(districtId.isEmpty || session.isLoadingSchools)
                     .onChange(of: schoolId) { _, value in
-                        let grades = session.schools.first(where: { $0.id == value })?.availableGrades ?? []
-                        if !grades.contains(gradeCode) { gradeCode = grades.first ?? "" }
+                        let grades = session.school(for: value)?.availableGrades ?? []
+                        if value != current?.schoolId && !grades.contains(gradeCode) {
+                            gradeCode = grades.first ?? ""
+                        }
                         if value != current?.schoolId {
-                            Task { await loadSchedulePrograms(for: value) }
+                            Task {
+                                _ = await session.loadSchoolDetails(schoolId: value)
+                                guard schoolId == value else { return }
+                                let refreshedGrades = session.school(for: value)?.availableGrades ?? []
+                                if !refreshedGrades.contains(gradeCode) { gradeCode = refreshedGrades.first ?? "" }
+                                await loadSchedulePrograms(for: value)
+                            }
                         } else {
                             schedulePrograms = []
                             selectedProgramIds = []
@@ -3247,7 +3282,7 @@ private struct EnrollmentEditorSheet: View {
 
                 Picker(zh ? "年级" : "Grade", selection: $gradeCode) {
                         Text(zh ? "选择年级" : "Choose a grade").tag("")
-                        ForEach(selectedSchool?.availableGrades ?? [], id: \.self) { grade in
+                        ForEach(gradeOptions, id: \.self) { grade in
                             Text(localizedGrade(grade)).tag(grade)
                         }
                     }
@@ -3357,6 +3392,13 @@ private struct EnrollmentEditorSheet: View {
             .navigationTitle(zh ? "\(child.nickname) 的学校" : "\(child.nickname)’s school")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(zh ? "关闭" : "Close") { dismiss() } } }
+            .refreshable {
+                _ = await session.loadSchoolCatalog(forceRefresh: true)
+                if !districtId.isEmpty {
+                    await session.loadSchools(districtId: districtId, forceRefresh: true)
+                }
+                if !schoolId.isEmpty { _ = await session.loadSchoolDetails(schoolId: schoolId, forceRefresh: true) }
+            }
             .sheet(isPresented: $showsSchoolSearch, onDismiss: {
                 guard !districtId.isEmpty else { return }
                 Task { await session.loadSchools(districtId: districtId) }
@@ -3413,6 +3455,7 @@ private struct EnrollmentEditorSheet: View {
             gradeCode = current.gradeCode
             await session.loadSchools(districtId: current.districtId)
             schoolId = current.schoolId
+            _ = await session.loadSchoolDetails(schoolId: current.schoolId)
             schedulePrograms = []
             hasLoadedSchedulePrograms = false
             await session.restorePendingSchoolRemoval(childId: child.id)
@@ -3502,7 +3545,7 @@ private struct AddChildSheet: View {
     @State private var showsReview = false
     @FocusState private var isFocused: Bool
     private var zh: Bool { session.usesChinese }
-    private var selectedSchool: ParentSchoolDTO? { session.schools.first { $0.id == schoolId } }
+    private var selectedSchool: ParentSchoolDTO? { session.school(for: schoolId) }
     private var currentSchoolYear: SchoolYearDTO? {
         guard !districtId.isEmpty else { return nil }
         let timezoneId = session.districts.first(where: { $0.id == districtId })?.timezone
@@ -3589,6 +3632,9 @@ private struct AddChildSheet: View {
                         selectedProgramIds = []
                         Task {
                             guard !value.isEmpty else { return }
+                            _ = await session.loadSchoolDetails(schoolId: value)
+                            guard schoolId == value else { return }
+                            gradeCode = session.school(for: value)?.availableGrades.first ?? ""
                             if let programs = await session.loadTransitionPrograms(schoolId: value), value == schoolId {
                                 selectionStatus = programs.isEmpty ? "NONE" : "NOT_SURE"
                             }
@@ -3708,6 +3754,13 @@ private struct AddChildSheet: View {
                     zh: zh,
                     onConfirm: save
                 )
+            }
+            .refreshable {
+                _ = await session.loadSchoolCatalog(forceRefresh: true)
+                if !districtId.isEmpty {
+                    await session.loadSchools(districtId: districtId, forceRefresh: true)
+                }
+                if !schoolId.isEmpty { _ = await session.loadSchoolDetails(schoolId: schoolId, forceRefresh: true) }
             }
             .task { await load() }
         }
@@ -3901,8 +3954,13 @@ private struct SettingsScreen: View {
     @Environment(SessionStore.self) private var session
     @State private var isLoggingOut = false
     @State private var showsDeleteAccount = false
+    @State private var showsClearCacheConfirmation = false
+    @State private var cacheSummaryVersion = 0
     @State private var appleRawNonce: String?
     private var zh: Bool { session.usesChinese }
+    private var cachedSize: String {
+        ByteCountFormatter.string(fromByteCount: session.cachedResponseByteCount, countStyle: .file)
+    }
 
     var body: some View {
         NavigationStack {
@@ -3950,6 +4008,22 @@ private struct SettingsScreen: View {
                         Text("简体中文").tag("zh-CN")
                     }
                 }
+                Section {
+                    LabeledContent(zh ? "已缓存数据" : "Cached data", value: zh
+                        ? "\(session.cachedResponseCount) 项 · \(cachedSize)"
+                        : "\(session.cachedResponseCount) items · \(cachedSize)")
+                    Button(role: .destructive) {
+                        showsClearCacheConfirmation = true
+                    } label: {
+                        Label(zh ? "清理缓存" : "Clear cache", systemImage: "trash")
+                    }
+                } header: {
+                    Text(zh ? "本地缓存" : "Local cache")
+                } footer: {
+                    Text(zh
+                        ? "清理后，家庭、学校、日历和作息数据会在下次读取时重新下载。"
+                        : "Family, school, calendar, and schedule data will download again when next opened.")
+                }
                 if let error = session.errorMessage {
                     Section { Text(error).foregroundStyle(MeroliColor.coral).font(.subheadline) }
                 }
@@ -3981,6 +4055,21 @@ private struct SettingsScreen: View {
             .navigationTitle(zh ? "设置" : "Settings")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showsDeleteAccount) { DeleteAccountSheet() }
+            .confirmationDialog(
+                zh ? "清理本地缓存？" : "Clear local cache?",
+                isPresented: $showsClearCacheConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button(zh ? "清理缓存" : "Clear cache", role: .destructive) {
+                    session.clearCachedRemoteData()
+                    cacheSummaryVersion += 1
+                }
+                Button(zh ? "取消" : "Cancel", role: .cancel) {}
+            } message: {
+                Text(zh
+                    ? "这只会删除本机保存的远端数据，不会退出登录或删除账户资料。"
+                    : "This removes remote data saved on this device. It will not sign you out or delete your account.")
+            }
         }
         .task { await session.loadAppleBinding() }
     }
@@ -4198,6 +4287,9 @@ private struct SchoolSearchSheet: View {
                 }
             }
             .searchable(text: $searchText, prompt: zh ? "搜索学校名称" : "Search school names")
+            .refreshable {
+                await session.loadSchools(districtId: districtId, keyword: searchText, forceRefresh: true)
+            }
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .navigationTitle(zh ? "选择学校" : "Choose a school")
