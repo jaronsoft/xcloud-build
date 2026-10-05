@@ -1171,12 +1171,6 @@ private struct CalendarScreen: View {
     private var selectedDateEvents: [ParentEventDTO] {
         MeroliEventPresentation.sorted(session.calendarEvents.filter { eventCovers($0, date: selectedDate) })
     }
-    private var selectedWeek: [Date] {
-        let parts = schoolCalendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate)
-        guard let start = schoolCalendar.date(from: parts) else { return [selectedDate] }
-        return (0..<7).compactMap { schoolCalendar.date(byAdding: .day, value: $0, to: start) }
-    }
-
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -1372,26 +1366,6 @@ private struct CalendarScreen: View {
                     }
                 }
             }
-            HStack(spacing: 6) {
-                ForEach(selectedWeek, id: \.timeIntervalSince1970) { day in
-                    let dayEvents = session.calendarEvents.filter { eventCovers($0, date: day) }
-                    Button { selectDay(day) } label: {
-                        VStack(spacing: 4) {
-                            Text(weekdayLabel(day))
-                                .font(.caption2).foregroundStyle(MeroliColor.muted)
-                            Text("\(schoolCalendar.component(.day, from: day))")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .white : MeroliColor.ink)
-                            Circle().fill(dayEvents.isEmpty ? .clear : MeroliColor.gold).frame(width: 4, height: 4)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                        .background(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? MeroliColor.ink : .clear, in: RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(dateHeading(day) + (dayEvents.isEmpty ? "" : (zh ? "，有活动" : ", events")))
-                    .accessibilityAddTraits(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .isSelected : [])
-                }
-            }
         }
         .padding(16)
         .background(.white, in: RoundedRectangle(cornerRadius: 18))
@@ -1429,14 +1403,6 @@ private struct CalendarScreen: View {
         return formatter.string(from: date)
     }
 
-    private func weekdayLabel(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
-        formatter.calendar = schoolCalendar
-        formatter.timeZone = schoolCalendar.timeZone
-        formatter.dateFormat = "EEEEE"
-        return formatter.string(from: date)
-    }
 }
 
 private enum MeroliEventPresentation {
@@ -3998,6 +3964,38 @@ private struct SettingsScreen: View {
                     if let family = session.family, !family.id.isEmpty {
                         LabeledContent(zh ? "家庭编号" : "Family ID", value: family.id)
                     }
+                    Button {
+                        isLoggingOut = true
+                        Task { await session.logout(); isLoggingOut = false }
+                    } label: {
+                        HStack {
+                            if isLoggingOut { ProgressView().tint(.white) }
+                            Text(zh ? "退出登录" : "Sign out")
+                        }
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .foregroundStyle(.white)
+                        .background(MeroliColor.ink, in: RoundedRectangle(cornerRadius: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isLoggingOut)
+                    .accessibilityIdentifier("meroli.settings.logout")
+                    Button { showsDeleteAccount = true } label: {
+                        Text(zh ? "删除账户" : "Delete account")
+                            .font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .foregroundStyle(.white)
+                            .background(MeroliColor.coral, in: RoundedRectangle(cornerRadius: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("meroli.settings.delete-account")
+                    Text(zh ? "删除后你将无法再登录。独占家庭的孩子、入学和作息资料会一并删除；其他成员共享的家庭资料会保留。" : "You will no longer be able to sign in. Children, enrollments, and schedules in a family used only by you will be deleted. Shared family data will remain for other members.")
+                        .font(.footnote)
+                        .foregroundStyle(MeroliColor.muted)
+                        .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 }
                 Section(zh ? "语言" : "Language") {
                     Picker(zh ? "应用语言" : "App language", selection: Binding(
@@ -4026,28 +4024,6 @@ private struct SettingsScreen: View {
                 }
                 if let error = session.errorMessage {
                     Section { Text(error).foregroundStyle(MeroliColor.coral).font(.subheadline) }
-                }
-                Section {
-                    Button(role: .destructive) {
-                        isLoggingOut = true
-                        Task { await session.logout(); isLoggingOut = false }
-                    } label: {
-                        HStack {
-                            Text(zh ? "退出登录" : "Sign out")
-                            Spacer()
-                            if isLoggingOut { ProgressView() }
-                        }
-                    }
-                    .disabled(isLoggingOut)
-                    .accessibilityIdentifier("meroli.settings.logout")
-                }
-                Section {
-                    Button(role: .destructive) { showsDeleteAccount = true } label: {
-                        Text(zh ? "删除账户" : "Delete account")
-                    }
-                    .accessibilityIdentifier("meroli.settings.delete-account")
-                } footer: {
-                    Text(zh ? "删除后你将无法再登录。独占家庭的孩子、入学和作息资料会一并删除；其他成员共享的家庭资料会保留。" : "You will no longer be able to sign in. Children, enrollments, and schedules in a family used only by you will be deleted. Shared family data will remain for other members.")
                 }
             }
             .scrollContentBackground(.hidden)
