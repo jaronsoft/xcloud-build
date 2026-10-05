@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 import Security
-import CryptoKit
 
 enum AppPhase: Equatable {
     case restoring
@@ -27,51 +26,6 @@ private struct CachedAuthSession: Codable {
     let userId: String
     let email: String
     let language: String
-}
-
-private struct CachedAPIResponse: Codable {
-    let data: Data?
-    var lastCheckedAt: Date
-}
-
-private final class DailyAPIResponseCache {
-    private let fileManager = FileManager.default
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
-
-    func read(key: String, userId: String) -> CachedAPIResponse? {
-        guard let url = fileURL(key: key, userId: userId),
-              let data = try? Data(contentsOf: url) else { return nil }
-        return try? decoder.decode(CachedAPIResponse.self, from: data)
-    }
-
-    func write(_ response: CachedAPIResponse, key: String, userId: String) {
-        guard let url = fileURL(key: key, userId: userId),
-              let data = try? encoder.encode(response) else { return }
-        try? data.write(to: url, options: .atomic)
-        try? fileManager.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
-    }
-
-    func removeAll(userId: String) {
-        guard let directory = directoryURL(userId: userId) else { return }
-        try? fileManager.removeItem(at: directory)
-    }
-
-    private func fileURL(key: String, userId: String) -> URL? {
-        guard let directory = directoryURL(userId: userId) else { return nil }
-        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.appendingPathComponent(digest(key)).appendingPathExtension("json")
-    }
-
-    private func directoryURL(userId: String) -> URL? {
-        guard let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
-        return support.appendingPathComponent("Meroli/ResponseCache", isDirectory: true)
-            .appendingPathComponent(digest(userId), isDirectory: true)
-    }
-
-    private func digest(_ value: String) -> String {
-        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
-    }
 }
 
 private struct OnboardingSubscribeReceipt: Codable, Equatable {
@@ -193,7 +147,6 @@ final class SessionStore {
     @ObservationIgnored private var tomorrowSchedulesLoadGeneration = 0
     @ObservationIgnored private var schoolOverviewLoadGeneration = 0
     @ObservationIgnored private var performanceHistoryLoadGeneration = 0
-    @ObservationIgnored private var inFlightReadRequests: [String: Task<Data, Error>] = [:]
     @ObservationIgnored private var lastCalendarRequest: (start: Date, end: Date, childId: String?)?
     @ObservationIgnored private var lastHomeEventsRequest: (start: Date, end: Date, childId: String?)?
     @ObservationIgnored private var lastDailyScheduleDate: Date?
@@ -206,7 +159,6 @@ final class SessionStore {
     @ObservationIgnored private var lastSchoolOverviewId: String?
     @ObservationIgnored private var lastPerformanceHistorySchoolId: String?
     @ObservationIgnored private let decoder: JSONDecoder
-    @ObservationIgnored private let responseCache = DailyAPIResponseCache()
 
     init() {
         api = try? APIClient()
@@ -325,7 +277,7 @@ final class SessionStore {
         }
     }
 
-    func loadFamily(forceRefresh: Bool = false) async {
+    func loadFamily() async {
         guard phase == .signedIn || accessToken != nil else { return }
         familyLoadGeneration += 1
         let generation = familyLoadGeneration
@@ -334,13 +286,13 @@ final class SessionStore {
             if generation == familyLoadGeneration { isLoadingFamily = false }
         }
         do {
-            let familyData = try await authorized(path: "family", forceRefresh: forceRefresh)
+            let familyData = try await authorized(path: "family")
             let familyResult = try decoder.decode(APIEnvelope<FamilyDTO>.self, from: familyData).response
-            let childData = try await authorized(path: "children", forceRefresh: forceRefresh)
+            let childData = try await authorized(path: "children")
             let childrenResult = try decoder.decode(APIEnvelope<[ChildDTO]>.self, from: childData).response
-            let enrollmentData = try await authorized(path: "enrollments", forceRefresh: forceRefresh)
+            let enrollmentData = try await authorized(path: "enrollments")
             let enrollmentsResult = try decoder.decode(APIEnvelope<[EnrollmentDTO]>.self, from: enrollmentData).response
-            let transitionData = try await authorized(path: "school-year-transition/preview", forceRefresh: forceRefresh)
+            let transitionData = try await authorized(path: "school-year-transition/preview")
             let transitionsResult = try decoder.decode(APIEnvelope<[SchoolYearTransitionDTO]>.self, from: transitionData).response
             guard generation == familyLoadGeneration, accessToken != nil else { return }
             family = familyResult
@@ -362,13 +314,13 @@ final class SessionStore {
     }
 
     @discardableResult
-    func loadSchoolCatalog(forceRefresh: Bool = false) async -> Bool {
+    func loadSchoolCatalog() async -> Bool {
         isLoadingCatalog = true
         catalogErrorMessage = nil
         defer { isLoadingCatalog = false }
         do {
-            async let districtData = send(path: "districts", forceRefresh: forceRefresh)
-            async let yearData = send(path: "school-years", forceRefresh: forceRefresh)
+            async let districtData = send(path: "districts")
+            async let yearData = send(path: "school-years")
             districts = try decoder.decode(APIEnvelope<[DistrictDTO]>.self, from: await districtData).response
             schoolYears = try decoder.decode(APIEnvelope<[SchoolYearDTO]>.self, from: await yearData).response
             catalogErrorMessage = nil
@@ -379,9 +331,9 @@ final class SessionStore {
         }
     }
 
-    private func finishSessionRestore(forceRefresh: Bool = false) async {
+    private func finishSessionRestore() async {
         phase = .restoring
-        await loadFamily(forceRefresh: forceRefresh)
+        await loadFamily()
         guard phase != .signedOut else { return }
         guard homeErrorMessage == nil else {
             errorMessage = homeErrorMessage
@@ -389,7 +341,7 @@ final class SessionStore {
             return
         }
 
-        let catalogLoaded = await loadSchoolCatalog(forceRefresh: forceRefresh)
+        let catalogLoaded = await loadSchoolCatalog()
         let hasCurrentEnrollment = enrollments.contains(where: \.isCurrent)
         guard catalogLoaded || !hasCurrentEnrollment else {
             errorMessage = catalogErrorMessage
@@ -411,7 +363,7 @@ final class SessionStore {
             ?? .current
     }
 
-    func loadSchools(districtId: String, keyword: String = "", forceRefresh: Bool = false) async {
+    func loadSchools(districtId: String, keyword: String = "") async {
         schoolsLoadGeneration += 1
         let generation = schoolsLoadGeneration
         schools = []
@@ -428,7 +380,8 @@ final class SessionStore {
             var query: [URLQueryItem] = []
             let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { query.append(URLQueryItem(name: "keyword", value: trimmed)) }
-            let data = try await send(path: "districts/\(districtId)/schools", query: query, forceRefresh: forceRefresh)
+            guard let api else { throw APIClientError.invalidBaseURL }
+            let data = try await api.request(path: "districts/\(districtId)/schools", query: query)
             let result = try decoder.decode(APIEnvelope<[ParentSchoolDTO]>.self, from: data).response
             guard generation == schoolsLoadGeneration else { return }
             schools = result
@@ -462,12 +415,13 @@ final class SessionStore {
         }
     }
 
-    func loadCalendar(from startDate: Date, to endDate: Date, childId: String? = nil, forceRefresh: Bool = false) async {
+    func loadCalendar(from startDate: Date, to endDate: Date, childId: String? = nil) async {
         guard accessToken != nil else { return }
         lastCalendarRequest = (startDate, endDate, childId)
         calendarLoadGeneration += 1
         let generation = calendarLoadGeneration
         isLoadingCalendar = true
+        calendarEvents = []
         errorMessage = nil
         defer {
             if generation == calendarLoadGeneration { isLoadingCalendar = false }
@@ -478,7 +432,7 @@ final class SessionStore {
         ]
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
-            let data = try await authorized(path: "calendar", query: query, forceRefresh: forceRefresh)
+            let data = try await authorized(path: "calendar", query: query)
             let result = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
             guard generation == calendarLoadGeneration, accessToken != nil else { return }
             calendarEvents = result
@@ -489,12 +443,13 @@ final class SessionStore {
         }
     }
 
-    func loadCalendarEvent(id: String) async -> Result<ParentEventDTO, MeroliPresentationError> {
+    func loadCalendarEvent(id: String, isPersonal: Bool = false) async -> Result<ParentEventDTO, MeroliPresentationError> {
         guard !id.isEmpty, id.allSatisfy(\.isNumber) else {
             return .failure(MeroliPresentationError(message: usesChinese ? "活动编号无效。" : "This event ID is invalid."))
         }
         do {
-            let data = try await authorized(path: "events/\(id)")
+            let path = "\(isPersonal ? "personal-events" : "events")/\(id)"
+            let data = try await authorized(path: path)
             let event = try decoder.decode(APIEnvelope<ParentEventDTO>.self, from: data).response
             return .success(event)
         } catch let error as APIClientError where error.statusCode == 404 {
@@ -504,7 +459,29 @@ final class SessionStore {
         }
     }
 
-    func loadHomeEvents(from startDate: Date, to endDate: Date, childId: String? = nil, forceRefresh: Bool = false) async {
+    func savePersonalEvent(id: String? = nil, payload: [String: Any]) async -> Bool {
+        do {
+            let path = id.map { "personal-events/\($0)" } ?? "personal-events"
+            let data = try await authorized(path: path, method: id == nil ? "POST" : "PATCH", json: payload)
+            _ = try decoder.decode(APIEnvelope<ParentEventDTO>.self, from: data).response
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func deletePersonalEvent(id: String) async -> Bool {
+        do {
+            _ = try await authorized(path: "personal-events/\(id)", method: "DELETE")
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func loadHomeEvents(from startDate: Date, to endDate: Date, childId: String? = nil) async {
         guard accessToken != nil else { return }
         lastHomeEventsRequest = (startDate, endDate, childId)
         homeEventsLoadGeneration += 1
@@ -519,7 +496,7 @@ final class SessionStore {
         ]
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
-            let data = try await authorized(path: "calendar", query: query, forceRefresh: forceRefresh)
+            let data = try await authorized(path: "calendar", query: query)
             let result = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
             guard generation == homeEventsLoadGeneration, accessToken != nil else { return }
             homeEvents = result
@@ -530,7 +507,7 @@ final class SessionStore {
         }
     }
 
-    func loadDailySchedules(for date: Date, childId: String? = nil, forceRefresh: Bool = false) async {
+    func loadDailySchedules(for date: Date, childId: String? = nil) async {
         guard api != nil, accessToken != nil else { return }
         lastDailyScheduleDate = date
         lastDailyScheduleChildId = childId
@@ -544,7 +521,7 @@ final class SessionStore {
             let value = schoolDateString(date, childId: childId)
             var query = [URLQueryItem(name: "date", value: value)]
             if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
-            let data = try await authorized(path: "daily-schedules", query: query, forceRefresh: forceRefresh)
+            let data = try await authorized(path: "daily-schedules", query: query)
             let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
             guard generation == dailySchedulesLoadGeneration, accessToken != nil else { return }
             dailySchedules = items
@@ -557,11 +534,11 @@ final class SessionStore {
         }
     }
 
-    func loadNextInstructionalDay(after date: Date, childId: String? = nil, forceRefresh: Bool = false) async {
+    func loadNextInstructionalDay(after date: Date, childId: String? = nil) async {
         guard api != nil, accessToken != nil else { return }
         let value = schoolDateString(date, childId: childId)
         let requestKey = "\(value)|\(childId ?? "")"
-        guard (forceRefresh || lastNextInstructionalDayRequest != requestKey), pendingNextInstructionalDayRequest != requestKey else { return }
+        guard lastNextInstructionalDayRequest != requestKey, pendingNextInstructionalDayRequest != requestKey else { return }
         nextInstructionalDayLoadGeneration += 1
         let generation = nextInstructionalDayLoadGeneration
         pendingNextInstructionalDayRequest = requestKey
@@ -578,7 +555,7 @@ final class SessionStore {
         var query = [URLQueryItem(name: "date", value: value)]
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
-            let data = try await authorized(path: "next-instructional-day", query: query, forceRefresh: forceRefresh)
+            let data = try await authorized(path: "next-instructional-day", query: query)
             let result = try decoder.decode(APIEnvelope<NextInstructionalDayDTO>.self, from: data).response
             guard generation == nextInstructionalDayLoadGeneration, accessToken != nil else { return }
             nextInstructionalDay = result.date
@@ -591,7 +568,7 @@ final class SessionStore {
         }
     }
 
-    func loadTomorrowDailySchedules(for date: Date, childId: String? = nil, forceRefresh: Bool = false) async {
+    func loadTomorrowDailySchedules(for date: Date, childId: String? = nil) async {
         guard api != nil, accessToken != nil else { return }
         lastTomorrowScheduleDate = date
         lastTomorrowScheduleChildId = childId
@@ -605,7 +582,7 @@ final class SessionStore {
             let value = schoolDateString(date, childId: childId)
             var query = [URLQueryItem(name: "date", value: value)]
             if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
-            let data = try await authorized(path: "daily-schedules", query: query, forceRefresh: forceRefresh)
+            let data = try await authorized(path: "daily-schedules", query: query)
             let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
             guard generation == tomorrowSchedulesLoadGeneration, accessToken != nil else { return }
             tomorrowDailySchedules = items
@@ -627,10 +604,11 @@ final class SessionStore {
         }
     }
 
-    func loadSchoolOverview(schoolId: String, forceRefresh: Bool = false) async {
+    func loadSchoolOverview(schoolId: String) async {
         lastSchoolOverviewId = schoolId
         schoolOverviewLoadGeneration += 1
         let generation = schoolOverviewLoadGeneration
+        schoolOverview = nil
         schoolOverviewErrorMessage = nil
         errorMessage = nil
         isLoadingSchoolOverview = true
@@ -640,7 +618,7 @@ final class SessionStore {
             }
         }
         do {
-            let data = try await authorized(path: "schools/\(schoolId)/overview", forceRefresh: forceRefresh)
+            let data = try await authorized(path: "schools/\(schoolId)/overview")
             let overview = try decoder.decode(APIEnvelope<ParentSchoolOverviewDTO>.self, from: data).response
             guard overview.schoolId == schoolId else { throw APIClientError.invalidResponse }
             guard generation == schoolOverviewLoadGeneration, accessToken != nil else { return }
@@ -654,10 +632,11 @@ final class SessionStore {
         }
     }
 
-    func loadSchoolPerformanceHistory(schoolId: String, forceRefresh: Bool = false) async {
+    func loadSchoolPerformanceHistory(schoolId: String) async {
         lastPerformanceHistorySchoolId = schoolId
         performanceHistoryLoadGeneration += 1
         let generation = performanceHistoryLoadGeneration
+        schoolPerformanceHistory = nil
         schoolPerformanceHistoryErrorMessage = nil
         isLoadingSchoolPerformanceHistory = true
         defer {
@@ -666,7 +645,7 @@ final class SessionStore {
             }
         }
         do {
-            let data = try await authorized(path: "schools/\(schoolId)/performance/history", forceRefresh: forceRefresh)
+            let data = try await authorized(path: "schools/\(schoolId)/performance/history")
             let history = try decoder.decode(APIEnvelope<ParentPerformanceHistoryDTO>.self, from: data).response
             guard history.schoolId == schoolId else { throw APIClientError.invalidResponse }
             guard generation == performanceHistoryLoadGeneration, accessToken != nil else { return }
@@ -1247,30 +1226,6 @@ final class SessionStore {
         }
     }
 
-    func deleteChild(id: String) async -> Bool {
-        guard !id.isEmpty, id.allSatisfy(\.isNumber) else {
-            errorMessage = usesChinese ? "家庭成员编号无效。" : "This family member ID is invalid."
-            return false
-        }
-        isSavingChild = true
-        errorMessage = nil
-        defer { isSavingChild = false }
-        do {
-            _ = try await authorized(path: "children/\(id)", method: "DELETE")
-            children.removeAll { $0.id == id }
-            enrollments.removeAll { $0.childId == id }
-            schoolYearTransitions.removeAll { $0.childId == id }
-            dailySchedules.removeAll { $0.childId == id }
-            tomorrowDailySchedules.removeAll { $0.childId == id }
-            nextInstructionalDays.removeAll { $0.childId == id }
-            await loadFamily(forceRefresh: true)
-            return true
-        } catch {
-            errorMessage = message(for: error)
-            return false
-        }
-    }
-
     func setLanguage(_ value: String) async {
         guard ["en", "zh-CN"].contains(value) else { return }
         errorMessage = nil
@@ -1432,22 +1387,21 @@ final class SessionStore {
         path: String,
         method: String = "GET",
         json: [String: Any]? = nil,
-        query: [URLQueryItem] = [],
-        forceRefresh: Bool = false
+        query: [URLQueryItem] = []
     ) async throws -> Data {
         guard let token = accessToken else { throw APIClientError.unacceptableStatusCode(401) }
         do {
-            return try await send(path: path, method: method, authorization: token, json: json, query: query, forceRefresh: forceRefresh)
+            return try await send(path: path, method: method, authorization: token, json: json, query: query)
         } catch let error as APIClientError where error.statusCode == 401 {
             guard method == "GET" else { throw error }
             if let currentToken = accessToken, currentToken != token {
-                return try await send(path: path, method: method, authorization: currentToken, json: json, query: query, forceRefresh: forceRefresh)
+                return try await send(path: path, method: method, authorization: currentToken, json: json, query: query)
             }
             guard let refreshToken = KeychainRefreshToken.read() else { throw error }
             try await rotate(refreshToken: refreshToken)
             guard let newToken = accessToken else { throw error }
             do {
-                return try await send(path: path, method: method, authorization: newToken, json: json, query: query, forceRefresh: forceRefresh)
+                return try await send(path: path, method: method, authorization: newToken, json: json, query: query)
             } catch let retryError as APIClientError where retryError.statusCode == 401 {
                 clearLocalSession()
                 phase = .signedOut
@@ -1507,67 +1461,14 @@ final class SessionStore {
         authorization: String? = nil,
         json: [String: Any]? = nil,
         query: [URLQueryItem] = [],
-        headers: [String: String] = [:],
-        forceRefresh: Bool = false
+        headers: [String: String] = [:]
     ) async throws -> Data {
         guard let api else { throw APIClientError.invalidBaseURL }
-        let isCacheableRead = method.uppercased() == "GET" && !userId.isEmpty
-        let cacheUserId = isCacheableRead ? userId : nil
-        let key = cacheKey(path: path, query: query)
-        let inFlightKey = cacheUserId.map { "\($0)|\(key)" } ?? key
-        let cached = cacheUserId.flatMap { responseCache.read(key: key, userId: $0) }
-        let now = Date()
-        if !forceRefresh, let cached,
-           Calendar.current.isDate(cached.lastCheckedAt, inSameDayAs: now) {
-            guard let data = cached.data else { throw APIClientError.invalidResponse }
-            return data
-        }
-        if !forceRefresh, let pending = inFlightReadRequests[inFlightKey] {
-            return try await pending.value
-        }
         let body = try json.map { try JSONSerialization.data(withJSONObject: $0) }
-        let request = Task {
-            try await api.request(path: path, method: method, query: query, authorization: authorization, headers: headers, body: body)
-        }
-        if isCacheableRead { inFlightReadRequests[inFlightKey] = request }
-        do {
-            let data = try await request.value
-            if isCacheableRead { inFlightReadRequests[inFlightKey] = nil }
-            if let cacheUserId, userId == cacheUserId {
-                responseCache.write(CachedAPIResponse(data: data, lastCheckedAt: now), key: key, userId: userId)
-            } else if method.uppercased() != "GET", !userId.isEmpty {
-                responseCache.removeAll(userId: userId)
-            }
-            return data
-        } catch {
-            if isCacheableRead { inFlightReadRequests[inFlightKey] = nil }
-            if let statusCode = (error as? APIClientError)?.statusCode, statusCode < 500 {
-                throw error
-            }
-            if let cacheUserId, userId == cacheUserId {
-                if let cached, let data = cached.data {
-                    responseCache.write(CachedAPIResponse(data: data, lastCheckedAt: now), key: key, userId: cacheUserId)
-                    return data
-                }
-                responseCache.write(CachedAPIResponse(data: nil, lastCheckedAt: now), key: key, userId: cacheUserId)
-            }
-            throw error
-        }
-    }
-
-    private func cacheKey(path: String, query: [URLQueryItem]) -> String {
-        var components = URLComponents()
-        components.queryItems = query.sorted {
-            if $0.name != $1.name { return $0.name < $1.name }
-            return ($0.value ?? "") < ($1.value ?? "")
-        }
-        return path + "?" + (components.percentEncodedQuery ?? "")
+        return try await api.request(path: path, method: method, query: query, authorization: authorization, headers: headers, body: body)
     }
 
     private func clearLocalSession() {
-        if !userId.isEmpty { responseCache.removeAll(userId: userId) }
-        inFlightReadRequests.values.forEach { $0.cancel() }
-        inFlightReadRequests.removeAll()
         familyLoadGeneration += 1
         schoolsLoadGeneration += 1
         programsLoadGeneration += 1

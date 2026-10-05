@@ -143,6 +143,9 @@ struct ParentEventDTO: Decodable, Identifiable {
     let startTime: String?
     let endTime: String?
     let allDay: Bool
+    let isPersonal: Bool?
+    let category: String?
+    let categoryIcon: String?
     let timezone: String
     let priority: String
     let parentRelevance: String
