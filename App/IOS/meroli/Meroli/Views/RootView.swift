@@ -1641,6 +1641,7 @@ private struct CloseSheetButton: View {
 private struct FamilyScreen: View {
     @Environment(SessionStore.self) private var session
     @State private var showsAddChild = false
+    @State private var childPendingDeletion: ChildDTO?
     @State private var editingChild: ChildDTO?
     @State private var managingSchoolChild: ChildDTO?
     @State private var managingScheduleChild: ChildDTO?
@@ -1907,6 +1908,18 @@ private struct FamilyScreen: View {
                                         }
                                         .buttonStyle(.plain)
                                     }
+
+                                    Divider().overlay(MeroliColor.line).padding(.top, 12)
+                                    Button { childPendingDeletion = child } label: {
+                                        Label(zh ? "删除家庭成员" : "Remove family member", systemImage: "trash")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundStyle(MeroliColor.coral)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(session.isSavingChild)
+                                    .padding(.top, 12)
                                 }
                                 .padding(14)
                                 .background(.white, in: RoundedRectangle(cornerRadius: 15))
@@ -1924,6 +1937,32 @@ private struct FamilyScreen: View {
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await session.loadFamily(forceRefresh: true) }
             .task { if session.family == nil { await session.loadFamily() } }
+            .confirmationDialog(
+                zh ? "删除家庭成员？" : "Remove family member?",
+                isPresented: Binding(
+                    get: { childPendingDeletion != nil },
+                    set: { if !$0 { childPendingDeletion = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let child = childPendingDeletion {
+                    Button(zh ? "删除\(child.nickname)" : "Remove \(child.nickname)", role: .destructive) {
+                        Task {
+                            if await session.deleteChild(id: child.id) {
+                                childPendingDeletion = nil
+                            }
+                        }
+                    }
+                    .disabled(session.isSavingChild)
+                }
+                Button(zh ? "取消" : "Cancel", role: .cancel) { childPendingDeletion = nil }
+            } message: {
+                if let child = childPendingDeletion {
+                    Text(zh
+                        ? "将从家庭中移除\(child.nickname)，并隐藏关联的学校和作息记录。其他家庭成员也将无法查看此资料。"
+                        : "\(child.nickname) and their school and schedule records will be removed from this family for all family members.")
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showsAddChild = true } label: { Image(systemName: "plus").frame(width: 44, height: 44) }

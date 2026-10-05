@@ -1247,6 +1247,30 @@ final class SessionStore {
         }
     }
 
+    func deleteChild(id: String) async -> Bool {
+        guard !id.isEmpty, id.allSatisfy(\.isNumber) else {
+            errorMessage = usesChinese ? "家庭成员编号无效。" : "This family member ID is invalid."
+            return false
+        }
+        isSavingChild = true
+        errorMessage = nil
+        defer { isSavingChild = false }
+        do {
+            _ = try await authorized(path: "children/\(id)", method: "DELETE")
+            children.removeAll { $0.id == id }
+            enrollments.removeAll { $0.childId == id }
+            schoolYearTransitions.removeAll { $0.childId == id }
+            dailySchedules.removeAll { $0.childId == id }
+            tomorrowDailySchedules.removeAll { $0.childId == id }
+            nextInstructionalDays.removeAll { $0.childId == id }
+            await loadFamily(forceRefresh: true)
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
     func setLanguage(_ value: String) async {
         guard ["en", "zh-CN"].contains(value) else { return }
         errorMessage = nil
