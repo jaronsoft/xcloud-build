@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Membership level 6 icon</title>
+  <desc id="desc">Royal circular badge with crown, star, and six rank dots.</desc>
+  <defs>
+    <linearGradient id="level6-bg" x1="22" y1="18" x2="106" y2="110" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7ED"/>
+      <stop offset=".35" stop-color="#FBBF24"/>
+      <stop offset="1" stop-color="#B91C1C"/>
+    </linearGradient>
+    <linearGradient id="level6-mark" x1="35" y1="30" x2="93" y2="91" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset=".35" stop-color="#FDE68A"/>
+      <stop offset="1" stop-color="#DC2626"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="56" fill="url(#level6-bg)"/>
+  <circle cx="64" cy="64" r="46" fill="#FFF7ED" opacity=".66"/>
+  <path d="M34 47l15 15 15-27 15 27 15-15v36H34V47z" fill="url(#level6-mark)" stroke="#991B1B" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M64 46l3.8 7.6 8.4 1.2-6.1 5.9 1.5 8.3-7.6-4-7.6 4 1.5-8.3-6.1-5.9 8.4-1.2L64 46z" fill="#FFFFFF" opacity=".9"/>
+  <rect x="40" y="90" width="48" height="7" rx="3.5" fill="#991B1B" opacity=".85"/>
+  <g fill="#991B1B" opacity=".66">
+    <circle cx="43" cy="106" r="3"/>
+    <circle cx="51.4" cy="106" r="3"/>
+    <circle cx="59.8" cy="106" r="3"/>
+    <circle cx="68.2" cy="106" r="3"/>
+    <circle cx="76.6" cy="106" r="3"/>
+    <circle cx="85" cy="106" r="3"/>
+  </g>
+</svg>

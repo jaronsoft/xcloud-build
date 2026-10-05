@@ -1,0 +1,27 @@
+{
+  "identifier" : "AIS-StoreKit-Configuration",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    { "displayPrice" : "12", "familyShareable" : false, "internalID" : "ais-points-cn-starter-v1", "localizations" : [{ "description" : "永久有效的 1,000 创作积分", "displayName" : "1,000 积分", "locale" : "zh_CN" }], "productID" : "com.wekarepartners.studio.points.cn.starter.v1", "referenceName" : "AIS CN Starter v1", "type" : "Consumable" },
+    { "displayPrice" : "48", "familyShareable" : false, "internalID" : "ais-points-cn-plus-v1", "localizations" : [{ "description" : "永久有效的 5,500 创作积分", "displayName" : "5,500 积分", "locale" : "zh_CN" }], "productID" : "com.wekarepartners.studio.points.cn.plus.v1", "referenceName" : "AIS CN Plus v1", "type" : "Consumable" },
+    { "displayPrice" : "98", "familyShareable" : false, "internalID" : "ais-points-cn-pro-v1", "localizations" : [{ "description" : "永久有效的 12,000 创作积分", "displayName" : "12,000 积分", "locale" : "zh_CN" }], "productID" : "com.wekarepartners.studio.points.cn.pro.v1", "referenceName" : "AIS CN Pro v1", "type" : "Consumable" },
+    { "displayPrice" : "4.99", "familyShareable" : false, "internalID" : "ais-points-us-starter-v1", "localizations" : [{ "description" : "1,000 permanent creation points", "displayName" : "1,000 Points", "locale" : "en_US" }], "productID" : "com.wekarepartners.studio.points.us.starter.v1", "referenceName" : "AIS US Starter v1", "type" : "Consumable" },
+    { "displayPrice" : "19.99", "familyShareable" : false, "internalID" : "ais-points-us-plus-v1", "localizations" : [{ "description" : "4,500 permanent creation points", "displayName" : "4,500 Points", "locale" : "en_US" }], "productID" : "com.wekarepartners.studio.points.us.plus.v1", "referenceName" : "AIS US Plus v1", "type" : "Consumable" },
+    { "displayPrice" : "49.99", "familyShareable" : false, "internalID" : "ais-points-us-pro-v1", "localizations" : [{ "description" : "12,000 permanent creation points", "displayName" : "12,000 Points", "locale" : "en_US" }], "productID" : "com.wekarepartners.studio.points.us.pro.v1", "referenceName" : "AIS US Pro v1", "type" : "Consumable" }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "AIS",
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

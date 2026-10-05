@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Membership level 2 icon</title>
+  <desc id="desc">Silver circular badge with two rank bars.</desc>
+  <defs>
+    <linearGradient id="level2-bg" x1="22" y1="18" x2="106" y2="110" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#94A3B8"/>
+    </linearGradient>
+    <linearGradient id="level2-mark" x1="42" y1="38" x2="86" y2="88" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#64748B"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="56" fill="url(#level2-bg)"/>
+  <circle cx="64" cy="64" r="46" fill="#FFFFFF" opacity=".78"/>
+  <path d="M38 45l12 14 14-22 14 22 12-14v35H38V45z" fill="url(#level2-mark)" stroke="#475569" stroke-width="4" stroke-linejoin="round"/>
+  <rect x="44" y="86" width="40" height="7" rx="3.5" fill="#475569" opacity=".82"/>
+  <rect x="50" y="96" width="28" height="7" rx="3.5" fill="#475569" opacity=".55"/>
+</svg>

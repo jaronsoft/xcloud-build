@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 40px;
+      display: grid;
+      grid-template-columns: repeat(2, 390px);
+      gap: 40px;
+      background: #c9c9c9;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    }
+    .screen {
+      position: relative;
+      width: 390px;
+      height: 844px;
+      overflow: hidden;
+      border-radius: 46px;
+      box-shadow: 0 30px 80px rgba(0,0,0,.25);
+    }
+    .status {
+      position: absolute;
+      z-index: 20;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 25px 0;
+      color: inherit;
+      font-size: 13px;
+      font-weight: 750;
+    }
+    .signals { letter-spacing: 3px; font-size: 10px; }
+    .glass {
+      background: rgba(255,255,255,.56);
+      border: 1px solid rgba(255,255,255,.85);
+      box-shadow: inset 0 1px rgba(255,255,255,.75), 0 12px 34px rgba(15,25,36,.13);
+      backdrop-filter: blur(22px) saturate(1.5);
+    }
+    .topline {
+      position: absolute;
+      z-index: 12;
+      top: 58px;
+      left: 22px;
+      right: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .wordmark { font-size: 16px; font-weight: 800; letter-spacing: -.3px; }
+    .round {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      font-weight: 750;
+    }
+    .native-dock {
+      position: absolute;
+      z-index: 20;
+      left: 14px;
+      right: 14px;
+      bottom: 12px;
+      height: 78px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 7px 5px;
+      border-radius: 28px;
+    }
+    .tab { min-width: 56px; text-align: center; color: rgba(31,39,45,.48); font-size: 10px; font-weight: 650; }
+    .tab i { display: block; margin-bottom: 5px; font-style: normal; font-size: 19px; }
+    .tab.active { color: #172129; }
+
+    /* 产品舞台 */
+    .stage {
+      color: #172129;
+      background:
+        radial-gradient(circle at 50% 38%, rgba(255,255,255,.95) 0 17%, transparent 48%),
+        linear-gradient(165deg, #f5f2eb, #dfe5e8 62%, #c8d2d6);
+    }
+    .stage::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: linear-gradient(rgba(25,40,49,.055) 1px, transparent 1px);
+      background-size: 100% 48px;
+      mask-image: linear-gradient(to bottom, transparent, black 25%, black 70%, transparent);
+    }
+    .stage-copy {
+      position: absolute;
+      z-index: 4;
+      top: 126px;
+      left: 0;
+      right: 0;
+      text-align: center;
+    }
+    .stage-copy small { color: #6c7b83; font-size: 11px; font-weight: 750; letter-spacing: 1.6px; }
+    .stage-copy h1 { margin: 10px 0 0; font-size: 33px; line-height: 1.12; letter-spacing: -1.6px; }
+    .orbit {
+      position: absolute;
+      top: 260px;
+      left: 27px;
+      width: 336px;
+      height: 250px;
+      border: 1px solid rgba(41,61,72,.22);
+      border-radius: 50%;
+      transform: perspective(500px) rotateX(65deg);
+    }
+    .orbit::before, .orbit::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      width: 7px;
+      height: 7px;
+      margin-top: -3px;
+      background: #ff6945;
+      border-radius: 50%;
+      box-shadow: 0 0 0 5px rgba(255,105,69,.15);
+    }
+    .orbit::before { left: -4px; }
+    .orbit::after { right: -4px; }
+    .machine {
+      position: absolute;
+      z-index: 6;
+      top: 298px;
+      left: 116px;
+      width: 158px;
+      height: 192px;
+      filter: drop-shadow(0 28px 26px rgba(39,51,57,.24));
+    }
+    .machine-head {
+      position: absolute;
+      top: 0;
+      left: 34px;
+      width: 90px;
+      height: 56px;
+      background: linear-gradient(145deg, #ff8a63, #ef4f2d);
+      border-radius: 24px 24px 12px 12px;
+      box-shadow: inset 0 1px rgba(255,255,255,.55);
+    }
+    .machine-body {
+      position: absolute;
+      top: 45px;
+      left: 18px;
+      width: 122px;
+      height: 116px;
+      background: linear-gradient(145deg, #f8faf9, #aebdc3);
+      border: 1px solid white;
+      border-radius: 26px 26px 38px 38px;
+    }
+    .machine-body::before {
+      content: "";
+      position: absolute;
+      top: 26px;
+      left: 29px;
+      width: 62px;
+      height: 62px;
+      border: 8px solid #26353c;
+      border-radius: 50%;
+      box-shadow: inset 0 0 0 8px #eef2f2;
+    }
+    .machine-foot {
+      position: absolute;
+      left: 46px;
+      bottom: 0;
+      width: 66px;
+      height: 43px;
+      background: #26353c;
+      border-radius: 8px 8px 18px 18px;
+    }
+    .gesture-hint {
+      position: absolute;
+      z-index: 7;
+      top: 518px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #728088;
+      font-size: 11px;
+      letter-spacing: .4px;
+    }
+    .command {
+      position: absolute;
+      z-index: 10;
+      left: 25px;
+      right: 25px;
+      bottom: 110px;
+      height: 84px;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 13px 14px;
+      border-radius: 28px;
+    }
+    .command .plus {
+      width: 54px;
+      height: 54px;
+      display: grid;
+      place-items: center;
+      color: white;
+      background: #ff6540;
+      border-radius: 19px;
+      font-size: 25px;
+    }
+    .command b { display: block; font-size: 15px; margin-bottom: 4px; }
+    .command span { color: #748088; font-size: 11px; }
+    .command .go { margin-left: auto; padding-right: 5px; font-size: 22px; }
+
+    /* 材质实验室 */
+    .lab {
+      color: #f7f5ef;
+      background:
+        radial-gradient(circle at 52% 40%, rgba(120,133,139,.38), transparent 30%),
+        linear-gradient(145deg, #1e2426, #080b0c 70%);
+    }
+    .lab .glass { background: rgba(32,39,41,.58); border-color: rgba(255,255,255,.14); }
+    .lab .tab { color: rgba(255,255,255,.43); }
+    .lab .tab.active { color: #f3d06c; }
+    .lab .topline .round { color: #f3d06c; }
+    .lab-title {
+      position: absolute;
+      z-index: 5;
+      top: 118px;
+      left: 26px;
+    }
+    .lab-title small { color: #f3d06c; font-size: 10px; font-weight: 750; letter-spacing: 1.5px; }
+    .lab-title h1 { margin: 8px 0 0; font-size: 29px; letter-spacing: -1px; }
+    .light-rail {
+      position: absolute;
+      z-index: 6;
+      right: 20px;
+      top: 185px;
+      width: 44px;
+      height: 290px;
+      padding: 9px;
+      border-radius: 23px;
+    }
+    .light-rail::before {
+      content: "";
+      display: block;
+      width: 4px;
+      height: 240px;
+      margin: 15px auto;
+      background: linear-gradient(#ffffff, #f3d06c, #7d5cff, #313a3d);
+      border-radius: 9px;
+    }
+    .light-knob {
+      position: absolute;
+      top: 88px;
+      left: 9px;
+      width: 26px;
+      height: 26px;
+      border: 5px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 18px #f3d06c;
+    }
+    .lab-product {
+      position: absolute;
+      z-index: 4;
+      top: 232px;
+      left: 90px;
+      width: 190px;
+      height: 245px;
+      background: linear-gradient(110deg, #3f4a4d, #faf6e8 28%, #606d70 55%, #151b1d 74%, #aab3b2);
+      clip-path: polygon(22% 0, 78% 0, 100% 17%, 93% 88%, 70% 100%, 30% 100%, 7% 88%, 0 17%);
+      filter: drop-shadow(0 35px 34px rgba(0,0,0,.65));
+    }
+    .lab-product::before {
+      content: "AIS";
+      position: absolute;
+      top: 102px;
+      left: 55px;
+      width: 80px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      color: #181d1e;
+      background: rgba(243,208,108,.92);
+      border-radius: 22px;
+      font-weight: 850;
+    }
+    .swatches {
+      position: absolute;
+      z-index: 7;
+      left: 23px;
+      right: 23px;
+      bottom: 113px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border-radius: 26px;
+    }
+    .swatch {
+      width: 50px;
+      height: 50px;
+      border-radius: 17px;
+      border: 1px solid rgba(255,255,255,.3);
+      background: linear-gradient(135deg, #edf0e9, #69777a);
+    }
+    .swatch:nth-child(2) { background: linear-gradient(135deg, #f3d06c, #8b6125); }
+    .swatch:nth-child(3) { background: linear-gradient(135deg, #7d5cff, #26233e); }
+    .swatch:nth-child(4) { background: linear-gradient(135deg, #ec805f, #512318); }
+    .swatches .apply { margin-left: auto; color: #f3d06c; font-size: 12px; font-weight: 750; }
+
+    /* 无限画布 */
+    .canvas {
+      color: #211f2b;
+      background-color: #ece9ff;
+      background-image:
+        radial-gradient(circle, rgba(92,75,154,.19) 1px, transparent 1.5px),
+        radial-gradient(circle at 80% 18%, #d2f15c, transparent 22%),
+        radial-gradient(circle at 5% 70%, #c9b8ff, transparent 28%);
+      background-size: 18px 18px, auto, auto;
+    }
+    .canvas .topline { padding: 7px 9px 7px 14px; border-radius: 22px; }
+    .canvas-title {
+      position: absolute;
+      z-index: 4;
+      top: 122px;
+      left: 25px;
+      right: 25px;
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+    }
+    .canvas-title h1 { margin: 0; font-size: 27px; letter-spacing: -1px; }
+    .canvas-title span { color: #6d658a; font-size: 11px; }
+    .node {
+      position: absolute;
+      z-index: 4;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,.9);
+      box-shadow: 0 16px 38px rgba(67,52,117,.16);
+      backdrop-filter: blur(16px);
+    }
+    .node.center {
+      top: 283px;
+      left: 116px;
+      width: 160px;
+      height: 190px;
+      color: white;
+      background: linear-gradient(145deg, #6e58cf, #352972);
+      border-radius: 42px 42px 58px 58px;
+      font-size: 25px;
+      font-weight: 850;
+      transform: rotate(-4deg);
+    }
+    .node.source {
+      top: 198px;
+      left: 35px;
+      width: 86px;
+      height: 104px;
+      background: rgba(255,255,255,.7);
+      border-radius: 24px;
+      transform: rotate(-9deg);
+    }
+    .node.style {
+      top: 188px;
+      right: 30px;
+      width: 82px;
+      height: 82px;
+      background: #d2f15c;
+      border-radius: 50%;
+      transform: rotate(8deg);
+    }
+    .node.result {
+      top: 472px;
+      right: 32px;
+      width: 104px;
+      height: 126px;
+      color: white;
+      background: linear-gradient(145deg, #ef846c, #9f3f64);
+      border-radius: 30px;
+      transform: rotate(7deg);
+    }
+    .node.source::after { content: "产品图"; font-size: 12px; font-weight: 750; }
+    .node.style::after { content: "风格"; font-size: 12px; font-weight: 750; }
+    .node.result::after { content: "结果 01"; font-size: 12px; font-weight: 750; }
+    .connector {
+      position: absolute;
+      z-index: 2;
+      height: 2px;
+      background: rgba(77,60,138,.35);
+      transform-origin: left;
+    }
+    .c1 { top: 282px; left: 106px; width: 105px; transform: rotate(28deg); }
+    .c2 { top: 250px; left: 250px; width: 82px; transform: rotate(-20deg); }
+    .c3 { top: 446px; left: 245px; width: 105px; transform: rotate(40deg); }
+    .canvas-tool {
+      position: absolute;
+      z-index: 7;
+      left: 50%;
+      bottom: 116px;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 6px;
+      padding: 7px;
+      border-radius: 23px;
+    }
+    .canvas-tool span {
+      min-width: 45px;
+      padding: 11px 12px;
+      text-align: center;
+      border-radius: 17px;
+      font-size: 11px;
+      font-weight: 750;
+    }
+    .canvas-tool span.active { color: white; background: #5e49bd; }
+
+    /* 智能镜头 */
+    .lens {
+      color: white;
+      background:
+        linear-gradient(to bottom, rgba(7,15,18,.2), rgba(7,15,18,.05) 45%, rgba(7,15,18,.76)),
+        radial-gradient(circle at 48% 38%, #b7d8d3 0 7%, #688b86 24%, #2c4544 54%, #112323 100%);
+    }
+    .lens .topline { color: white; }
+    .lens .round { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25); }
+    .focus-frame {
+      position: absolute;
+      z-index: 4;
+      top: 188px;
+      left: 47px;
+      width: 296px;
+      height: 350px;
+      border: 1px solid rgba(255,255,255,.58);
+      border-radius: 36px;
+    }
+    .focus-frame::before {
+      content: "";
+      position: absolute;
+      inset: 72px 60px 55px;
+      border: 2px dashed rgba(192,251,226,.72);
+      border-radius: 46% 46% 25% 25%;
+    }
+    .lens-product {
+      position: absolute;
+      z-index: 3;
+      top: 260px;
+      left: 125px;
+      width: 140px;
+      height: 205px;
+      background: linear-gradient(100deg, #d8e3df, #657b77 34%, #eff5f0 55%, #465e5a 80%);
+      border-radius: 58px 58px 30px 30px;
+      filter: drop-shadow(0 30px 34px rgba(0,0,0,.38));
+    }
+    .lens-product::before {
+      content: "";
+      position: absolute;
+      top: -25px;
+      left: 35px;
+      width: 70px;
+      height: 50px;
+      background: #233a38;
+      border-radius: 18px 18px 5px 5px;
+    }
+    .lens-product::after {
+      content: "AIS";
+      position: absolute;
+      top: 85px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: #1f3634;
+      font-size: 16px;
+      font-weight: 850;
+    }
+    .suggestion {
+      position: absolute;
+      z-index: 7;
+      left: 38px;
+      top: 554px;
+      padding: 11px 14px;
+      color: #172b28;
+      background: rgba(199,255,230,.86);
+      border-radius: 17px;
+      font-size: 11px;
+      font-weight: 750;
+      box-shadow: 0 10px 30px rgba(0,0,0,.16);
+    }
+    .lens-controls {
+      position: absolute;
+      z-index: 10;
+      left: 23px;
+      right: 23px;
+      bottom: 110px;
+      height: 92px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      background: rgba(10,19,21,.43);
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 32px;
+      backdrop-filter: blur(22px);
+    }
+    .lens-button { color: rgba(255,255,255,.66); font-size: 10px; text-align: center; }
+    .lens-button i { display: block; margin-bottom: 5px; font-style: normal; font-size: 19px; }
+    .shutter {
+      width: 64px;
+      height: 64px;
+      display: grid;
+      place-items: center;
+      background: #fff;
+      border: 5px solid rgba(255,255,255,.3);
+      border-radius: 50%;
+      box-shadow: inset 0 0 0 2px #203d38, 0 0 0 5px rgba(255,255,255,.18);
+    }
+    .lens .native-dock { display: none; }
+  </style>
+</head>
+<body>
+  <section class="screen stage" id="object-stage">
+    <div class="status"><span>9:41</span><span class="signals">●●● ◒ ▰</span></div>
+    <div class="topline"><div class="wordmark">AIS 产品智造</div><div class="round glass">•••</div></div>
+    <div class="stage-copy"><small>YOUR PRODUCT / YOUR STAGE</small><h1>让产品成为主角</h1></div>
+    <div class="orbit"></div>
+    <div class="machine"><div class="machine-head"></div><div class="machine-body"></div><div class="machine-foot"></div></div>
+    <div class="gesture-hint">‹ 左右拖动查看光影 ›</div>
+    <div class="command glass"><div class="plus">＋</div><div><b>放入你的产品</b><span>照片、视频或产品文件</span></div><div class="go">›</div></div>
+    <nav class="native-dock glass"><div class="tab active"><i>◉</i>舞台</div><div class="tab"><i>◇</i>模板</div><div class="tab"><i>✦</i>创作</div><div class="tab"><i>◷</i>任务</div><div class="tab"><i>○</i>我的</div></nav>
+  </section>
+
+  <section class="screen lab" id="material-lab">
+    <div class="status"><span>9:41</span><span class="signals">●●● ◒ ▰</span></div>
+    <div class="topline"><div class="wordmark">AIS / MATERIAL LAB</div><div class="round glass">↗</div></div>
+    <div class="lab-title"><small>TOUCH TO TRANSFORM</small><h1>给产品新的质感</h1></div>
+    <div class="lab-product"></div>
+    <div class="light-rail glass"><div class="light-knob"></div></div>
+    <div class="swatches glass"><div class="swatch"></div><div class="swatch"></div><div class="swatch"></div><div class="swatch"></div><div class="apply">应用材质 →</div></div>
+    <nav class="native-dock glass"><div class="tab active"><i>◉</i>实验室</div><div class="tab"><i>◇</i>模板</div><div class="tab"><i>✦</i>创作</div><div class="tab"><i>◷</i>任务</div><div class="tab"><i>○</i>我的</div></nav>
+  </section>
+
+  <section class="screen canvas" id="infinite-canvas">
+    <div class="status"><span>9:41</span><span class="signals">●●● ◒ ▰</span></div>
+    <div class="topline glass"><div class="wordmark">AIS 创作画布</div><div class="round">42%</div></div>
+    <div class="canvas-title"><h1>围绕产品，自由生长</h1><span>双指缩放画布</span></div>
+    <div class="connector c1"></div><div class="connector c2"></div><div class="connector c3"></div>
+    <div class="node source"></div><div class="node style"></div><div class="node center">产品</div><div class="node result"></div>
+    <div class="canvas-tool glass"><span>＋ 素材</span><span class="active">✦ 生成</span><span>◇ 风格</span></div>
+    <nav class="native-dock glass"><div class="tab active"><i>⌘</i>画布</div><div class="tab"><i>◇</i>模板</div><div class="tab"><i>✦</i>创作</div><div class="tab"><i>◷</i>任务</div><div class="tab"><i>○</i>我的</div></nav>
+  </section>
+
+  <section class="screen lens" id="ai-lens">
+    <div class="status"><span>9:41</span><span class="signals">●●● ◒ ▰</span></div>
+    <div class="topline"><div class="wordmark">AIS 智能镜头</div><div class="round">×1</div></div>
+    <div class="focus-frame"></div><div class="lens-product"></div>
+    <div class="suggestion">✓ 产品轮廓清晰 · 建议稍微向左</div>
+    <div class="lens-controls"><div class="lens-button"><i>▧</i>导入</div><div class="shutter"></div><div class="lens-button"><i>✦</i>AI 布景</div></div>
+  </section>
+</body>
+</html>

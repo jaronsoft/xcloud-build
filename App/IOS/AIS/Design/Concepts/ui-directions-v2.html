@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 40px;
+      display: grid;
+      grid-template-columns: repeat(2, 390px);
+      gap: 40px;
+      background: #d9d9d9;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    }
+    .screen {
+      --bg: #f3f0e9;
+      --panel: #fffdf8;
+      --ink: #17191d;
+      --muted: #71757c;
+      --accent: #2557d6;
+      --accent-soft: #e0e7fb;
+      --line: #d8d6d0;
+      position: relative;
+      width: 390px;
+      height: 844px;
+      overflow: hidden;
+      color: var(--ink);
+      background: var(--bg);
+      border-radius: 46px;
+      box-shadow: 0 28px 70px rgba(0,0,0,.22);
+    }
+    .soft {
+      --bg: #f6f0e7;
+      --panel: #fffaf3;
+      --ink: #302a27;
+      --muted: #81756d;
+      --accent: #e76645;
+      --accent-soft: #f8d9cd;
+      --line: #e4d9ce;
+    }
+    .mono {
+      --bg: #f4f4f0;
+      --panel: #121412;
+      --ink: #101210;
+      --muted: #696e69;
+      --accent: #b8ef3f;
+      --accent-soft: #e7f7bd;
+      --line: #c9cdc7;
+    }
+    .frost {
+      --bg: #dfe5e9;
+      --panel: rgba(255,255,255,.62);
+      --ink: #18242d;
+      --muted: #60707a;
+      --accent: #1585bc;
+      --accent-soft: #cceaf5;
+      --line: rgba(255,255,255,.78);
+      background:
+        radial-gradient(circle at 90% 5%, #eef9ff 0 20%, transparent 47%),
+        linear-gradient(155deg, #d8e1e7, #edf1f3 55%, #cbd6dc);
+    }
+    .status {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 24px 0;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .status-icons { letter-spacing: 4px; font-size: 11px; }
+    .content { padding: 13px 20px 112px; }
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    .brand-left { display: flex; align-items: center; gap: 10px; }
+    .mark {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      color: white;
+      background: var(--accent);
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 900;
+    }
+    .brand-name { font-size: 16px; font-weight: 760; letter-spacing: -.2px; }
+    .avatar {
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: var(--panel);
+    }
+    .hero {
+      position: relative;
+      min-height: 244px;
+      padding: 24px;
+      overflow: hidden;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 26px;
+    }
+    .industrial .hero {
+      background-image:
+        linear-gradient(rgba(37,87,214,.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(37,87,214,.08) 1px, transparent 1px);
+      background-size: 18px 18px;
+    }
+    .soft .hero { box-shadow: 0 15px 40px rgba(98,63,44,.09); }
+    .mono .hero {
+      color: #f6f7f2;
+      background: #121412;
+      border-color: #121412;
+      border-radius: 4px;
+    }
+    .frost .hero {
+      box-shadow: inset 0 1px rgba(255,255,255,.95), 0 16px 40px rgba(53,83,100,.14);
+      backdrop-filter: blur(24px);
+    }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+    .hero h1 {
+      position: relative;
+      z-index: 2;
+      width: 255px;
+      margin: 14px 0 9px;
+      font-size: 34px;
+      line-height: 1.13;
+      letter-spacing: -1.7px;
+    }
+    .hero p {
+      position: relative;
+      z-index: 2;
+      width: 230px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .mono .hero p { color: #a9afa8; }
+    .object {
+      position: absolute;
+      right: -22px;
+      bottom: -18px;
+      width: 150px;
+      height: 150px;
+      background: var(--accent);
+      border-radius: 34px 72px 34px 72px;
+      transform: rotate(-13deg);
+      opacity: .94;
+    }
+    .object::before {
+      content: "";
+      position: absolute;
+      inset: 29px;
+      border: 2px solid rgba(255,255,255,.72);
+      border-radius: 26px;
+    }
+    .object::after {
+      content: "AIS";
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: rgba(255,255,255,.9);
+      font-size: 20px;
+      font-weight: 800;
+      transform: rotate(13deg);
+    }
+    .soft .object { border-radius: 50%; }
+    .mono .object { border-radius: 0; opacity: 1; }
+    .frost .object {
+      background: linear-gradient(145deg, rgba(255,255,255,.85), rgba(21,133,188,.7));
+      box-shadow: inset 0 1px white, 0 18px 38px rgba(21,133,188,.25);
+    }
+    .primary {
+      position: absolute;
+      left: 24px;
+      bottom: 20px;
+      z-index: 4;
+      padding: 11px 16px;
+      color: white;
+      background: var(--accent);
+      border-radius: 13px;
+      font-size: 13px;
+      font-weight: 760;
+    }
+    .soft .primary { border-radius: 999px; }
+    .mono .primary { color: #101210; border-radius: 0; }
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      margin: 22px 2px 12px;
+    }
+    .section-head b { font-size: 17px; }
+    .section-head span { color: var(--muted); font-size: 12px; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+    .action {
+      min-height: 112px;
+      padding: 16px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+    }
+    .soft .action { box-shadow: 0 10px 26px rgba(98,63,44,.06); }
+    .mono .action { border-radius: 4px; background: white; }
+    .frost .action { backdrop-filter: blur(18px); box-shadow: inset 0 1px white; }
+    .action-icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 13px;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border-radius: 10px;
+      font-weight: 900;
+    }
+    .soft .action-icon { border-radius: 50%; }
+    .mono .action-icon { color: #101210; border-radius: 0; }
+    .action b { display: block; font-size: 14px; margin-bottom: 4px; }
+    .action small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .recent {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 13px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+    }
+    .mono .recent { border-radius: 4px; }
+    .thumb {
+      width: 54px;
+      height: 54px;
+      flex: 0 0 auto;
+      border-radius: 14px;
+      background:
+        linear-gradient(145deg, var(--accent-soft), transparent),
+        var(--bg);
+      border: 1px solid var(--line);
+    }
+    .recent b { display: block; font-size: 13px; margin-bottom: 5px; }
+    .recent span { color: var(--muted); font-size: 11px; }
+    .progress { height: 4px; margin-top: 9px; overflow: hidden; background: var(--line); border-radius: 9px; }
+    .progress i { display: block; width: 64%; height: 100%; background: var(--accent); }
+    .dock {
+      position: absolute;
+      z-index: 10;
+      left: 13px;
+      right: 13px;
+      bottom: 12px;
+      height: 79px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 8px 5px;
+      background: rgba(250,250,250,.72);
+      border: 1px solid rgba(255,255,255,.86);
+      border-radius: 28px;
+      box-shadow: 0 14px 35px rgba(35,40,45,.16);
+      backdrop-filter: blur(22px) saturate(1.5);
+    }
+    .mono .dock { background: rgba(18,20,18,.88); border-color: #343834; }
+    .tab { min-width: 54px; text-align: center; color: #7b8185; font-size: 10px; font-weight: 650; }
+    .mono .tab { color: #a2a8a2; }
+    .tab i { display: block; margin-bottom: 5px; font-style: normal; font-size: 19px; }
+    .tab.active { color: var(--accent); }
+    .mono .tab.active { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <section class="screen industrial" id="industrial-paper">
+    <div class="status"><span>9:41</span><span class="status-icons">●●● ◒ ▰</span></div>
+    <main class="content">
+      <header class="brand"><div class="brand-left"><div class="mark">A</div><div class="brand-name">AIS 产品智造</div></div><div class="avatar"></div></header>
+      <div class="hero"><div class="eyebrow">Product Intelligence</div><h1>让产品视觉<br>更准确、更出色</h1><p>从一张产品照片开始，快速生成可直接使用的商业视觉。</p><div class="object"></div><div class="primary">开始创作 →</div></div>
+      <div class="section-head"><b>创作入口</b><span>查看全部</span></div>
+      <div class="actions"><div class="action"><div class="action-icon">▦</div><b>风格模板</b><small>选择成熟视觉方案</small></div><div class="action"><div class="action-icon">◎</div><b>精选案例</b><small>获取产品创作灵感</small></div></div>
+      <div class="section-head"><b>最近任务</b><span>2 项进行中</span></div>
+      <div class="recent"><div class="thumb"></div><div style="flex:1"><b>工业阀门官网主图</b><span>正在生成 · 64%</span><div class="progress"><i></i></div></div></div>
+    </main>
+    <nav class="dock"><div class="tab active"><i>⌂</i>首页</div><div class="tab"><i>▦</i>模板</div><div class="tab"><i>✦</i>创作</div><div class="tab"><i>☷</i>任务</div><div class="tab"><i>○</i>我的</div></nav>
+  </section>
+
+  <section class="screen soft" id="soft-studio">
+    <div class="status"><span>9:41</span><span class="status-icons">●●● ◒ ▰</span></div>
+    <main class="content">
+      <header class="brand"><div class="brand-left"><div class="mark">A</div><div class="brand-name">AIS 产品智造</div></div><div class="avatar"></div></header>
+      <div class="hero"><div class="eyebrow">Creative Studio</div><h1>把产品拍得<br>更有吸引力</h1><p>上传产品照片，交给 AIS 完成布景、光影与商业表达。</p><div class="object"></div><div class="primary">开始创作</div></div>
+      <div class="section-head"><b>今天想做什么？</b><span>更多灵感</span></div>
+      <div class="actions"><div class="action"><div class="action-icon">▦</div><b>套用好风格</b><small>从模板快速开始</small></div><div class="action"><div class="action-icon">◎</div><b>看看好案例</b><small>找到适合的方向</small></div></div>
+      <div class="section-head"><b>继续创作</b><span>查看任务</span></div>
+      <div class="recent"><div class="thumb"></div><div style="flex:1"><b>新品包装展示图</b><span>正在生成 · 64%</span><div class="progress"><i></i></div></div></div>
+    </main>
+    <nav class="dock"><div class="tab active"><i>⌂</i>首页</div><div class="tab"><i>▦</i>模板</div><div class="tab"><i>✦</i>创作</div><div class="tab"><i>☷</i>任务</div><div class="tab"><i>○</i>我的</div></nav>
+  </section>
+
+  <section class="screen mono" id="mono-signal">
+    <div class="status"><span>9:41</span><span class="status-icons">●●● ◒ ▰</span></div>
+    <main class="content">
+      <header class="brand"><div class="brand-left"><div class="mark">A</div><div class="brand-name">AIS 产品智造</div></div><div class="avatar"></div></header>
+      <div class="hero"><div class="eyebrow">AIS / PRODUCT LAB</div><h1>产品视觉。<br>重新定义。</h1><p>更少步骤，更明确的输出。为产品生成准确、现代的商业图像。</p><div class="object"></div><div class="primary">启动创作 →</div></div>
+      <div class="section-head"><b>01 / 快速入口</b><span>EXPLORE</span></div>
+      <div class="actions"><div class="action"><div class="action-icon">01</div><b>风格模板</b><small>经过验证的视觉结构</small></div><div class="action"><div class="action-icon">02</div><b>精选案例</b><small>真实产品视觉成果</small></div></div>
+      <div class="section-head"><b>02 / 任务信号</b><span>LIVE</span></div>
+      <div class="recent"><div class="thumb"></div><div style="flex:1"><b>工业产品主视觉</b><span>PROCESSING / 64%</span><div class="progress"><i></i></div></div></div>
+    </main>
+    <nav class="dock"><div class="tab active"><i>⌂</i>首页</div><div class="tab"><i>▦</i>模板</div><div class="tab"><i>✦</i>创作</div><div class="tab"><i>☷</i>任务</div><div class="tab"><i>○</i>我的</div></nav>
+  </section>
+
+  <section class="screen frost" id="spatial-frost">
+    <div class="status"><span>9:41</span><span class="status-icons">●●● ◒ ▰</span></div>
+    <main class="content">
+      <header class="brand"><div class="brand-left"><div class="mark">A</div><div class="brand-name">AIS 产品智造</div></div><div class="avatar"></div></header>
+      <div class="hero"><div class="eyebrow">Spatial Product AI</div><h1>让好产品<br>拥有好画面</h1><p>用清晰、克制的智能工具，为产品构建完整视觉表达。</p><div class="object"></div><div class="primary">开始创作 →</div></div>
+      <div class="section-head"><b>创作空间</b><span>探索更多</span></div>
+      <div class="actions"><div class="action"><div class="action-icon">▦</div><b>风格模板</b><small>从优质方案开始</small></div><div class="action"><div class="action-icon">◎</div><b>精选案例</b><small>浏览真实生成成果</small></div></div>
+      <div class="section-head"><b>进行中的任务</b><span>查看全部</span></div>
+      <div class="recent"><div class="thumb"></div><div style="flex:1"><b>精密仪器产品图</b><span>正在生成 · 64%</span><div class="progress"><i></i></div></div></div>
+    </main>
+    <nav class="dock"><div class="tab active"><i>⌂</i>首页</div><div class="tab"><i>▦</i>模板</div><div class="tab"><i>✦</i>创作</div><div class="tab"><i>☷</i>任务</div><div class="tab"><i>○</i>我的</div></nav>
+  </section>
+</body>
+</html>
