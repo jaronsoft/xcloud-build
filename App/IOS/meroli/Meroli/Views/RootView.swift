@@ -297,13 +297,23 @@ private struct LoadingView: View {
                 Text(session.usesChinese ? "每日校园安排" : "Your School Daily")
                     .font(.subheadline)
                     .foregroundStyle(MeroliColor.muted)
-                ProgressView()
+                ProgressView(value: session.initializationProgress)
+                    .progressViewStyle(.linear)
                     .tint(MeroliColor.ink)
-                    .padding(.top, 10)
+                    .frame(width: 220)
+                    .padding(.top, 8)
+                Text(session.usesChinese ? "正在下载初始化数据…" : "Downloading startup data…")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(MeroliColor.muted)
+                Text("\(Int(session.initializationProgress * 100))%")
+                    .font(.footnote.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(MeroliColor.ink)
+                    .contentTransition(.numericText())
             }
             .offset(y: isAnimating ? -4 : 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: 0.25), value: session.initializationProgress)
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
@@ -3933,6 +3943,9 @@ private struct SettingsScreen: View {
             List {
                 Section(zh ? "账户" : "Account") {
                     LabeledContent(zh ? "邮箱" : "Email", value: session.email)
+                    if let family = session.family, !family.id.isEmpty {
+                        LabeledContent(zh ? "家庭编号" : "Family ID", value: family.id)
+                    }
                     if session.isAppleLinked {
                         Label(zh ? "已绑定 Apple 账号" : "Apple account linked", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(MeroliColor.ink)
@@ -3960,9 +3973,6 @@ private struct SettingsScreen: View {
                             Task { await session.bindApple(identityToken: token, rawNonce: nonce) }
                             }
                         )
-                    }
-                    if let family = session.family, !family.id.isEmpty {
-                        LabeledContent(zh ? "家庭编号" : "Family ID", value: family.id)
                     }
                     Button {
                         isLoggingOut = true
@@ -4060,28 +4070,13 @@ private struct MeroliAppleAuthorizationButton: View {
     let onCompletion: (Result<ASAuthorization, any Error>) -> Void
 
     var body: some View {
-        ZStack {
-            HStack(spacing: 8) {
-                Image(systemName: "apple.logo")
-                    .font(.body.weight(.medium))
-                Text(title)
-                    .font(.body.weight(.medium))
-            }
-            .foregroundStyle(.white)
+        SignInWithAppleButton(type, onRequest: onRequest, onCompletion: onCompletion)
+            .signInWithAppleButtonStyle(.black)
             .frame(maxWidth: .infinity)
-            .frame(minHeight: height)
-            .background(.black, in: RoundedRectangle(cornerRadius: min(15, height / 3)))
-            .accessibilityHidden(true)
-
-            SignInWithAppleButton(type, onRequest: onRequest, onCompletion: onCompletion)
-                .signInWithAppleButtonStyle(.black)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: height)
-                .opacity(0.015)
-                .accessibilityLabel(title)
-                .accessibilityIdentifier(accessibilityIdentifier)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: min(15, height / 3)))
+            .frame(height: height)
+            .clipShape(RoundedRectangle(cornerRadius: min(15, height / 3)))
+            .accessibilityLabel(title)
+            .accessibilityIdentifier(accessibilityIdentifier)
     }
 }
 

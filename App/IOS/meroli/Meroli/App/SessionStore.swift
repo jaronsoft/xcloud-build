@@ -194,6 +194,7 @@ final class SessionStore {
     private(set) var pendingSchoolRemoval: EnrollmentRemovalReceipt?
     private(set) var pendingSchoolChange: EnrollmentSchoolChangeReceipt?
     private(set) var isRestoringSession = false
+    private(set) var initializationProgress = 0.0
     private(set) var isSavingChild = false
     var errorMessage: String?
 
@@ -226,6 +227,9 @@ final class SessionStore {
     @ObservationIgnored private let decoder: JSONDecoder
     @ObservationIgnored private let responseCache = DailyAPIResponseCache()
     @ObservationIgnored private var inFlightReadRequests: [String: Task<Data, Error>] = [:]
+    @ObservationIgnored private var isTrackingInitializationProgress = false
+    @ObservationIgnored private var completedInitializationSteps = 0
+    @ObservationIgnored private let initializationStepCount = 6
 
     init() {
         api = try? APIClient()
@@ -370,12 +374,16 @@ final class SessionStore {
         do {
             let familyData = try await authorized(path: "family", forceRefresh: forceRefresh)
             let familyResult = try decoder.decode(APIEnvelope<FamilyDTO>.self, from: familyData).response
+            completeInitializationStep()
             let childData = try await authorized(path: "children", forceRefresh: forceRefresh)
             let childrenResult = try decoder.decode(APIEnvelope<[ChildDTO]>.self, from: childData).response
+            completeInitializationStep()
             let enrollmentData = try await authorized(path: "enrollments", forceRefresh: forceRefresh)
             let enrollmentsResult = try decoder.decode(APIEnvelope<[EnrollmentDTO]>.self, from: enrollmentData).response
+            completeInitializationStep()
             let transitionData = try await authorized(path: "school-year-transition/preview", forceRefresh: forceRefresh)
             let transitionsResult = try decoder.decode(APIEnvelope<[SchoolYearTransitionDTO]>.self, from: transitionData).response
+            completeInitializationStep()
             guard generation == familyLoadGeneration, accessToken != nil else { return }
             family = familyResult
             children = childrenResult
@@ -404,7 +412,9 @@ final class SessionStore {
             async let districtData = send(path: "districts", forceRefresh: forceRefresh)
             async let yearData = send(path: "school-years", forceRefresh: forceRefresh)
             districts = try decoder.decode(APIEnvelope<[DistrictDTO]>.self, from: await districtData).response
+            completeInitializationStep()
             schoolYears = try decoder.decode(APIEnvelope<[SchoolYearDTO]>.self, from: await yearData).response
+            completeInitializationStep()
             catalogErrorMessage = nil
             return true
         } catch {
@@ -428,6 +438,10 @@ final class SessionStore {
     }
 
     private func finishSessionRestore() async {
+        isTrackingInitializationProgress = true
+        completedInitializationSteps = 0
+        initializationProgress = 0
+        defer { isTrackingInitializationProgress = false }
         phase = .restoring
         await loadFamily()
         guard phase != .signedOut else { return }
@@ -444,7 +458,14 @@ final class SessionStore {
             phase = .restoreUnavailable
             return
         }
+        initializationProgress = 1
         phase = .signedIn
+    }
+
+    private func completeInitializationStep() {
+        guard isTrackingInitializationProgress else { return }
+        completedInitializationSteps = min(completedInitializationSteps + 1, initializationStepCount)
+        initializationProgress = Double(completedInitializationSteps) / Double(initializationStepCount)
     }
 
     func schoolTimezone(for childId: String? = nil) -> TimeZone {
