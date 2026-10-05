@@ -1,0 +1,9 @@
+.DS_Store
+.release/
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+release-config
+AuthKey_*.p8
+*.p12

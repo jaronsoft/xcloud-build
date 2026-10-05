@@ -1,0 +1,2 @@
+"CFBundleDisplayName" = "AIK";
+"NSMicrophoneUsageDescription" = "AIK records your voice question and sends its transcription to your enterprise knowledge base.";
