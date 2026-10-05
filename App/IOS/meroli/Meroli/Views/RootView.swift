@@ -915,17 +915,11 @@ private struct HomeScreen: View {
             .background(MeroliColor.canvas)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { refresh() } label: { Image(systemName: "arrow.clockwise") }
-                        .accessibilityLabel(zh ? "刷新日历" : "Refresh calendar")
+                    Button { refresh(forceRefresh: true) } label: { Image(systemName: "arrow.clockwise") }
+                        .accessibilityLabel(zh ? "刷新首页数据" : "Refresh home data")
                 }
             }
-            .refreshable {
-                await session.loadFamily()
-                await session.loadDailySchedules(for: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-                await loadNextInstructionalDayIfNeeded()
-                await session.loadTomorrowDailySchedules(for: tomorrowDate, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-                await loadHomeEvents()
-            }
+            .refreshable { await refreshData(forceRefresh: true) }
             .task { if session.dailySchedules.isEmpty || session.homeEvents.isEmpty { refresh() } }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
@@ -944,31 +938,37 @@ private struct HomeScreen: View {
         }
     }
 
-    private func refresh() {
+    private func refresh(forceRefresh: Bool = false) {
         Task {
-            await session.loadDailySchedules(for: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-            await loadNextInstructionalDayIfNeeded()
-            await session.loadTomorrowDailySchedules(for: tomorrowDate, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-            await loadHomeEvents()
+            await refreshData(forceRefresh: forceRefresh)
         }
     }
 
-    private func loadNextInstructionalDayIfNeeded() async {
+    private func refreshData(forceRefresh: Bool) async {
+        await session.loadFamily(forceRefresh: forceRefresh)
+        await session.loadDailySchedules(for: date, childId: selectedChildId.isEmpty ? nil : selectedChildId, forceRefresh: forceRefresh)
+        await loadNextInstructionalDayIfNeeded(forceRefresh: forceRefresh)
+        await session.loadTomorrowDailySchedules(for: tomorrowDate, childId: selectedChildId.isEmpty ? nil : selectedChildId, forceRefresh: forceRefresh)
+        await loadHomeEvents(forceRefresh: forceRefresh)
+    }
+
+    private func loadNextInstructionalDayIfNeeded(forceRefresh: Bool = false) async {
         guard !childrenWithoutSchoolToday.isEmpty else { return }
-        await session.loadNextInstructionalDay(after: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
+        await session.loadNextInstructionalDay(after: date, childId: selectedChildId.isEmpty ? nil : selectedChildId, forceRefresh: forceRefresh)
     }
 
     private var tomorrowDate: Date {
         schoolCalendar.date(byAdding: .day, value: 1, to: date) ?? date
     }
 
-    private func loadHomeEvents() async {
+    private func loadHomeEvents(forceRefresh: Bool = false) async {
         let childIds = selectedChildId.isEmpty ? session.children.map(\.id) : [selectedChildId]
         let startKey = childIds.map { dateKey(offset: 0, childId: $0) }.min() ?? dateKey(offset: 0)
         let endKey = childIds.map { dateKey(offset: 7, childId: $0) }.max() ?? dateKey(offset: 7)
         await session.loadHomeEvents(
             from: dateFromKey(startKey), to: dateFromKey(endKey),
-            childId: selectedChildId.isEmpty ? nil : selectedChildId
+            childId: selectedChildId.isEmpty ? nil : selectedChildId,
+            forceRefresh: forceRefresh
         )
     }
 
@@ -1032,7 +1032,7 @@ private struct HomeScreen: View {
     private func eventList(_ events: [ParentEventDTO]) -> some View {
         VStack(spacing: 0) {
             ForEach(events) { event in
-                Button { selectedEvent = event } label: { EventRow(event: event, zh: zh) }
+                Button { selectedEvent = event } label: { EventRow(event: event, zh: zh, showsDate: true) }
                     .buttonStyle(.plain)
                     .padding(.vertical, 12)
                 if event.id != events.last?.id { Divider().overlay(MeroliColor.line) }
@@ -1213,7 +1213,7 @@ private struct CalendarScreen: View {
                             .font(.headline)
                             .foregroundStyle(MeroliColor.ink)
                         Text(error).font(.subheadline).foregroundStyle(MeroliColor.muted).multilineTextAlignment(.center)
-                        Button(zh ? "重试" : "Try again") { Task { await load() } }
+                    Button(zh ? "重试" : "Try again") { Task { await load(forceRefresh: true) } }
                             .buttonStyle(.borderedProminent)
                     }
                     .padding(28)
@@ -1279,7 +1279,7 @@ private struct CalendarScreen: View {
                 }
             }
             .task { await load() }
-            .refreshable { await load() }
+            .refreshable { await load(forceRefresh: true) }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await load() } }
             }
@@ -1301,9 +1301,9 @@ private struct CalendarScreen: View {
         Task { await load() }
     }
 
-    private func load() async {
+    private func load(forceRefresh: Bool = false) async {
         let (start, end) = range
-        await session.loadCalendar(from: start, to: end, childId: selectedChildId.isEmpty ? nil : selectedChildId)
+        await session.loadCalendar(from: start, to: end, childId: selectedChildId.isEmpty ? nil : selectedChildId, forceRefresh: forceRefresh)
     }
 
     private func monthStart(_ date: Date) -> Date {
@@ -1426,6 +1426,7 @@ private enum MeroliEventPresentation {
 private struct EventRow: View {
     let event: ParentEventDTO
     let zh: Bool
+    var showsDate = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -1439,6 +1440,7 @@ private struct EventRow: View {
                     Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.muted)
                 }
                 HStack(spacing: 6) {
+                    if showsDate { Text(eventDateLabel) }
                     if !event.allDay, let start = event.startTime { Text(String(start.prefix(5))) }
                     if !event.children.isEmpty {
                         Text(event.children.map { child in
@@ -1460,6 +1462,24 @@ private struct EventRow: View {
         }
         .padding(.vertical, 5)
         .contentShape(Rectangle())
+    }
+
+    private var eventDateLabel: String {
+        let timezone = TimeZone(identifier: event.timezone) ?? TimeZone(identifier: "America/Los_Angeles")
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = timezone
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let start = parser.date(from: event.startDate) else { return event.startDate }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
+        formatter.timeZone = timezone
+        formatter.dateFormat = zh ? "M月d日 EEE" : "EEE, MMM d"
+        let startLabel = formatter.string(from: start)
+        guard let endKey = event.endDate, endKey != event.startDate,
+              let end = parser.date(from: endKey) else { return startLabel }
+        return "\(startLabel)–\(formatter.string(from: end))"
     }
 }
 
@@ -1902,7 +1922,7 @@ private struct FamilyScreen: View {
             .background(MeroliColor.canvas)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
-            .refreshable { await session.loadFamily() }
+            .refreshable { await session.loadFamily(forceRefresh: true) }
             .task { if session.family == nil { await session.loadFamily() } }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
