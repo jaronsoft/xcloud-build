@@ -720,18 +720,24 @@ private struct HomeScreen: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("Meroli")
-                        .font(.system(.headline, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
+                    HStack(alignment: .center) {
+                        Text("Meroli")
+                            .font(.system(.headline, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
+                        Spacer(minLength: 0)
+                        Button(action: showFamily) {
+                            Label(zh ? "添加孩子" : "Add child", systemImage: "person.badge.plus")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 12)
+                                .frame(minHeight: 42)
+                                .foregroundStyle(MeroliColor.ink)
+                                .background(.white, in: Capsule())
+                                .overlay(Capsule().stroke(MeroliColor.line, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("meroli.home.addChild.shortcut")
+                    }
                     Text(zh ? "今天的上学安排" : "Today at school")
                         .font(.system(.largeTitle, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
-                    sectionHeading(zh ? "今天学校动态" : "Today’s School Updates")
-                    if let error = session.homeEventsErrorMessage {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(MeroliColor.coral)
-                    }
-                    if !todayEvents.isEmpty {
-                        eventList(todayEvents)
-                    }
                     HStack {
                         Button { date = schoolCalendar.date(byAdding: .day, value: -1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
                             .accessibilityLabel(zh ? "前一天" : "Previous day")
@@ -766,7 +772,7 @@ private struct HomeScreen: View {
                                     .foregroundStyle(MeroliColor.ink)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityIdentifier("meroli.home.addChild")
+                            .accessibilityIdentifier("meroli.home.addChild.empty")
                         }
                         .padding(18).frame(maxWidth: .infinity, alignment: .leading)
                         .background(.white, in: RoundedRectangle(cornerRadius: 18))
@@ -779,6 +785,10 @@ private struct HomeScreen: View {
                                         Text(item.childName).font(.headline).foregroundStyle(MeroliColor.ink)
                                         Text(item.schoolName ?? (zh ? "未设置学校" : "No school selected"))
                                             .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                        if let enrollment = session.enrollments.first(where: { $0.childId == item.childId && $0.isCurrent }) {
+                                            Text("\(enrollment.schoolYearName) · \(localizedGrade(enrollment.gradeCode))")
+                                                .font(.caption).foregroundStyle(MeroliColor.muted)
+                                        }
                                         if item.date != dateKey(offset: 0) {
                                             Text(schoolLocalDateNote(item.date, childId: item.childId))
                                                 .font(.caption2).foregroundStyle(MeroliColor.muted)
@@ -823,25 +833,6 @@ private struct HomeScreen: View {
                                         Text(scheduleTypeLabel(scheduleType))
                                             .font(.caption).foregroundStyle(MeroliColor.muted)
                                     }
-                                    if let periods = item.periods, !periods.isEmpty {
-                                        VStack(spacing: 0) {
-                                            ForEach(periods) { period in
-                                                HStack(spacing: 10) {
-                                                    Text(zh && !period.labelZh.isEmpty ? period.labelZh : period.labelEn)
-                                                        .font(.caption.weight(.medium)).foregroundStyle(MeroliColor.ink)
-                                                    Spacer(minLength: 4)
-                                                    Text("\(period.startTime)–\(period.endTime)")
-                                                        .font(.caption.monospacedDigit()).foregroundStyle(MeroliColor.muted)
-                                                    if period.isOptional {
-                                                        Text(zh ? "可选" : "Optional").font(.caption2).foregroundStyle(MeroliColor.muted)
-                                                    }
-                                                }
-                                                .padding(.vertical, 7)
-                                                if period.id != periods.last?.id { Divider().overlay(MeroliColor.line) }
-                                            }
-                                        }
-                                        .padding(.top, 4)
-                                    }
                                     if session.homeEventsErrorMessage != nil, !item.eventTitles.isEmpty {
                                         ForEach(item.eventTitles, id: \.self) { title in
                                             Label(title, systemImage: "calendar.badge.exclamationmark")
@@ -855,6 +846,14 @@ private struct HomeScreen: View {
                             }
                             .padding(18).background(.white, in: RoundedRectangle(cornerRadius: 18))
                         }
+                    }
+                    sectionHeading(zh ? "今天学校动态" : "Today’s School Updates")
+                    if let error = session.homeEventsErrorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(MeroliColor.coral)
+                    }
+                    if !todayEvents.isEmpty {
+                        eventList(todayEvents)
                     }
                     sectionHeading(zh ? "明天" : "Tomorrow")
                     if session.isLoadingTomorrowSchedules && selectedTomorrowSchedules.isEmpty {
@@ -1658,6 +1657,17 @@ private struct FamilyScreen: View {
                             .font(.system(.title3, weight: .semibold))
                             .foregroundStyle(MeroliColor.ink)
                         Spacer()
+                        Button { showsAddChild = true } label: {
+                            Label(zh ? "添加孩子" : "Add child", systemImage: "plus")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 12)
+                                .frame(minHeight: 40)
+                                .foregroundStyle(MeroliColor.ink)
+                                .background(.white, in: Capsule())
+                                .overlay(Capsule().stroke(MeroliColor.line, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("meroli.family.addChild")
                         Button { Task { await session.loadFamily() } } label: {
                             Image(systemName: "arrow.clockwise")
                                 .frame(width: 40, height: 40)
@@ -1961,12 +1971,6 @@ private struct FamilyScreen: View {
                     Text(zh
                         ? "将从家庭中移除\(child.nickname)，并隐藏关联的学校和作息记录。其他家庭成员也将无法查看此资料。"
                         : "\(child.nickname) and their school and schedule records will be removed from this family for all family members.")
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showsAddChild = true } label: { Image(systemName: "plus").frame(width: 44, height: 44) }
-                        .accessibilityLabel(zh ? "添加孩子" : "Add child")
                 }
             }
             .sheet(isPresented: $showsAddChild) { AddChildSheet() }
