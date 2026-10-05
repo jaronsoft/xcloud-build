@@ -785,9 +785,8 @@ private struct HomeScreen: View {
                                         Text(item.childName).font(.headline).foregroundStyle(MeroliColor.ink)
                                         Text(item.schoolName ?? (zh ? "未设置学校" : "No school selected"))
                                             .font(.subheadline).foregroundStyle(MeroliColor.muted)
-                                        if let enrollment = session.enrollments.first(where: { $0.childId == item.childId && $0.isCurrent }) {
-                                            Text("\(enrollment.schoolYearName) · \(localizedGrade(enrollment.gradeCode))")
-                                                .font(.caption).foregroundStyle(MeroliColor.muted)
+                                        if let enrollment = currentEnrollment(for: item.childId) {
+                                            HomeSchoolYearLabel(enrollment: enrollment, zh: zh)
                                         }
                                         if item.date != dateKey(offset: 0) {
                                             Text(schoolLocalDateNote(item.date, childId: item.childId))
@@ -940,6 +939,12 @@ private struct HomeScreen: View {
     private func refresh(forceRefresh: Bool = false) {
         Task {
             await refreshData(forceRefresh: forceRefresh)
+        }
+    }
+
+    private func currentEnrollment(for childId: String) -> EnrollmentDTO? {
+        session.enrollments.first { enrollment in
+            enrollment.childId == childId && enrollment.isCurrent
         }
     }
 
@@ -1120,6 +1125,27 @@ private struct HomeScreen: View {
         case "PERIOD_0_START": return zh ? "第0节开始" : "Period 0 starts"
         default: return zh ? "到校" : "Arrival"
         }
+    }
+}
+
+private struct HomeSchoolYearLabel: View {
+    let enrollment: EnrollmentDTO
+    let zh: Bool
+
+    private var gradeLabel: String {
+        guard zh else { return enrollment.gradeCode == "K" ? "Kindergarten" : enrollment.gradeCode }
+        switch enrollment.gradeCode {
+        case "PK": return "学前班"
+        case "TK": return "过渡幼儿园"
+        case "K": return "幼儿园"
+        default: return "\(enrollment.gradeCode) 年级"
+        }
+    }
+
+    var body: some View {
+        Text("\(enrollment.schoolYearName) · \(gradeLabel)")
+            .font(.caption)
+            .foregroundStyle(MeroliColor.muted)
     }
 }
 
