@@ -1170,12 +1170,6 @@ private struct CalendarScreen: View {
     private var selectedDateEvents: [ParentEventDTO] {
         MeroliEventPresentation.sorted(session.calendarEvents.filter { eventCovers($0, date: selectedDate) })
     }
-    private var selectedWeek: [Date] {
-        let parts = schoolCalendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate)
-        guard let start = schoolCalendar.date(from: parts) else { return [selectedDate] }
-        return (0..<7).compactMap { schoolCalendar.date(byAdding: .day, value: $0, to: start) }
-    }
-
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -1355,26 +1349,6 @@ private struct CalendarScreen: View {
                     } else {
                         Color.clear.frame(maxWidth: .infinity, minHeight: 44)
                     }
-                }
-            }
-            HStack(spacing: 6) {
-                ForEach(selectedWeek, id: \.timeIntervalSince1970) { day in
-                    let dayEvents = session.calendarEvents.filter { eventCovers($0, date: day) }
-                    Button { selectDay(day) } label: {
-                        VStack(spacing: 4) {
-                            Text(weekdayLabel(day))
-                                .font(.caption2).foregroundStyle(MeroliColor.muted)
-                            Text("\(schoolCalendar.component(.day, from: day))")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .white : MeroliColor.ink)
-                            Circle().fill(dayEvents.isEmpty ? .clear : MeroliColor.gold).frame(width: 4, height: 4)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                        .background(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? MeroliColor.ink : .clear, in: RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(dateHeading(day) + (dayEvents.isEmpty ? "" : (zh ? "，有活动" : ", events")))
-                    .accessibilityAddTraits(schoolCalendar.isDate(day, inSameDayAs: selectedDate) ? .isSelected : [])
                 }
             }
         }

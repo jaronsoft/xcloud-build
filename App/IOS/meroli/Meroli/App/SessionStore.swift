@@ -335,6 +335,11 @@ final class SessionStore {
         phase = .restoring
         await loadFamily()
         guard phase != .signedOut else { return }
+        guard homeErrorMessage == nil else {
+            errorMessage = homeErrorMessage
+            phase = .restoreUnavailable
+            return
+        }
 
         let catalogLoaded = await loadSchoolCatalog()
         let hasCurrentEnrollment = enrollments.contains(where: \.isCurrent)
