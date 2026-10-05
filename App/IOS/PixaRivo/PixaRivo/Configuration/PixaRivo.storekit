@@ -1,0 +1,46 @@
+{
+  "identifier" : "PixaRivo-StoreKit-Configuration",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    { "displayPrice" : "12", "familyShareable" : false, "internalID" : "points-cn-starter-v1", "localizations" : [{ "description" : "永久有效的 1000 创作积分", "displayName" : "1000 积分", "locale" : "zh_CN" }], "productID" : "com.wekarepartners.pixarivo.points.cn.starter.v1", "referenceName" : "PixaRivo CN Starter v1", "type" : "Consumable" },
+    { "displayPrice" : "48", "familyShareable" : false, "internalID" : "points-cn-plus-v1", "localizations" : [{ "description" : "永久有效的 5500 创作积分", "displayName" : "5500 积分", "locale" : "zh_CN" }], "productID" : "com.wekarepartners.pixarivo.points.cn.plus.v1", "referenceName" : "PixaRivo CN Plus v1", "type" : "Consumable" },
+    { "displayPrice" : "98", "familyShareable" : false, "internalID" : "points-cn-pro-v1", "localizations" : [{ "description" : "永久有效的 12000 创作积分", "displayName" : "12000 积分", "locale" : "zh_CN" }], "productID" : "com.wekarepartners.pixarivo.points.cn.pro.v1", "referenceName" : "PixaRivo CN Pro v1", "type" : "Consumable" },
+    { "displayPrice" : "4.99", "familyShareable" : false, "internalID" : "points-us-starter-v1", "localizations" : [{ "description" : "1,000 permanent creation points", "displayName" : "1,000 Points", "locale" : "en_US" }], "productID" : "com.wekarepartners.pixarivo.points.us.starter.v1", "referenceName" : "PixaRivo US Starter v1", "type" : "Consumable" },
+    { "displayPrice" : "19.99", "familyShareable" : false, "internalID" : "points-us-plus-v1", "localizations" : [{ "description" : "4,500 permanent creation points", "displayName" : "4,500 Points", "locale" : "en_US" }], "productID" : "com.wekarepartners.pixarivo.points.us.plus.v1", "referenceName" : "PixaRivo US Plus v1", "type" : "Consumable" },
+    { "displayPrice" : "49.99", "familyShareable" : false, "internalID" : "points-us-pro-v1", "localizations" : [{ "description" : "12,000 permanent creation points", "displayName" : "12,000 Points", "locale" : "en_US" }], "productID" : "com.wekarepartners.pixarivo.points.us.pro.v1", "referenceName" : "PixaRivo US Pro v1", "type" : "Consumable" }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "PixaRivo",
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "zh_CN",
+    "_storefront" : "CHN",
+    "_storeKitErrors" : [],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "pixarivo-monthly",
+      "localizations" : [{ "description" : "Monthly creation allowance and member discount", "displayName" : "PixaRivo Monthly", "locale" : "en_US" }, { "description" : "每月创作额度与会员扣点折扣", "displayName" : "PixaRivo 包月", "locale" : "zh_CN" }],
+      "name" : "PixaRivo Monthly",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [], "codeOffers" : [], "displayPrice" : "9.99", "familyShareable" : false, "groupNumber" : 2,
+          "internalID" : "subscription-basic-monthly-v1",
+          "introductoryOffer" : null,
+          "localizations" : [{ "description" : "Monthly creation allowance and 15% point discount", "displayName" : "Plus Monthly", "locale" : "en_US" }, { "description" : "每月创作额度与 15% 扣点折扣", "displayName" : "Plus 月度版", "locale" : "zh_CN" }],
+          "productID" : "com.wekarepartners.pixarivo.subscription.basic.monthly.v1", "recurringSubscriptionPeriod" : "P1M", "referenceName" : "PixaRivo Plus Monthly v1", "subscriptionGroupID" : "pixarivo-monthly", "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [], "codeOffers" : [], "displayPrice" : "29.99", "familyShareable" : false, "groupNumber" : 1,
+          "internalID" : "subscription-pro-monthly-v1",
+          "introductoryOffer" : null,
+          "localizations" : [{ "description" : "Monthly creation allowance and 20% point discount", "displayName" : "Pro Monthly", "locale" : "en_US" }, { "description" : "每月创作额度与 20% 扣点折扣", "displayName" : "Pro 月度版", "locale" : "zh_CN" }],
+          "productID" : "com.wekarepartners.pixarivo.subscription.pro.monthly.v1", "recurringSubscriptionPeriod" : "P1M", "referenceName" : "PixaRivo Pro Monthly v1", "subscriptionGroupID" : "pixarivo-monthly", "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : { "major" : 4, "minor" : 0 }
+}
