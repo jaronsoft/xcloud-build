@@ -568,7 +568,7 @@ final class SessionStore {
         ]
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
-            let data = try await authorized(path: "calendar", query: query)
+            let data = try await authorized(path: "calendar", query: query, forceRefresh: true)
             let result = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
             guard generation == calendarLoadGeneration, accessToken != nil else { return }
             calendarEvents = result
@@ -632,7 +632,7 @@ final class SessionStore {
         ]
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
-            let data = try await authorized(path: "calendar", query: query)
+            let data = try await authorized(path: "calendar", query: query, forceRefresh: true)
             let result = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
             guard generation == homeEventsLoadGeneration, accessToken != nil else { return }
             homeEvents = result
