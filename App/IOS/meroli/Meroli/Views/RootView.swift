@@ -1896,6 +1896,17 @@ private struct FamilyScreen: View {
                         Text(zh ? "家庭成员" : "Children")
                             .font(.system(.title3, design: .serif, weight: .bold))
                             .foregroundStyle(MeroliColor.ink)
+                        Button { showsAddChild = true } label: {
+                            Label(zh ? "添加孩子" : "Add child", systemImage: "plus")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 12)
+                                .frame(minHeight: 36)
+                                .foregroundStyle(MeroliColor.ink)
+                                .background(.white, in: Capsule())
+                                .overlay(Capsule().stroke(MeroliColor.line, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("meroli.family.addChild")
                         Spacer()
                         Text("\(session.children.count)")
                             .font(.caption.weight(.semibold))
@@ -3934,6 +3945,11 @@ private struct SettingsScreen: View {
     @State private var cacheSummaryVersion = 0
     @State private var appleRawNonce: String?
     private var zh: Bool { session.usesChinese }
+    private var appVersionLabel: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+        return build.map { "\(version) (\($0))" } ?? version
+    }
     private var cachedSize: String {
         ByteCountFormatter.string(fromByteCount: session.cachedResponseByteCount, countStyle: .file)
     }
@@ -4015,6 +4031,9 @@ private struct SettingsScreen: View {
                         Text("English").tag("en")
                         Text("简体中文").tag("zh-CN")
                     }
+                }
+                Section(zh ? "关于" : "About") {
+                    LabeledContent(zh ? "版本号" : "Version", value: appVersionLabel)
                 }
                 Section {
                     LabeledContent(zh ? "已缓存数据" : "Cached data", value: zh
