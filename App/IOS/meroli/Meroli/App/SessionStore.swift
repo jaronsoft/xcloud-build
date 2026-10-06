@@ -1,7 +1,7 @@
 import Foundation
 import Observation
-import CryptoKit
 import Security
+import CryptoKit
 
 enum AppPhase: Equatable {
     case restoring
@@ -90,6 +90,7 @@ private final class DailyAPIResponseCache {
         SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
+
 private struct OnboardingSubscribeReceipt: Codable, Equatable {
     let userId: String
     let idempotencyKey: String
@@ -194,7 +195,6 @@ final class SessionStore {
     private(set) var pendingSchoolRemoval: EnrollmentRemovalReceipt?
     private(set) var pendingSchoolChange: EnrollmentSchoolChangeReceipt?
     private(set) var isRestoringSession = false
-    private(set) var initializationProgress = 0.0
     private(set) var isSavingChild = false
     var errorMessage: String?
 
@@ -213,6 +213,7 @@ final class SessionStore {
     @ObservationIgnored private var tomorrowSchedulesLoadGeneration = 0
     @ObservationIgnored private var schoolOverviewLoadGeneration = 0
     @ObservationIgnored private var performanceHistoryLoadGeneration = 0
+    @ObservationIgnored private var inFlightReadRequests: [String: Task<Data, Error>] = [:]
     @ObservationIgnored private var lastCalendarRequest: (start: Date, end: Date, childId: String?)?
     @ObservationIgnored private var lastHomeEventsRequest: (start: Date, end: Date, childId: String?)?
     @ObservationIgnored private var lastDailyScheduleDate: Date?
@@ -226,10 +227,6 @@ final class SessionStore {
     @ObservationIgnored private var lastPerformanceHistorySchoolId: String?
     @ObservationIgnored private let decoder: JSONDecoder
     @ObservationIgnored private let responseCache = DailyAPIResponseCache()
-    @ObservationIgnored private var inFlightReadRequests: [String: Task<Data, Error>] = [:]
-    @ObservationIgnored private var isTrackingInitializationProgress = false
-    @ObservationIgnored private var completedInitializationSteps = 0
-    @ObservationIgnored private let initializationStepCount = 6
 
     init() {
         api = try? APIClient()
@@ -237,6 +234,7 @@ final class SessionStore {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
     }
 
+    var usesChinese: Bool { language == "zh-CN" }
     var cachedResponseCount: Int { responseCache.summary(userId: userId).itemCount }
     var cachedResponseByteCount: Int64 { responseCache.summary(userId: userId).byteCount }
 
@@ -251,8 +249,6 @@ final class SessionStore {
         selectedSchoolDetails.removeAll()
         loadedSchoolDistrictId = nil
     }
-
-    var usesChinese: Bool { language == "zh-CN" }
 
     func restore() async {
         guard !isRestoringSession else { return }
@@ -374,16 +370,12 @@ final class SessionStore {
         do {
             let familyData = try await authorized(path: "family", forceRefresh: forceRefresh)
             let familyResult = try decoder.decode(APIEnvelope<FamilyDTO>.self, from: familyData).response
-            completeInitializationStep()
             let childData = try await authorized(path: "children", forceRefresh: forceRefresh)
             let childrenResult = try decoder.decode(APIEnvelope<[ChildDTO]>.self, from: childData).response
-            completeInitializationStep()
             let enrollmentData = try await authorized(path: "enrollments", forceRefresh: forceRefresh)
             let enrollmentsResult = try decoder.decode(APIEnvelope<[EnrollmentDTO]>.self, from: enrollmentData).response
-            completeInitializationStep()
             let transitionData = try await authorized(path: "school-year-transition/preview", forceRefresh: forceRefresh)
             let transitionsResult = try decoder.decode(APIEnvelope<[SchoolYearTransitionDTO]>.self, from: transitionData).response
-            completeInitializationStep()
             guard generation == familyLoadGeneration, accessToken != nil else { return }
             family = familyResult
             children = childrenResult
@@ -412,9 +404,7 @@ final class SessionStore {
             async let districtData = send(path: "districts", forceRefresh: forceRefresh)
             async let yearData = send(path: "school-years", forceRefresh: forceRefresh)
             districts = try decoder.decode(APIEnvelope<[DistrictDTO]>.self, from: await districtData).response
-            completeInitializationStep()
             schoolYears = try decoder.decode(APIEnvelope<[SchoolYearDTO]>.self, from: await yearData).response
-            completeInitializationStep()
             catalogErrorMessage = nil
             return true
         } catch {
@@ -437,13 +427,9 @@ final class SessionStore {
         }
     }
 
-    private func finishSessionRestore() async {
-        isTrackingInitializationProgress = true
-        completedInitializationSteps = 0
-        initializationProgress = 0
-        defer { isTrackingInitializationProgress = false }
+    private func finishSessionRestore(forceRefresh: Bool = false) async {
         phase = .restoring
-        await loadFamily()
+        await loadFamily(forceRefresh: forceRefresh)
         guard phase != .signedOut else { return }
         guard homeErrorMessage == nil else {
             errorMessage = homeErrorMessage
@@ -451,21 +437,14 @@ final class SessionStore {
             return
         }
 
-        let catalogLoaded = await loadSchoolCatalog()
+        let catalogLoaded = await loadSchoolCatalog(forceRefresh: forceRefresh)
         let hasCurrentEnrollment = enrollments.contains(where: \.isCurrent)
         guard catalogLoaded || !hasCurrentEnrollment else {
             errorMessage = catalogErrorMessage
             phase = .restoreUnavailable
             return
         }
-        initializationProgress = 1
         phase = .signedIn
-    }
-
-    private func completeInitializationStep() {
-        guard isTrackingInitializationProgress else { return }
-        completedInitializationSteps = min(completedInitializationSteps + 1, initializationStepCount)
-        initializationProgress = Double(completedInitializationSteps) / Double(initializationStepCount)
     }
 
     func schoolTimezone(for childId: String? = nil) -> TimeZone {
@@ -551,13 +530,12 @@ final class SessionStore {
         }
     }
 
-    func loadCalendar(from startDate: Date, to endDate: Date, childId: String? = nil) async {
+    func loadCalendar(from startDate: Date, to endDate: Date, childId: String? = nil, forceRefresh: Bool = false) async {
         guard accessToken != nil else { return }
         lastCalendarRequest = (startDate, endDate, childId)
         calendarLoadGeneration += 1
         let generation = calendarLoadGeneration
         isLoadingCalendar = true
-        calendarEvents = []
         errorMessage = nil
         defer {
             if generation == calendarLoadGeneration { isLoadingCalendar = false }
@@ -568,7 +546,7 @@ final class SessionStore {
         ]
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
-            let data = try await authorized(path: "calendar", query: query, forceRefresh: true)
+            let data = try await authorized(path: "calendar", query: query, forceRefresh: forceRefresh)
             let result = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
             guard generation == calendarLoadGeneration, accessToken != nil else { return }
             calendarEvents = result
@@ -617,7 +595,7 @@ final class SessionStore {
         }
     }
 
-    func loadHomeEvents(from startDate: Date, to endDate: Date, childId: String? = nil) async {
+    func loadHomeEvents(from startDate: Date, to endDate: Date, childId: String? = nil, forceRefresh: Bool = false) async {
         guard accessToken != nil else { return }
         lastHomeEventsRequest = (startDate, endDate, childId)
         homeEventsLoadGeneration += 1
@@ -632,7 +610,7 @@ final class SessionStore {
         ]
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
-            let data = try await authorized(path: "calendar", query: query, forceRefresh: true)
+            let data = try await authorized(path: "calendar", query: query, forceRefresh: forceRefresh)
             let result = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
             guard generation == homeEventsLoadGeneration, accessToken != nil else { return }
             homeEvents = result
@@ -643,7 +621,7 @@ final class SessionStore {
         }
     }
 
-    func loadDailySchedules(for date: Date, childId: String? = nil) async {
+    func loadDailySchedules(for date: Date, childId: String? = nil, forceRefresh: Bool = false) async {
         guard api != nil, accessToken != nil else { return }
         lastDailyScheduleDate = date
         lastDailyScheduleChildId = childId
@@ -657,7 +635,7 @@ final class SessionStore {
             let value = schoolDateString(date, childId: childId)
             var query = [URLQueryItem(name: "date", value: value)]
             if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
-            let data = try await authorized(path: "daily-schedules", query: query)
+            let data = try await authorized(path: "daily-schedules", query: query, forceRefresh: forceRefresh)
             let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
             guard generation == dailySchedulesLoadGeneration, accessToken != nil else { return }
             dailySchedules = items
@@ -670,11 +648,11 @@ final class SessionStore {
         }
     }
 
-    func loadNextInstructionalDay(after date: Date, childId: String? = nil) async {
+    func loadNextInstructionalDay(after date: Date, childId: String? = nil, forceRefresh: Bool = false) async {
         guard api != nil, accessToken != nil else { return }
         let value = schoolDateString(date, childId: childId)
         let requestKey = "\(value)|\(childId ?? "")"
-        guard lastNextInstructionalDayRequest != requestKey, pendingNextInstructionalDayRequest != requestKey else { return }
+        guard (forceRefresh || lastNextInstructionalDayRequest != requestKey), pendingNextInstructionalDayRequest != requestKey else { return }
         nextInstructionalDayLoadGeneration += 1
         let generation = nextInstructionalDayLoadGeneration
         pendingNextInstructionalDayRequest = requestKey
@@ -691,7 +669,7 @@ final class SessionStore {
         var query = [URLQueryItem(name: "date", value: value)]
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
-            let data = try await authorized(path: "next-instructional-day", query: query)
+            let data = try await authorized(path: "next-instructional-day", query: query, forceRefresh: forceRefresh)
             let result = try decoder.decode(APIEnvelope<NextInstructionalDayDTO>.self, from: data).response
             guard generation == nextInstructionalDayLoadGeneration, accessToken != nil else { return }
             nextInstructionalDay = result.date
@@ -704,7 +682,7 @@ final class SessionStore {
         }
     }
 
-    func loadTomorrowDailySchedules(for date: Date, childId: String? = nil) async {
+    func loadTomorrowDailySchedules(for date: Date, childId: String? = nil, forceRefresh: Bool = false) async {
         guard api != nil, accessToken != nil else { return }
         lastTomorrowScheduleDate = date
         lastTomorrowScheduleChildId = childId
@@ -718,7 +696,7 @@ final class SessionStore {
             let value = schoolDateString(date, childId: childId)
             var query = [URLQueryItem(name: "date", value: value)]
             if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
-            let data = try await authorized(path: "daily-schedules", query: query)
+            let data = try await authorized(path: "daily-schedules", query: query, forceRefresh: forceRefresh)
             let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
             guard generation == tomorrowSchedulesLoadGeneration, accessToken != nil else { return }
             tomorrowDailySchedules = items
@@ -740,11 +718,10 @@ final class SessionStore {
         }
     }
 
-    func loadSchoolOverview(schoolId: String) async {
+    func loadSchoolOverview(schoolId: String, forceRefresh: Bool = false) async {
         lastSchoolOverviewId = schoolId
         schoolOverviewLoadGeneration += 1
         let generation = schoolOverviewLoadGeneration
-        schoolOverview = nil
         schoolOverviewErrorMessage = nil
         errorMessage = nil
         isLoadingSchoolOverview = true
@@ -754,7 +731,7 @@ final class SessionStore {
             }
         }
         do {
-            let data = try await authorized(path: "schools/\(schoolId)/overview")
+            let data = try await authorized(path: "schools/\(schoolId)/overview", forceRefresh: forceRefresh)
             let overview = try decoder.decode(APIEnvelope<ParentSchoolOverviewDTO>.self, from: data).response
             guard overview.schoolId == schoolId else { throw APIClientError.invalidResponse }
             guard generation == schoolOverviewLoadGeneration, accessToken != nil else { return }
@@ -768,11 +745,10 @@ final class SessionStore {
         }
     }
 
-    func loadSchoolPerformanceHistory(schoolId: String) async {
+    func loadSchoolPerformanceHistory(schoolId: String, forceRefresh: Bool = false) async {
         lastPerformanceHistorySchoolId = schoolId
         performanceHistoryLoadGeneration += 1
         let generation = performanceHistoryLoadGeneration
-        schoolPerformanceHistory = nil
         schoolPerformanceHistoryErrorMessage = nil
         isLoadingSchoolPerformanceHistory = true
         defer {
@@ -781,7 +757,7 @@ final class SessionStore {
             }
         }
         do {
-            let data = try await authorized(path: "schools/\(schoolId)/performance/history")
+            let data = try await authorized(path: "schools/\(schoolId)/performance/history", forceRefresh: forceRefresh)
             let history = try decoder.decode(APIEnvelope<ParentPerformanceHistoryDTO>.self, from: data).response
             guard history.schoolId == schoolId else { throw APIClientError.invalidResponse }
             guard generation == performanceHistoryLoadGeneration, accessToken != nil else { return }
@@ -1355,6 +1331,30 @@ final class SessionStore {
             let data = try await authorized(path: "children/\(id)", method: "PATCH", json: ["nickname": name])
             let updated = try decoder.decode(APIEnvelope<ChildDTO>.self, from: data).response
             if let index = children.firstIndex(where: { $0.id == id }) { children[index] = updated }
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func deleteChild(id: String) async -> Bool {
+        guard !id.isEmpty, id.allSatisfy(\.isNumber) else {
+            errorMessage = usesChinese ? "家庭成员编号无效。" : "This family member ID is invalid."
+            return false
+        }
+        isSavingChild = true
+        errorMessage = nil
+        defer { isSavingChild = false }
+        do {
+            _ = try await authorized(path: "children/\(id)", method: "DELETE")
+            children.removeAll { $0.id == id }
+            enrollments.removeAll { $0.childId == id }
+            schoolYearTransitions.removeAll { $0.childId == id }
+            dailySchedules.removeAll { $0.childId == id }
+            tomorrowDailySchedules.removeAll { $0.childId == id }
+            nextInstructionalDays.removeAll { $0.childId == id }
+            await loadFamily(forceRefresh: true)
             return true
         } catch {
             errorMessage = message(for: error)

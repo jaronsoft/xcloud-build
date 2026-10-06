@@ -11,6 +11,12 @@ private enum MeroliColor {
     static let gold = Color(red: 239 / 255, green: 181 / 255, blue: 62 / 255)
     static let coral = Color(red: 190 / 255, green: 77 / 255, blue: 64 / 255)
     static let paleGreen = Color(red: 235 / 255, green: 243 / 255, blue: 238 / 255)
+    static let childIdentity = [
+        Color(red: 189 / 255, green: 78 / 255, blue: 57 / 255),
+        Color(red: 36 / 255, green: 121 / 255, blue: 108 / 255),
+        Color(red: 118 / 255, green: 80 / 255, blue: 163 / 255),
+        Color(red: 163 / 255, green: 99 / 255, blue: 8 / 255)
+    ]
 }
 
 private func externalWebURL(_ value: String?) -> URL? {
@@ -297,23 +303,13 @@ private struct LoadingView: View {
                 Text(session.usesChinese ? "每日校园安排" : "Your School Daily")
                     .font(.subheadline)
                     .foregroundStyle(MeroliColor.muted)
-                ProgressView(value: session.initializationProgress)
-                    .progressViewStyle(.linear)
+                ProgressView()
                     .tint(MeroliColor.ink)
-                    .frame(width: 220)
-                    .padding(.top, 8)
-                Text(session.usesChinese ? "正在下载初始化数据…" : "Downloading startup data…")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(MeroliColor.muted)
-                Text("\(Int(session.initializationProgress * 100))%")
-                    .font(.footnote.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(MeroliColor.ink)
-                    .contentTransition(.numericText())
+                    .padding(.top, 10)
             }
             .offset(y: isAnimating ? -4 : 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.easeInOut(duration: 0.25), value: session.initializationProgress)
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
@@ -693,6 +689,7 @@ private struct HomeScreen: View {
     @AppStorage("meroli.home.childId") private var selectedChildId = ""
     @State private var selectedEvent: ParentEventDTO?
     private var zh: Bool { session.usesChinese }
+    private var isViewingToday: Bool { schoolCalendar.isDate(date, inSameDayAs: .now) }
     private var schoolCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = session.schoolTimezone(for: selectedChildId.isEmpty ? nil : selectedChildId)
@@ -708,50 +705,106 @@ private struct HomeScreen: View {
     private var selectedTomorrowSchedules: [DailyScheduleDTO] {
         selectedChildId.isEmpty ? session.tomorrowDailySchedules : session.tomorrowDailySchedules.filter { $0.childId == selectedChildId }
     }
+    private var importantTomorrowSchedules: [DailyScheduleDTO] {
+        selectedTomorrowSchedules.filter { item in
+            let status = item.status.uppercased()
+            if ["NO_SCHOOL", "EVENT_SCHEDULE_CONFLICT", "SCHEDULE_TEMPLATE_UNRESOLVED", "SCHEDULE_VARIANT_UNRESOLVED"].contains(status) {
+                return true
+            }
+            guard status == "OK" else { return false }
+            let scheduleType = (item.scheduleType ?? "").uppercased()
+            if !["", "REGULAR", "REGULAR_DAY", "SCHEDULE_UNAVAILABLE", "SCHEDULE_DATA_UNAVAILABLE", "NON_INSTRUCTIONAL_DAY"].contains(scheduleType) {
+                return true
+            }
+            guard let today = selectedSchedules.first(where: { $0.childId == item.childId }), today.status == "OK" else {
+                return false
+            }
+            return today.arrivalTime != item.arrivalTime || today.dismissalTime != item.dismissalTime
+        }
+    }
     private var visibleEvents: [ParentEventDTO] {
         MeroliEventPresentation.sorted(selectedChildId.isEmpty
             ? session.homeEvents
             : session.homeEvents.filter { $0.children.contains { $0.id == selectedChildId } })
     }
     private var todayEvents: [ParentEventDTO] {
-        visibleEvents.filter { eventOccurs($0, offsets: 0...0) }
+        visibleEvents.filter { eventOccurs($0, offsets: 0...0) && isMeaningfulHomeEvent($0) }
     }
     private var tomorrowEvents: [ParentEventDTO] {
-        visibleEvents.filter { eventOccurs($0, offsets: 1...1) }
+        visibleEvents.filter { eventOccurs($0, offsets: 1...1) && isMeaningfulHomeEvent($0) }
     }
     private var thisWeekEvents: [ParentEventDTO] {
         let earlierEventIds = Set(todayEvents.map(\.id) + tomorrowEvents.map(\.id))
         return visibleEvents.filter {
             !earlierEventIds.contains($0.id)
                 && eventOccurs($0, offsets: 2...7)
+                && isMeaningfulHomeEvent($0)
         }
     }
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("Meroli")
-                        .font(.system(.headline, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
+                    HStack(alignment: .center) {
+                        Text("Meroli")
+                            .font(.system(.headline, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
+                        Spacer(minLength: 0)
+                        Button(action: showFamily) {
+                            Label(zh ? "添加孩子" : "Add child", systemImage: "person.badge.plus")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 12)
+                                .frame(minHeight: 42)
+                                .foregroundStyle(MeroliColor.ink)
+                                .background(.white, in: Capsule())
+                                .overlay(Capsule().stroke(MeroliColor.line, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("meroli.home.addChild.shortcut")
+                    }
                     Text(zh ? "今天的上学安排" : "Today at school")
                         .font(.system(.largeTitle, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
-                    sectionHeading(zh ? "今天学校动态" : "Today’s School Updates")
-                    if let error = session.homeEventsErrorMessage {
-                        Label(error, systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(MeroliColor.coral)
-                    }
-                    if !todayEvents.isEmpty {
-                        eventList(todayEvents)
-                    }
-                    HStack {
-                        Button { date = schoolCalendar.date(byAdding: .day, value: -1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
+                    HStack(spacing: 8) {
+                        Button { shiftDate(by: -1) } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(MeroliColor.ink)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                             .accessibilityLabel(zh ? "前一天" : "Previous day")
-                        Spacer()
-                        Text(schoolDateLabel(date))
-                            .font(.headline)
-                        Spacer()
-                        Button { date = schoolCalendar.date(byAdding: .day, value: 1, to: date) ?? date; refresh() } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
+                        VStack(spacing: 3) {
+                            Text(schoolDateLabel(date))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(MeroliColor.ink)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.85)
+                            if !isViewingToday {
+                                Button(zh ? "回到今天" : "Back to today") {
+                                    date = schoolCalendar.startOfDay(for: .now)
+                                    refresh()
+                                }
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(MeroliColor.ink)
+                                .accessibilityIdentifier("meroli.home.backToToday")
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        Button { shiftDate(by: 1) } label: {
+                            Image(systemName: "chevron.right")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(MeroliColor.ink)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                             .accessibilityLabel(zh ? "后一天" : "Next day")
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 7)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(MeroliColor.line, lineWidth: 1))
                     if session.children.count > 1 {
                         MeroliChildFilter(children: session.children, selection: $selectedChildId, zh: zh)
                         .onChange(of: selectedChildId) { _, _ in
@@ -759,6 +812,7 @@ private struct HomeScreen: View {
                             refresh()
                         }
                     }
+                    sectionHeading(zh ? "今天的安排" : "Today's Schedule")
                     if let error = session.homeErrorMessage, !session.dailySchedules.isEmpty {
                         homeErrorCard(error)
                     }
@@ -776,28 +830,31 @@ private struct HomeScreen: View {
                                     .foregroundStyle(MeroliColor.ink)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityIdentifier("meroli.home.addChild")
+                            .accessibilityIdentifier("meroli.home.addChild.empty")
                         }
                         .padding(18).frame(maxWidth: .infinity, alignment: .leading)
                         .background(.white, in: RoundedRectangle(cornerRadius: 18))
                     } else {
-                        sectionHeading(zh ? "今天" : "Today")
                         ForEach(selectedSchedules) { item in
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(item.childName).font(.headline).foregroundStyle(MeroliColor.ink)
+                                        HStack(spacing: 8) {
+                                            Circle().fill(childIdentityColor(for: item.childId)).frame(width: 9, height: 9)
+                                            Text(item.childName).font(.headline).foregroundStyle(MeroliColor.ink)
+                                        }
                                         Text(item.schoolName ?? (zh ? "未设置学校" : "No school selected"))
                                             .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                        if let enrollment = currentEnrollment(for: item.childId) {
+                                            HomeSchoolYearLabel(enrollment: enrollment, zh: zh)
+                                        }
                                         if item.date != dateKey(offset: 0) {
                                             Text(schoolLocalDateNote(item.date, childId: item.childId))
                                                 .font(.caption2).foregroundStyle(MeroliColor.muted)
                                         }
                                     }
                                     Spacer()
-                                    Text(statusLabel(item.status)).font(.caption.weight(.semibold))
-                                        .padding(.horizontal, 10).padding(.vertical, 6)
-                                        .background(MeroliColor.paleGreen, in: Capsule())
+                                    statusBadge(item.status)
                                 }
                                 if item.status == "NO_SCHOOL" || item.status == "NON_INSTRUCTIONAL_DAY" {
                                     Label(zh ? "这一天没有常规上课" : "No regular school on this day", systemImage: "sun.max")
@@ -825,32 +882,10 @@ private struct HomeScreen: View {
                                             .font(.subheadline).foregroundStyle(MeroliColor.muted)
                                     }
                                 } else if item.status == "OK" {
-                                    HStack(spacing: 20) {
-                                        scheduleTime(title: arrivalTimeLabel(item), value: item.arrivalTime)
-                                        scheduleTime(title: zh ? "放学" : "Dismissal", value: item.dismissalTime)
-                                    }
+                                    scheduleTimes(item)
                                     if let scheduleType = item.scheduleType {
                                         Text(scheduleTypeLabel(scheduleType))
                                             .font(.caption).foregroundStyle(MeroliColor.muted)
-                                    }
-                                    if let periods = item.periods, !periods.isEmpty {
-                                        VStack(spacing: 0) {
-                                            ForEach(periods) { period in
-                                                HStack(spacing: 10) {
-                                                    Text(zh && !period.labelZh.isEmpty ? period.labelZh : period.labelEn)
-                                                        .font(.caption.weight(.medium)).foregroundStyle(MeroliColor.ink)
-                                                    Spacer(minLength: 4)
-                                                    Text("\(period.startTime)–\(period.endTime)")
-                                                        .font(.caption.monospacedDigit()).foregroundStyle(MeroliColor.muted)
-                                                    if period.isOptional {
-                                                        Text(zh ? "可选" : "Optional").font(.caption2).foregroundStyle(MeroliColor.muted)
-                                                    }
-                                                }
-                                                .padding(.vertical, 7)
-                                                if period.id != periods.last?.id { Divider().overlay(MeroliColor.line) }
-                                            }
-                                        }
-                                        .padding(.top, 4)
                                     }
                                     if session.homeEventsErrorMessage != nil, !item.eventTitles.isEmpty {
                                         ForEach(item.eventTitles, id: \.self) { title in
@@ -866,76 +901,84 @@ private struct HomeScreen: View {
                             .padding(18).background(.white, in: RoundedRectangle(cornerRadius: 18))
                         }
                     }
-                    sectionHeading(zh ? "明天" : "Tomorrow")
-                    if session.isLoadingTomorrowSchedules && selectedTomorrowSchedules.isEmpty {
-                        ProgressView(zh ? "正在读取明天的作息…" : "Loading tomorrow’s schedules…")
+                    sectionHeading(zh ? "今天需要知道" : "Today's Need to Know")
+                    if let error = session.homeEventsErrorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(MeroliColor.coral)
+                    }
+                    if session.isLoadingHomeEvents && todayEvents.isEmpty {
+                        ProgressView(zh ? "正在读取今天的动态…" : "Loading today's updates…")
+                    } else if todayEvents.isEmpty {
+                        Text(zh ? "今天暂无需要特别留意的动态。" : "No important updates for today.")
+                            .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                    } else {
+                        eventList(todayEvents)
+                    }
+                    sectionHeading(zh ? "接下来需要知道" : "Upcoming")
+                    if session.isLoadingTomorrowSchedules && importantTomorrowSchedules.isEmpty {
+                        ProgressView(zh ? "正在读取接下来的作息…" : "Loading upcoming schedules…")
                     }
                     if let error = session.tomorrowSchedulesErrorMessage {
                         Label(error, systemImage: "exclamationmark.triangle")
                             .font(.caption).foregroundStyle(MeroliColor.coral)
                     }
-                    ForEach(selectedTomorrowSchedules) { item in
+                    if importantTomorrowSchedules.isEmpty && tomorrowEvents.isEmpty && thisWeekEvents.isEmpty &&
+                        !session.isLoadingTomorrowSchedules && !session.isLoadingHomeEvents {
+                        Text(zh ? "目前没有需要提前留意的安排。" : "No important upcoming items.")
+                            .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                    }
+                    ForEach(importantTomorrowSchedules) { item in
                         VStack(alignment: .leading, spacing: 9) {
                             HStack {
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(item.childName).font(.headline).foregroundStyle(MeroliColor.ink)
+                                    HStack(spacing: 8) {
+                                        Circle().fill(childIdentityColor(for: item.childId)).frame(width: 9, height: 9)
+                                        Text(item.childName).font(.headline).foregroundStyle(MeroliColor.ink)
+                                    }
                                     Text(item.schoolName ?? (zh ? "未设置学校" : "No school selected"))
                                         .font(.subheadline).foregroundStyle(MeroliColor.muted)
                                     if item.date != dateKey(offset: 1) {
-                                            Text(schoolLocalDateNote(item.date, childId: item.childId))
+                                        Text(schoolLocalDateNote(item.date, childId: item.childId))
                                             .font(.caption2).foregroundStyle(MeroliColor.muted)
                                     }
                                 }
                                 Spacer()
-                                Text(statusLabel(item.status)).font(.caption.weight(.semibold))
-                                    .padding(.horizontal, 10).padding(.vertical, 6)
-                                    .background(MeroliColor.paleGreen, in: Capsule())
+                                statusBadge(item.status)
                             }
                             if item.status == "OK" {
-                                HStack(spacing: 20) {
-                                    scheduleTime(title: arrivalTimeLabel(item), value: item.arrivalTime)
-                                    scheduleTime(title: zh ? "放学" : "Dismissal", value: item.dismissalTime)
-                                }
+                                scheduleTimes(item)
                                 if let scheduleType = item.scheduleType {
                                     Text(scheduleTypeLabel(scheduleType)).font(.caption).foregroundStyle(MeroliColor.muted)
                                 }
+                            } else if item.status == "NO_SCHOOL" {
+                                Label(zh ? "不上课" : "No school", systemImage: "sun.max")
+                                    .font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                            } else {
+                                Text(statusLabel(item.status)).font(.subheadline).foregroundStyle(MeroliColor.muted)
                             }
-                            if session.homeEventsErrorMessage != nil, !item.eventTitles.isEmpty {
-                                ForEach(item.eventTitles, id: \.self) { title in
-                                    Label(title, systemImage: "calendar.badge.exclamationmark")
-                                        .font(.subheadline)
-                                }
+                            ForEach(item.eventTitles, id: \.self) { title in
+                                Label(title, systemImage: "calendar")
+                                    .font(.subheadline).foregroundStyle(MeroliColor.muted)
                             }
                         }
                         .padding(16).background(.white, in: RoundedRectangle(cornerRadius: 16))
                     }
-                    if tomorrowEvents.isEmpty && selectedTomorrowSchedules.isEmpty && !session.isLoadingTomorrowSchedules {
-                        Text(zh ? "明天暂时没有学校动态。" : "No school updates for tomorrow.")
-                            .font(.subheadline).foregroundStyle(MeroliColor.muted)
-                    }
                     if !tomorrowEvents.isEmpty { eventList(tomorrowEvents) }
-                    sectionHeading(zh ? "本周" : "This Week")
-                    if thisWeekEvents.isEmpty {
-                        Text(zh ? "后续暂无学校动态。" : "No further school updates this week.")
-                            .font(.subheadline).foregroundStyle(MeroliColor.muted)
-                    } else { eventList(thisWeekEvents) }
+                    if !thisWeekEvents.isEmpty {
+                        sectionHeading(zh ? "本周" : "This Week")
+                        eventList(thisWeekEvents)
+                    }
                 }
                 .padding(20)
             }
             .background(MeroliColor.canvas)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { refresh() } label: { Image(systemName: "arrow.clockwise") }
-                        .accessibilityLabel(zh ? "刷新日历" : "Refresh calendar")
+                    Button { refresh(forceRefresh: true) } label: { Image(systemName: "arrow.clockwise") }
+                        .accessibilityLabel(zh ? "刷新首页数据" : "Refresh home data")
                 }
             }
-            .refreshable {
-                await session.loadFamily()
-                await session.loadDailySchedules(for: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-                await loadNextInstructionalDayIfNeeded()
-                await session.loadTomorrowDailySchedules(for: tomorrowDate, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-                await loadHomeEvents()
-            }
+            .refreshable { await refreshData(forceRefresh: true) }
             .task { if session.dailySchedules.isEmpty || session.homeEvents.isEmpty { refresh() } }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
@@ -954,31 +997,48 @@ private struct HomeScreen: View {
         }
     }
 
-    private func refresh() {
+    private func refresh(forceRefresh: Bool = false) {
         Task {
-            await session.loadDailySchedules(for: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-            await loadNextInstructionalDayIfNeeded()
-            await session.loadTomorrowDailySchedules(for: tomorrowDate, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-            await loadHomeEvents()
+            await refreshData(forceRefresh: forceRefresh)
         }
     }
 
-    private func loadNextInstructionalDayIfNeeded() async {
+    private func shiftDate(by offset: Int) {
+        date = schoolCalendar.date(byAdding: .day, value: offset, to: date) ?? date
+        refresh()
+    }
+
+    private func currentEnrollment(for childId: String) -> EnrollmentDTO? {
+        session.enrollments.first { enrollment in
+            enrollment.childId == childId && enrollment.isCurrent
+        }
+    }
+
+    private func refreshData(forceRefresh: Bool) async {
+        await session.loadFamily(forceRefresh: forceRefresh)
+        await session.loadDailySchedules(for: date, childId: selectedChildId.isEmpty ? nil : selectedChildId, forceRefresh: forceRefresh)
+        await loadNextInstructionalDayIfNeeded(forceRefresh: forceRefresh)
+        await session.loadTomorrowDailySchedules(for: tomorrowDate, childId: selectedChildId.isEmpty ? nil : selectedChildId, forceRefresh: forceRefresh)
+        await loadHomeEvents(forceRefresh: forceRefresh)
+    }
+
+    private func loadNextInstructionalDayIfNeeded(forceRefresh: Bool = false) async {
         guard !childrenWithoutSchoolToday.isEmpty else { return }
-        await session.loadNextInstructionalDay(after: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
+        await session.loadNextInstructionalDay(after: date, childId: selectedChildId.isEmpty ? nil : selectedChildId, forceRefresh: forceRefresh)
     }
 
     private var tomorrowDate: Date {
         schoolCalendar.date(byAdding: .day, value: 1, to: date) ?? date
     }
 
-    private func loadHomeEvents() async {
+    private func loadHomeEvents(forceRefresh: Bool = false) async {
         let childIds = selectedChildId.isEmpty ? session.children.map(\.id) : [selectedChildId]
         let startKey = childIds.map { dateKey(offset: 0, childId: $0) }.min() ?? dateKey(offset: 0)
         let endKey = childIds.map { dateKey(offset: 7, childId: $0) }.max() ?? dateKey(offset: 7)
         await session.loadHomeEvents(
             from: dateFromKey(startKey), to: dateFromKey(endKey),
-            childId: selectedChildId.isEmpty ? nil : selectedChildId
+            childId: selectedChildId.isEmpty ? nil : selectedChildId,
+            forceRefresh: forceRefresh
         )
     }
 
@@ -1039,10 +1099,30 @@ private struct HomeScreen: View {
         Text(title).font(.title3.weight(.semibold)).foregroundStyle(MeroliColor.ink).padding(.top, 8)
     }
 
+    private func childIdentityColor(for childId: String) -> Color {
+        let index = Int(childId.utf8.reduce(UInt32(2_166_136_261)) { ($0 ^ UInt32($1)) &* 16_777_619 } % UInt32(MeroliColor.childIdentity.count))
+        return MeroliColor.childIdentity[index % MeroliColor.childIdentity.count]
+    }
+
+    private func childIdentityColors(for event: ParentEventDTO) -> [String: Color] {
+        event.children.reduce(into: [String: Color]()) { colors, child in
+            colors[child.id] = childIdentityColor(for: child.id)
+        }
+    }
+
+    private func isMeaningfulHomeEvent(_ event: ParentEventDTO) -> Bool {
+        let priority = event.priority.uppercased()
+        return MeroliEventPresentation.isMeaningful(event)
+            || ["CRITICAL", "HIGH"].contains(priority)
+            || !event.action.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private func eventList(_ events: [ParentEventDTO]) -> some View {
         VStack(spacing: 0) {
             ForEach(events) { event in
-                Button { selectedEvent = event } label: { EventRow(event: event, zh: zh) }
+                Button { selectedEvent = event } label: {
+                    EventRow(event: event, zh: zh, showsDate: true, childIdentityColors: childIdentityColors(for: event), showsActionLabel: true)
+                }
                     .buttonStyle(.plain)
                     .padding(.vertical, 12)
                 if event.id != events.last?.id { Divider().overlay(MeroliColor.line) }
@@ -1122,7 +1202,51 @@ private struct HomeScreen: View {
     private func scheduleTime(title: String, value: String?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).font(.caption).foregroundStyle(MeroliColor.muted)
-            Text(value ?? "—").font(.title3.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+            Text(value ?? "—")
+                .font(.system(.title2, design: .rounded, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(MeroliColor.ink)
+        }
+    }
+
+    private func scheduleTimes(_ schedule: DailyScheduleDTO) -> some View {
+        HStack(spacing: 0) {
+            scheduleTime(title: arrivalTimeLabel(schedule), value: schedule.arrivalTime)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Rectangle()
+                .fill(MeroliColor.line)
+                .frame(width: 1, height: 38)
+            scheduleTime(title: zh ? "放学" : "Dismissal", value: schedule.dismissalTime)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 16)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(MeroliColor.paleGreen.opacity(0.55), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func statusBadge(_ status: String) -> some View {
+        let colors = statusColors(status)
+        return Text(statusLabel(status))
+            .font(.caption.weight(.semibold))
+            .multilineTextAlignment(.trailing)
+            .lineLimit(2)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .foregroundStyle(colors.foreground)
+            .background(colors.background, in: Capsule())
+    }
+
+    private func statusColors(_ status: String) -> (foreground: Color, background: Color) {
+        switch status {
+        case "OK":
+            return (MeroliColor.ink, MeroliColor.paleGreen)
+        case "NO_SCHOOL", "NON_INSTRUCTIONAL_DAY":
+            return (MeroliColor.ink, MeroliColor.gold.opacity(0.2))
+        case "NO_ENROLLMENT":
+            return (MeroliColor.muted, MeroliColor.line.opacity(0.55))
+        default:
+            return (MeroliColor.coral, MeroliColor.coral.opacity(0.12))
         }
     }
 
@@ -1131,6 +1255,27 @@ private struct HomeScreen: View {
         case "PERIOD_0_START": return zh ? "第0节开始" : "Period 0 starts"
         default: return zh ? "到校" : "Arrival"
         }
+    }
+}
+
+private struct HomeSchoolYearLabel: View {
+    let enrollment: EnrollmentDTO
+    let zh: Bool
+
+    private var gradeLabel: String {
+        guard zh else { return enrollment.gradeCode == "K" ? "Kindergarten" : enrollment.gradeCode }
+        switch enrollment.gradeCode {
+        case "PK": return "学前班"
+        case "TK": return "过渡幼儿园"
+        case "K": return "幼儿园"
+        default: return "\(enrollment.gradeCode) 年级"
+        }
+    }
+
+    var body: some View {
+        Text("\(enrollment.schoolYearName) · \(gradeLabel)")
+            .font(.caption)
+            .foregroundStyle(MeroliColor.muted)
     }
 }
 
@@ -1224,7 +1369,7 @@ private struct CalendarScreen: View {
                             .font(.headline)
                             .foregroundStyle(MeroliColor.ink)
                         Text(error).font(.subheadline).foregroundStyle(MeroliColor.muted).multilineTextAlignment(.center)
-                        Button(zh ? "重试" : "Try again") { Task { await load() } }
+                    Button(zh ? "重试" : "Try again") { Task { await load(forceRefresh: true) } }
                             .buttonStyle(.borderedProminent)
                     }
                     .padding(28)
@@ -1295,12 +1440,12 @@ private struct CalendarScreen: View {
                 }
             }
             .task { await load() }
-            .refreshable { await load() }
+            .refreshable { await load(forceRefresh: true) }
             .onChange(of: scenePhase) { _, phase in handleCalendarScenePhaseChange(phase) }
             .sheet(item: $selectedEvent) { event in EventDetailSheet(event: event, zh: zh) }
             .sheet(isPresented: $showsPersonalEventEditor) {
                 PersonalEventEditor(zh: zh, initialDate: selectedDate) {
-                    Task { await load() }
+                    Task { await load(forceRefresh: true) }
                 }
                 .environment(session)
             }
@@ -1326,9 +1471,9 @@ private struct CalendarScreen: View {
         Task { await load() }
     }
 
-    private func load() async {
+    private func load(forceRefresh: Bool = false) async {
         let (start, end) = range
-        await session.loadCalendar(from: start, to: end, childId: selectedChildId.isEmpty ? nil : selectedChildId)
+        await session.loadCalendar(from: start, to: end, childId: selectedChildId.isEmpty ? nil : selectedChildId, forceRefresh: forceRefresh)
     }
 
     private func monthStart(_ date: Date) -> Date {
@@ -1413,6 +1558,14 @@ private struct CalendarScreen: View {
         return formatter.string(from: date)
     }
 
+    private func weekdayLabel(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
+        formatter.calendar = schoolCalendar
+        formatter.timeZone = schoolCalendar.timeZone
+        formatter.dateFormat = "EEEEE"
+        return formatter.string(from: date)
+    }
 }
 
 private enum MeroliEventPresentation {
@@ -1429,7 +1582,7 @@ private enum MeroliEventPresentation {
     }
 
     private static func priority(_ event: ParentEventDTO) -> Int {
-        if event.parentRelevance.uppercased() == "ACTION_REQUIRED" || ["ACTION_REQUIRED", "DEADLINE"].contains(event.eventType.uppercased()) {
+        if isActionRequired(event) {
             return 0
         }
         let scheduleTypes: Set<String> = ["NO_SCHOOL", "PUPIL_FREE_DAY", "BREAK", "HOLIDAY", "MINIMUM_DAY", "LATE_START", "NO_LATE_START", "EARLY_RELEASE"]
@@ -1438,11 +1591,23 @@ private enum MeroliEventPresentation {
         }
         return event.startTime == nil ? 3 : 2
     }
+
+    static func isMeaningful(_ event: ParentEventDTO) -> Bool {
+        priority(event) <= 2
+    }
+
+    static func isActionRequired(_ event: ParentEventDTO) -> Bool {
+        ["ACTION_REQUIRED", "CRITICAL_ACTION"].contains(event.parentRelevance.uppercased())
+            || ["ACTION_REQUIRED", "DEADLINE"].contains(event.eventType.uppercased())
+    }
 }
 
 private struct EventRow: View {
     let event: ParentEventDTO
     let zh: Bool
+    var showsDate = false
+    var childIdentityColors: [String: Color] = [:]
+    var showsActionLabel = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -1459,8 +1624,14 @@ private struct EventRow: View {
                     Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.muted)
                 }
                 HStack(spacing: 6) {
+                    if showsDate { Text(eventDateLabel) }
                     if !event.allDay, let start = event.startTime { Text(String(start.prefix(5))) }
                     if !event.children.isEmpty {
+                        if !childIdentityColors.isEmpty {
+                            ForEach(event.children) { child in
+                                Circle().fill(childIdentityColors[child.id] ?? MeroliColor.muted).frame(width: 7, height: 7)
+                            }
+                        }
                         Text(event.children.map { child in
                             guard let school = event.schools.first(where: { $0.id == child.schoolId })?.name, !school.isEmpty else {
                                 return child.name
@@ -1473,6 +1644,13 @@ private struct EventRow: View {
                 }
                 .font(.caption)
                 .foregroundStyle(MeroliColor.muted)
+                if showsActionLabel && MeroliEventPresentation.isActionRequired(event) {
+                    Text(zh ? "需处理" : "Action")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(MeroliColor.coral)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(MeroliColor.coral.opacity(0.1), in: Capsule())
+                }
                 if !event.action.isEmpty {
                     Text(event.action).font(.subheadline).foregroundStyle(MeroliColor.coral).lineLimit(2)
                 }
@@ -1480,6 +1658,24 @@ private struct EventRow: View {
         }
         .padding(.vertical, 5)
         .contentShape(Rectangle())
+    }
+
+    private var eventDateLabel: String {
+        let timezone = TimeZone(identifier: event.timezone) ?? TimeZone(identifier: "America/Los_Angeles")
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = timezone
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let start = parser.date(from: event.startDate) else { return event.startDate }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: zh ? "zh_CN" : "en_US")
+        formatter.timeZone = timezone
+        formatter.dateFormat = zh ? "M月d日 EEE" : "EEE, MMM d"
+        let startLabel = formatter.string(from: start)
+        guard let endKey = event.endDate, endKey != event.startDate,
+              let end = parser.date(from: endKey) else { return startLabel }
+        return "\(startLabel)–\(formatter.string(from: end))"
     }
 }
 
@@ -1774,6 +1970,7 @@ private struct CloseSheetButton: View {
 private struct FamilyScreen: View {
     @Environment(SessionStore.self) private var session
     @State private var showsAddChild = false
+    @State private var childPendingDeletion: ChildDTO?
     @State private var editingChild: ChildDTO?
     @State private var managingSchoolChild: ChildDTO?
     @State private var managingScheduleChild: ChildDTO?
@@ -2066,6 +2263,18 @@ private struct FamilyScreen: View {
                                         }
                                         .buttonStyle(.plain)
                                     }
+
+                                    Divider().overlay(MeroliColor.line).padding(.top, 12)
+                                    Button { childPendingDeletion = child } label: {
+                                        Label(zh ? "删除家庭成员" : "Remove family member", systemImage: "trash")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundStyle(MeroliColor.coral)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(session.isSavingChild)
+                                    .padding(.top, 12)
                                 }
                                 .padding(16)
                                 .background(.white, in: RoundedRectangle(cornerRadius: 15))
@@ -2090,10 +2299,30 @@ private struct FamilyScreen: View {
                 }
             }
             .task { if session.family == nil { await session.loadFamily() } }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showsAddChild = true } label: { Image(systemName: "plus").frame(width: 44, height: 44) }
-                        .accessibilityLabel(zh ? "添加孩子" : "Add child")
+            .confirmationDialog(
+                zh ? "删除家庭成员？" : "Remove family member?",
+                isPresented: Binding(
+                    get: { childPendingDeletion != nil },
+                    set: { if !$0 { childPendingDeletion = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let child = childPendingDeletion {
+                    Button(zh ? "删除\(child.nickname)" : "Remove \(child.nickname)", role: .destructive) {
+                        Task {
+                            if await session.deleteChild(id: child.id) {
+                                childPendingDeletion = nil
+                            }
+                        }
+                    }
+                    .disabled(session.isSavingChild)
+                }
+                Button(zh ? "取消" : "Cancel", role: .cancel) { childPendingDeletion = nil }
+            } message: {
+                if let child = childPendingDeletion {
+                    Text(zh
+                        ? "将从家庭中移除\(child.nickname)，并隐藏关联的学校和作息记录。其他家庭成员也将无法查看此资料。"
+                        : "\(child.nickname) and their school and schedule records will be removed from this family for all family members.")
                 }
             }
             .sheet(isPresented: $showsAddChild) { AddChildSheet() }
@@ -3959,9 +4188,6 @@ private struct SettingsScreen: View {
             List {
                 Section(zh ? "账户" : "Account") {
                     LabeledContent(zh ? "邮箱" : "Email", value: session.email)
-                    if let family = session.family, !family.id.isEmpty {
-                        LabeledContent(zh ? "家庭编号" : "Family ID", value: family.id)
-                    }
                     if session.isAppleLinked {
                         Label(zh ? "已绑定 Apple 账号" : "Apple account linked", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(MeroliColor.ink)
@@ -3990,38 +4216,9 @@ private struct SettingsScreen: View {
                             }
                         )
                     }
-                    Button {
-                        isLoggingOut = true
-                        Task { await session.logout(); isLoggingOut = false }
-                    } label: {
-                        HStack {
-                            if isLoggingOut { ProgressView().tint(.white) }
-                            Text(zh ? "退出登录" : "Sign out")
-                        }
-                        .font(.body.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .foregroundStyle(.white)
-                        .background(MeroliColor.ink, in: RoundedRectangle(cornerRadius: 11))
+                    if let family = session.family, !family.id.isEmpty {
+                        LabeledContent(zh ? "家庭编号" : "Family ID", value: family.id)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isLoggingOut)
-                    .accessibilityIdentifier("meroli.settings.logout")
-                    Button { showsDeleteAccount = true } label: {
-                        Text(zh ? "删除账户" : "Delete account")
-                            .font(.body.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                            .foregroundStyle(.white)
-                            .background(MeroliColor.coral, in: RoundedRectangle(cornerRadius: 11))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("meroli.settings.delete-account")
-                    Text(zh ? "删除后你将无法再登录。独占家庭的孩子、入学和作息资料会一并删除；其他成员共享的家庭资料会保留。" : "You will no longer be able to sign in. Children, enrollments, and schedules in a family used only by you will be deleted. Shared family data will remain for other members.")
-                        .font(.footnote)
-                        .foregroundStyle(MeroliColor.muted)
-                        .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 }
                 Section(zh ? "语言" : "Language") {
                     Picker(zh ? "应用语言" : "App language", selection: Binding(
@@ -4053,6 +4250,28 @@ private struct SettingsScreen: View {
                 }
                 if let error = session.errorMessage {
                     Section { Text(error).foregroundStyle(MeroliColor.coral).font(.subheadline) }
+                }
+                Section {
+                    Button(role: .destructive) {
+                        isLoggingOut = true
+                        Task { await session.logout(); isLoggingOut = false }
+                    } label: {
+                        HStack {
+                            Text(zh ? "退出登录" : "Sign out")
+                            Spacer()
+                            if isLoggingOut { ProgressView() }
+                        }
+                    }
+                    .disabled(isLoggingOut)
+                    .accessibilityIdentifier("meroli.settings.logout")
+                }
+                Section {
+                    Button(role: .destructive) { showsDeleteAccount = true } label: {
+                        Text(zh ? "删除账户" : "Delete account")
+                    }
+                    .accessibilityIdentifier("meroli.settings.delete-account")
+                } footer: {
+                    Text(zh ? "删除后你将无法再登录。独占家庭的孩子、入学和作息资料会一并删除；其他成员共享的家庭资料会保留。" : "You will no longer be able to sign in. Children, enrollments, and schedules in a family used only by you will be deleted. Shared family data will remain for other members.")
                 }
             }
             .scrollContentBackground(.hidden)
@@ -4089,13 +4308,28 @@ private struct MeroliAppleAuthorizationButton: View {
     let onCompletion: (Result<ASAuthorization, any Error>) -> Void
 
     var body: some View {
-        SignInWithAppleButton(type, onRequest: onRequest, onCompletion: onCompletion)
-            .signInWithAppleButtonStyle(.black)
+        ZStack {
+            HStack(spacing: 8) {
+                Image(systemName: "apple.logo")
+                    .font(.body.weight(.medium))
+                Text(title)
+                    .font(.body.weight(.medium))
+            }
+            .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .frame(height: height)
-            .clipShape(RoundedRectangle(cornerRadius: min(15, height / 3)))
-            .accessibilityLabel(title)
-            .accessibilityIdentifier(accessibilityIdentifier)
+            .frame(minHeight: height)
+            .background(.black, in: RoundedRectangle(cornerRadius: min(15, height / 3)))
+            .accessibilityHidden(true)
+
+            SignInWithAppleButton(type, onRequest: onRequest, onCompletion: onCompletion)
+                .signInWithAppleButtonStyle(.black)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: height)
+                .opacity(0.015)
+                .accessibilityLabel(title)
+                .accessibilityIdentifier(accessibilityIdentifier)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: min(15, height / 3)))
     }
 }
 
