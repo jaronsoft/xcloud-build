@@ -858,24 +858,9 @@ private struct HomeScreen: View {
                                             Text(scheduleTypeLabel(scheduleType))
                                                 .font(.caption).foregroundStyle(MeroliColor.muted)
                                         }
-                                        if let periods = item.periods, !periods.isEmpty {
-                                            VStack(spacing: 0) {
-                                                ForEach(periods) { period in
-                                                    HStack(spacing: 10) {
-                                                        Text(zh && !period.labelZh.isEmpty ? period.labelZh : period.labelEn)
-                                                            .font(.caption.weight(.medium)).foregroundStyle(MeroliColor.ink)
-                                                        Spacer(minLength: 4)
-                                                        Text("\(period.startTime)–\(period.endTime)")
-                                                            .font(.caption.monospacedDigit()).foregroundStyle(MeroliColor.muted)
-                                                        if period.isOptional {
-                                                            Text(zh ? "可选" : "Optional").font(.caption2).foregroundStyle(MeroliColor.muted)
-                                                        }
-                                                    }
-                                                    .padding(.vertical, 7)
-                                                    if period.id != periods.last?.id { Divider().overlay(MeroliColor.line) }
-                                                }
-                                            }
-                                            .padding(.top, 4)
+                                        if item.firstPeriodCode == "P0", item.arrivalLabel != "PERIOD_0_START" {
+                                            Text(zh ? "包含第0节" : "Includes Period 0")
+                                                .font(.caption.weight(.medium)).foregroundStyle(MeroliColor.muted)
                                         }
                                         if session.homeEventsErrorMessage != nil, !item.eventTitles.isEmpty {
                                             ForEach(item.eventTitles, id: \.self) { title in
