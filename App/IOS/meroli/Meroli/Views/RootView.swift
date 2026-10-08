@@ -763,7 +763,8 @@ private struct HomeChipContentWidthPreferenceKey: PreferenceKey {
 private struct HomeUpcomingDayGroup: Identifiable {
     let dateKey: String
     let schedules: [DailyScheduleDTO]
-    let events: [ParentEventDTO]
+    let importantEvents: [ParentEventDTO]
+    let ordinaryEvents: [ParentEventDTO]
 
     var id: String { dateKey }
 }
@@ -911,8 +912,11 @@ private struct HomeScreen: View {
                 && eventOccurs($0, offsets: 1...1)
         }
     }
-    private var tomorrowEvents: [ParentEventDTO] {
+    private var importantTomorrowEvents: [ParentEventDTO] {
         allTomorrowEvents.filter(isHomeUpcomingEvent)
+    }
+    private var ordinaryTomorrowEvents: [ParentEventDTO] {
+        allTomorrowEvents.filter { !isHomeUpcomingEvent($0) }
     }
     private var thisWeekEvents: [ParentEventDTO] {
         let earlierEventIds = Set(allTomorrowEvents.map(\.id))
@@ -925,23 +929,33 @@ private struct HomeScreen: View {
     }
     private var upcomingDayGroups: [HomeUpcomingDayGroup] {
         let schedulesByDate = Dictionary(grouping: importantFutureSchedules, by: \.date)
-        let candidates = tomorrowEvents + thisWeekEvents
-        let eventsByDate = Dictionary(grouping: candidates, by: \.startDate)
-        let dates = Set(schedulesByDate.keys).union(eventsByDate.keys).sorted()
+        let tomorrowKey = dateKey(offset: 1, childId: selectedChildId.isEmpty ? nil : selectedChildId)
+        let importantByDate = Dictionary(grouping: importantTomorrowEvents + thisWeekEvents, by: \.startDate)
+        let ordinaryTomorrowByDate = Dictionary(grouping: ordinaryTomorrowEvents, by: \.startDate)
+        let dates = Set(schedulesByDate.keys)
+            .union(importantByDate.keys)
+            .union(ordinaryTomorrowByDate.keys)
+            .sorted()
 
         return dates.compactMap { dateKey in
             let schedules = (schedulesByDate[dateKey] ?? []).sorted { left, right in
                 if left.childName != right.childName { return left.childName.localizedStandardCompare(right.childName) == .orderedAscending }
                 return left.childId < right.childId
             }
-            let events = (eventsByDate[dateKey] ?? []).filter { event in
+            let importantEvents = (importantByDate[dateKey] ?? []).filter { event in
                 !isUpcomingScheduleDuplicate(event, schedules: schedules)
             }
-            guard !schedules.isEmpty || !events.isEmpty else { return nil }
+            let ordinaryEvents = dateKey == tomorrowKey
+                ? (ordinaryTomorrowByDate[dateKey] ?? []).filter { event in
+                    !isUpcomingScheduleDuplicate(event, schedules: schedules)
+                }
+                : []
+            guard !schedules.isEmpty || !importantEvents.isEmpty || !ordinaryEvents.isEmpty else { return nil }
             return HomeUpcomingDayGroup(
                 dateKey: dateKey,
                 schedules: schedules,
-                events: MeroliEventPresentation.sortedUpcoming(events)
+                importantEvents: importantEvents,
+                ordinaryEvents: ordinaryEvents
             )
         }
     }
@@ -1236,31 +1250,75 @@ private struct HomeScreen: View {
     }
 
     private func isUpcomingScheduleDuplicate(_ event: ParentEventDTO, schedules: [DailyScheduleDTO]) -> Bool {
-        guard !MeroliEventPresentation.isHomeActionRequired(event),
-              MeroliEventPresentation.isScheduleChange(event) else { return false }
+        guard MeroliEventPresentation.isScheduleChange(event) else { return false }
+        let eventMeanings = normalizedScheduleMeanings(for: event)
+        guard !eventMeanings.isEmpty else { return false }
 
-        let eventType = event.eventType.uppercased()
-        let action = event.scheduleAction.uppercased()
-        let override = event.scheduleCodeOverride?.uppercased() ?? ""
-        let noSchoolTypes: Set<String> = ["NO_SCHOOL", "PUPIL_FREE_DAY", "BREAK", "HOLIDAY"]
+        let isPureNoSchoolDuplicate = eventMeanings.contains("NO_SCHOOL")
+            && !hasAdditionalParentAction(event)
+            && (event.scheduleAction.uppercased() == "NO_SCHOOL"
+                || ["NO_SCHOOL", "PUPIL_FREE_DAY", "BREAK", "HOLIDAY"].contains(event.eventType.uppercased()))
+        if MeroliEventPresentation.isHomeActionRequired(event) && !isPureNoSchoolDuplicate { return false }
 
-        return schedules.contains { schedule in
+        let relevantChildIds = Set(event.children.map(\.id).filter { selectedChildId.isEmpty || $0 == selectedChildId })
+        guard !relevantChildIds.isEmpty else { return false }
+        let matchedChildIds = Set(schedules.compactMap { schedule -> String? in
             guard event.startDate == schedule.date,
-                  event.children.contains(where: { $0.id == schedule.childId }) else { return false }
+                  relevantChildIds.contains(schedule.childId),
+                  !eventMeanings.isDisjoint(with: normalizedScheduleMeanings(for: schedule)) else { return nil }
+            return schedule.childId
+        })
+        return relevantChildIds.isSubset(of: matchedChildIds)
+    }
 
-            let status = schedule.status.uppercased()
-            let scheduleType = schedule.scheduleType?.uppercased() ?? ""
-            let scheduleCode = schedule.scheduleCode?.uppercased() ?? ""
-            let resolvedType = status == "NO_SCHOOL" ? "NO_SCHOOL" : scheduleType
-
-            if (noSchoolTypes.contains(eventType) || action == "NO_SCHOOL") && isHomeNonInstructionalDay(schedule) {
-                return true
-            }
-            guard !resolvedType.isEmpty else { return false }
-            return eventType == resolvedType
-                || (!scheduleCode.isEmpty && eventType == scheduleCode)
-                || (!override.isEmpty && (override == resolvedType || override == scheduleCode))
+    private func normalizedScheduleMeanings(for event: ParentEventDTO) -> Set<String> {
+        let eventType = event.eventType.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let action = event.scheduleAction.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let override = event.scheduleCodeOverride?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+        let noSchoolTypes: Set<String> = ["NO_SCHOOL", "PUPIL_FREE_DAY", "BREAK", "HOLIDAY"]
+        if action == "NO_SCHOOL" || noSchoolTypes.contains(eventType) || noSchoolTypes.contains(override) {
+            return ["NO_SCHOOL"]
         }
+
+        var meanings = Set<String>()
+        if ["LATE_START", "NO_LATE_START", "EARLY_RELEASE", "MINIMUM_DAY"].contains(eventType) {
+            meanings.insert(eventType)
+        }
+        if !override.isEmpty {
+            meanings.insert(normalizedScheduleMeaning(override))
+        }
+        return meanings
+    }
+
+    private func normalizedScheduleMeanings(for schedule: DailyScheduleDTO) -> Set<String> {
+        let status = schedule.status.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let scheduleType = schedule.scheduleType?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+        let scheduleCode = schedule.scheduleCode?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+        let noSchoolTypes: Set<String> = ["NO_SCHOOL", "NON_INSTRUCTIONAL_DAY", "PUPIL_FREE_DAY", "BREAK", "HOLIDAY"]
+        if noSchoolTypes.contains(status) || noSchoolTypes.contains(scheduleType) || noSchoolTypes.contains(scheduleCode) {
+            return ["NO_SCHOOL"]
+        }
+
+        var meanings = Set<String>()
+        if !scheduleType.isEmpty && !["REGULAR", "REGULAR_DAY", "NON_INSTRUCTIONAL_DAY"].contains(scheduleType) {
+            meanings.insert(normalizedScheduleMeaning(scheduleType))
+        }
+        if !scheduleCode.isEmpty && !["REGULAR", "REGULAR_DAY"].contains(scheduleCode) {
+            meanings.insert(normalizedScheduleMeaning(scheduleCode))
+        }
+        return meanings
+    }
+
+    private func normalizedScheduleMeaning(_ rawValue: String) -> String {
+        ["NO_SCHOOL", "NON_INSTRUCTIONAL_DAY", "PUPIL_FREE_DAY", "BREAK", "HOLIDAY"].contains(rawValue)
+            ? "NO_SCHOOL"
+            : rawValue
+    }
+
+    private func hasAdditionalParentAction(_ event: ParentEventDTO) -> Bool {
+        let noActionValues: Set<String> = ["", "NONE", "NO ACTION", "NO ACTION REQUIRED", "无", "无需操作"]
+        let sourceAction = event.originalAction ?? event.action
+        return !noActionValues.contains(sourceAction.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())
     }
 
     private func schoolLocalDateNote(_ key: String, childId: String? = nil) -> String {
@@ -1388,11 +1446,76 @@ private struct HomeScreen: View {
                 ForEach(group.schedules) { item in
                     upcomingScheduleCard(item)
                 }
-                if !group.events.isEmpty {
-                    eventList(group.events, showsAllDayLabel: true)
+                if !group.importantEvents.isEmpty || !group.ordinaryEvents.isEmpty {
+                    upcomingEventList(group)
                 }
             }
         }
+    }
+
+    private func upcomingEventList(_ group: HomeUpcomingDayGroup) -> some View {
+        let visibleOrdinary = Array(group.ordinaryEvents.prefix(2))
+        let collapsedOrdinary = Array(group.ordinaryEvents.dropFirst(2))
+        let visibleEvents = group.importantEvents + visibleOrdinary
+        let disclosureKey = "upcoming|\(group.dateKey)"
+
+        return VStack(spacing: 0) {
+            ForEach(visibleEvents) { event in
+                upcomingEventRow(event)
+                if event.id != visibleEvents.last?.id || !collapsedOrdinary.isEmpty {
+                    Divider().overlay(HomePalette.line)
+                }
+            }
+            if !collapsedOrdinary.isEmpty {
+                DisclosureGroup(
+                    isExpanded: Binding(
+                        get: { expandedHomeEventBundles.contains(disclosureKey) },
+                        set: { isExpanded in
+                            if isExpanded { expandedHomeEventBundles.insert(disclosureKey) }
+                            else { expandedHomeEventBundles.remove(disclosureKey) }
+                        }
+                    )
+                ) {
+                    ForEach(collapsedOrdinary) { event in
+                        upcomingEventRow(event)
+                        if event.id != collapsedOrdinary.last?.id { Divider().overlay(HomePalette.line) }
+                    }
+                } label: {
+                    let includesPersonalEvents = collapsedOrdinary.contains { $0.isPersonal == true }
+                    Text(upcomingOverflowLabel(count: collapsedOrdinary.count, includesPersonalEvents: includesPersonalEvents))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(HomePalette.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .tint(HomePalette.brand)
+            }
+        }
+        .padding(.horizontal, 15)
+        .background(HomePalette.surface, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func upcomingOverflowLabel(count: Int, includesPersonalEvents: Bool) -> String {
+        if zh {
+            return "另外 \(count) 项\(includesPersonalEvents ? "活动" : "学校活动")"
+        }
+        let noun = includesPersonalEvents ? "activit\(count == 1 ? "y" : "ies")" : "school \(count == 1 ? "activity" : "activities")"
+        return "\(count) more \(noun)"
+    }
+
+    private func upcomingEventRow(_ event: ParentEventDTO) -> some View {
+        Button { selectedEvent = event } label: {
+            EventRow(
+                event: event,
+                zh: zh,
+                childIdentityColors: childIdentityColors(for: event),
+                showsActionLabel: true,
+                showsAllDayLabel: true,
+                homeStyle: true
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 12)
     }
 
     private func childIdentityColor(for childId: String) -> Color {
