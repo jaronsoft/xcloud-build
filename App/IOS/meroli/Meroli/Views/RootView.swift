@@ -1084,6 +1084,9 @@ private struct HomeScreen: View {
                         todayHomeEventList(todayEventBundles)
                     }
                     sectionHeading(zh ? "接下来需要知道" : "Upcoming")
+                    Text(zh ? "未来 7 天，仅显示需要提前留意的安排" : "Next 7 days · Important items only")
+                        .font(.caption)
+                        .foregroundStyle(HomePalette.secondary)
                     if session.isLoadingFutureSchedules && importantFutureSchedules.isEmpty {
                         ProgressView(zh ? "正在读取接下来的作息…" : "Loading upcoming schedules…")
                     }
