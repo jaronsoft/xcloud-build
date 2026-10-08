@@ -830,15 +830,24 @@ private struct HomeScreen: View {
     private var childrenWithoutSchoolToday: [DailyScheduleDTO] {
         selectedSchedules.filter(isHomeNonInstructionalDay)
     }
-    private var selectedTomorrowSchedules: [DailyScheduleDTO] {
-        selectedChildId.isEmpty ? session.tomorrowDailySchedules : session.tomorrowDailySchedules.filter { $0.childId == selectedChildId }
+    private var selectedFutureSchedules: [DailyScheduleDTO] {
+        selectedChildId.isEmpty ? session.futureDailySchedules : session.futureDailySchedules.filter { $0.childId == selectedChildId }
     }
-    private var importantTomorrowSchedules: [DailyScheduleDTO] {
-        selectedTomorrowSchedules.filter { item in
+    private var importantFutureSchedules: [DailyScheduleDTO] {
+        let horizonDates = Set((1...7).map { dateKey(offset: $0, childId: selectedChildId.isEmpty ? nil : selectedChildId) })
+        return selectedFutureSchedules.filter { item in
+            guard horizonDates.contains(item.date) else { return false }
             let status = item.status.uppercased()
-            if status == "NO_SCHOOL" { return true }
-            guard status == "OK" else { return false }
-            return isAuthoritativeScheduleException(item) || allSelectedChildrenDismissed
+            let scheduleType = item.scheduleType?.uppercased() ?? ""
+            guard !["WEEKEND", "OUTSIDE_SCHOOL_YEAR"].contains(scheduleType) else { return false }
+
+            if item.date == dateKey(offset: 1, childId: selectedChildId.isEmpty ? nil : selectedChildId) {
+                if status == "NO_SCHOOL" { return true }
+                guard status == "OK" else { return false }
+                return isAuthoritativeScheduleException(item) || allSelectedChildrenDismissed
+            }
+
+            return status == "NO_SCHOOL" || isAuthoritativeScheduleException(item)
         }
     }
     private var visibleEvents: [ParentEventDTO] {
@@ -915,7 +924,7 @@ private struct HomeScreen: View {
         }
     }
     private var upcomingDayGroups: [HomeUpcomingDayGroup] {
-        let schedulesByDate = Dictionary(grouping: importantTomorrowSchedules, by: \.date)
+        let schedulesByDate = Dictionary(grouping: importantFutureSchedules, by: \.date)
         let candidates = tomorrowEvents + thisWeekEvents
         let eventsByDate = Dictionary(grouping: candidates, by: \.startDate)
         let dates = Set(schedulesByDate.keys).union(eventsByDate.keys).sorted()
@@ -1061,15 +1070,16 @@ private struct HomeScreen: View {
                         todayHomeEventList(todayEventBundles)
                     }
                     sectionHeading(zh ? "接下来需要知道" : "Upcoming")
-                    if session.isLoadingTomorrowSchedules && importantTomorrowSchedules.isEmpty {
+                    if session.isLoadingFutureSchedules && importantFutureSchedules.isEmpty {
                         ProgressView(zh ? "正在读取接下来的作息…" : "Loading upcoming schedules…")
                     }
-                    if let error = session.tomorrowSchedulesErrorMessage {
+                    if let error = session.futureSchedulesErrorMessage {
                         Label(error, systemImage: "exclamationmark.triangle")
                             .font(.caption).foregroundStyle(HomePalette.destructive)
                     }
                     if upcomingDayGroups.isEmpty &&
-                        !session.isLoadingTomorrowSchedules && !session.isLoadingHomeEvents {
+                        !session.isLoadingFutureSchedules && !session.isLoadingHomeEvents &&
+                        session.futureSchedulesErrorMessage == nil && session.homeEventsErrorMessage == nil {
                         Text(zh ? "目前没有需要提前留意的安排。" : "No important upcoming items.")
                             .font(.subheadline).foregroundStyle(HomePalette.secondary)
                     }
@@ -1084,13 +1094,15 @@ private struct HomeScreen: View {
             }
             .background(HomePalette.canvas.ignoresSafeArea())
             .refreshable {
+                session.invalidateFutureDailySchedules()
                 await session.loadFamily()
                 await session.loadDailySchedules(for: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
                 await loadNextInstructionalDayIfNeeded()
-                await session.loadTomorrowDailySchedules(for: tomorrowDate, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-                await loadHomeEvents()
+                async let futureSchedules: Void = session.loadFutureDailySchedules(from: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
+                async let homeEvents: Void = loadHomeEvents()
+                _ = await (futureSchedules, homeEvents)
             }
-            .task { if session.dailySchedules.isEmpty || session.homeEvents.isEmpty { refresh() } }
+            .task { if session.dailySchedules.isEmpty || session.homeEvents.isEmpty || session.futureDailySchedules.isEmpty { refresh() } }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 let today = schoolCalendar.startOfDay(for: .now)
@@ -1109,21 +1121,19 @@ private struct HomeScreen: View {
     }
 
     private func refresh() {
+        session.invalidateFutureDailySchedules()
         Task {
             await session.loadDailySchedules(for: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-            await loadNextInstructionalDayIfNeeded()
-            await session.loadTomorrowDailySchedules(for: tomorrowDate, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-            await loadHomeEvents()
+            async let futureSchedules: Void = session.loadFutureDailySchedules(from: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
+            async let nextInstructionalDay: Void = loadNextInstructionalDayIfNeeded()
+            async let homeEvents: Void = loadHomeEvents()
+            _ = await (futureSchedules, nextInstructionalDay, homeEvents)
         }
     }
 
     private func loadNextInstructionalDayIfNeeded() async {
         guard !childrenWithoutSchoolToday.isEmpty else { return }
         await session.loadNextInstructionalDay(after: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-    }
-
-    private var tomorrowDate: Date {
-        schoolCalendar.date(byAdding: .day, value: 1, to: date) ?? date
     }
 
     private func loadHomeEvents() async {

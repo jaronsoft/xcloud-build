@@ -170,9 +170,9 @@ final class SessionStore {
     private(set) var nextInstructionalDays: [ChildNextInstructionalDayDTO] = []
     private(set) var isLoadingNextInstructionalDay = false
     private(set) var nextInstructionalDayErrorMessage: String?
-    private(set) var tomorrowDailySchedules: [DailyScheduleDTO] = []
-    private(set) var isLoadingTomorrowSchedules = false
-    private(set) var tomorrowSchedulesErrorMessage: String?
+    private(set) var futureDailySchedules: [DailyScheduleDTO] = []
+    private(set) var isLoadingFutureSchedules = false
+    private(set) var futureSchedulesErrorMessage: String?
     private(set) var scheduleProfile: ScheduleProfileDTO?
     private(set) var schoolOverview: ParentSchoolOverviewDTO?
     private(set) var schoolOverviewErrorMessage: String?
@@ -211,7 +211,7 @@ final class SessionStore {
     @ObservationIgnored private var calendarLoadGeneration = 0
     @ObservationIgnored private var homeEventsLoadGeneration = 0
     @ObservationIgnored private var dailySchedulesLoadGeneration = 0
-    @ObservationIgnored private var tomorrowSchedulesLoadGeneration = 0
+    @ObservationIgnored private var futureSchedulesLoadGeneration = 0
     @ObservationIgnored private var schoolOverviewLoadGeneration = 0
     @ObservationIgnored private var performanceHistoryLoadGeneration = 0
     @ObservationIgnored private var lastCalendarRequest: (start: Date, end: Date, childId: String?)?
@@ -221,8 +221,8 @@ final class SessionStore {
     @ObservationIgnored private var lastNextInstructionalDayRequest: String?
     @ObservationIgnored private var pendingNextInstructionalDayRequest: String?
     @ObservationIgnored private var nextInstructionalDayLoadGeneration = 0
-    @ObservationIgnored private var lastTomorrowScheduleDate: Date?
-    @ObservationIgnored private var lastTomorrowScheduleChildId: String?
+    @ObservationIgnored private var lastFutureSchedulesDate: Date?
+    @ObservationIgnored private var lastFutureSchedulesChildId: String?
     @ObservationIgnored private var lastSchoolOverviewId: String?
     @ObservationIgnored private var lastPerformanceHistorySchoolId: String?
     @ObservationIgnored private let decoder: JSONDecoder
@@ -705,28 +705,61 @@ final class SessionStore {
         }
     }
 
-    func loadTomorrowDailySchedules(for date: Date, childId: String? = nil) async {
+    func invalidateFutureDailySchedules() {
+        futureSchedulesLoadGeneration += 1
+        futureDailySchedules = []
+        futureSchedulesErrorMessage = nil
+        isLoadingFutureSchedules = false
+    }
+
+    func loadFutureDailySchedules(from date: Date, childId: String? = nil) async {
         guard api != nil, accessToken != nil else { return }
-        lastTomorrowScheduleDate = date
-        lastTomorrowScheduleChildId = childId
-        tomorrowSchedulesLoadGeneration += 1
-        let generation = tomorrowSchedulesLoadGeneration
-        isLoadingTomorrowSchedules = true
+        lastFutureSchedulesDate = date
+        lastFutureSchedulesChildId = childId
+        futureSchedulesLoadGeneration += 1
+        let generation = futureSchedulesLoadGeneration
+        futureDailySchedules = []
+        futureSchedulesErrorMessage = nil
+        isLoadingFutureSchedules = true
         defer {
-            if generation == tomorrowSchedulesLoadGeneration { isLoadingTomorrowSchedules = false }
+            if generation == futureSchedulesLoadGeneration { isLoadingFutureSchedules = false }
         }
-        do {
-            let value = schoolDateString(date, childId: childId)
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = schoolTimezone(for: childId)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        guard let localStart = formatter.date(from: schoolDateString(date, childId: childId)) else { return }
+
+        var schedules: [DailyScheduleDTO] = []
+        var firstError: String?
+        var failedDates = 0
+        for offset in 1...7 {
+            guard generation == futureSchedulesLoadGeneration,
+                  let targetDate = calendar.date(byAdding: .day, value: offset, to: localStart) else { return }
+            let value = schoolDateString(targetDate, childId: childId)
             var query = [URLQueryItem(name: "date", value: value)]
             if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
-            let data = try await authorized(path: "daily-schedules", query: query)
-            let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
-            guard generation == tomorrowSchedulesLoadGeneration, accessToken != nil else { return }
-            tomorrowDailySchedules = items
-            tomorrowSchedulesErrorMessage = nil
-        } catch {
-            guard generation == tomorrowSchedulesLoadGeneration else { return }
-            tomorrowSchedulesErrorMessage = message(for: error)
+            do {
+                let data = try await authorized(path: "daily-schedules", query: query)
+                let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
+                guard generation == futureSchedulesLoadGeneration, accessToken != nil else { return }
+                schedules.append(contentsOf: items)
+            } catch {
+                guard generation == futureSchedulesLoadGeneration else { return }
+                failedDates += 1
+                if firstError == nil { firstError = message(for: error) }
+            }
+        }
+        guard generation == futureSchedulesLoadGeneration, accessToken != nil else { return }
+        futureDailySchedules = schedules
+        if let firstError {
+            futureSchedulesErrorMessage = usesChinese
+                ? "部分未来作息暂时无法读取（\(failedDates) 天）。\(firstError)"
+                : "Some upcoming schedules could not be loaded (\(failedDates) days). \(firstError)"
         }
     }
 
@@ -1429,8 +1462,8 @@ final class SessionStore {
         if let date = lastDailyScheduleDate {
             await loadDailySchedules(for: date, childId: lastDailyScheduleChildId)
         }
-        if let date = lastTomorrowScheduleDate {
-            await loadTomorrowDailySchedules(for: date, childId: lastTomorrowScheduleChildId)
+        if let date = lastFutureSchedulesDate {
+            await loadFutureDailySchedules(from: date, childId: lastFutureSchedulesChildId)
         }
         if let schoolId = lastSchoolOverviewId { await loadSchoolOverview(schoolId: schoolId) }
         if let schoolId = lastPerformanceHistorySchoolId {
@@ -1710,7 +1743,7 @@ final class SessionStore {
         homeEventsLoadGeneration += 1
         dailySchedulesLoadGeneration += 1
         nextInstructionalDayLoadGeneration += 1
-        tomorrowSchedulesLoadGeneration += 1
+        futureSchedulesLoadGeneration += 1
         schoolOverviewLoadGeneration += 1
         performanceHistoryLoadGeneration += 1
         rotationTask?.cancel()
@@ -1721,8 +1754,8 @@ final class SessionStore {
         lastDailyScheduleChildId = nil
         lastNextInstructionalDayRequest = nil
         pendingNextInstructionalDayRequest = nil
-        lastTomorrowScheduleDate = nil
-        lastTomorrowScheduleChildId = nil
+        lastFutureSchedulesDate = nil
+        lastFutureSchedulesChildId = nil
         lastSchoolOverviewId = nil
         lastPerformanceHistorySchoolId = nil
         accessToken = nil
@@ -1748,8 +1781,9 @@ final class SessionStore {
         nextInstructionalDay = nil
         nextInstructionalDays = []
         nextInstructionalDayErrorMessage = nil
-        tomorrowDailySchedules = []
-        tomorrowSchedulesErrorMessage = nil
+        futureDailySchedules = []
+        futureSchedulesErrorMessage = nil
+        isLoadingFutureSchedules = false
         scheduleProfile = nil
         schoolOverview = nil
         schoolOverviewErrorMessage = nil
@@ -1765,7 +1799,7 @@ final class SessionStore {
         isLoadingHome = false
         isLoadingNextInstructionalDay = false
         isLoadingHomeEvents = false
-        isLoadingTomorrowSchedules = false
+        isLoadingFutureSchedules = false
         isLoadingSchoolOverview = false
         isLoadingSchoolPerformanceHistory = false
     }
