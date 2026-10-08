@@ -1816,6 +1816,7 @@ private struct CalendarScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var month = Date()
     @State private var selectedDate = Date()
+    @State private var isMonthExpanded = false
     @AppStorage("meroli.calendar.childId") private var selectedChildId = ""
     @State private var selectedEvent: ParentEventDTO?
     @State private var showsPersonalEventEditor = false
@@ -1866,6 +1867,19 @@ private struct CalendarScreen: View {
         let leading = (schoolCalendar.component(.weekday, from: firstDay) - schoolCalendar.firstWeekday + 7) % 7
         let days = dayRange.compactMap { schoolCalendar.date(byAdding: .day, value: $0 - 1, to: firstDay) }
         return Array<Date?>(repeating: nil, count: leading) + days.map(Optional.some)
+    }
+    private var selectedWeekDates: [Date] {
+        guard let weekStart = schoolCalendar.dateInterval(of: .weekOfYear, for: selectedDate)?.start else { return [] }
+        return (0..<7).compactMap { offset in
+            guard let date = schoolCalendar.date(byAdding: .day, value: offset, to: weekStart) else { return nil }
+            return schoolCalendar.startOfDay(for: date)
+        }
+    }
+    private var orderedWeekdaySymbols: [String] {
+        let symbols = schoolCalendar.veryShortStandaloneWeekdaySymbols
+        guard !symbols.isEmpty else { return symbols }
+        let firstIndex = (schoolCalendar.firstWeekday - 1 + symbols.count) % symbols.count
+        return Array(symbols[firstIndex...]) + Array(symbols[..<firstIndex])
     }
     private var selectedDateEvents: [ParentEventDTO] {
         visibleCalendarEvents.filter { eventCovers($0, date: selectedDate) }
@@ -1920,6 +1934,28 @@ private struct CalendarScreen: View {
                     .frame(maxWidth: .infinity, minHeight: 220)
                 } else if displayMode == "month" {
                     monthCalendar
+                    Button {
+                        isMonthExpanded.toggle()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: isMonthExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption.weight(.semibold))
+                            Text(isMonthExpanded
+                                 ? (zh ? "收起月历" : "Collapse month")
+                                 : (zh ? "展开整月" : "Show full month"))
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .foregroundStyle(HomePalette.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isMonthExpanded
+                                        ? (zh ? "收起月历" : "Collapse month")
+                                        : (zh ? "展开整月" : "Show full month"))
+                    .accessibilityValue(isMonthExpanded
+                                        ? (zh ? "已展开" : "Expanded")
+                                        : (zh ? "已收起" : "Collapsed"))
                     HStack {
                         Text(dateHeading(selectedDate)).font(.headline).foregroundStyle(HomePalette.primary)
                         Spacer()
@@ -2058,14 +2094,15 @@ private struct CalendarScreen: View {
     }
 
     private var monthCalendar: some View {
-        VStack(spacing: 12) {
+        let displayedCells: [Date?] = isMonthExpanded ? monthCells : selectedWeekDates.map(Optional.some)
+        return VStack(spacing: 12) {
             HStack(spacing: 0) {
-                ForEach(schoolCalendar.veryShortStandaloneWeekdaySymbols, id: \.self) { day in
+                ForEach(Array(orderedWeekdaySymbols.enumerated()), id: \.offset) { _, day in
                     Text(day).font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.muted).frame(maxWidth: .infinity)
                 }
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 3) {
-                ForEach(Array(monthCells.enumerated()), id: \.offset) { _, value in
+                ForEach(Array(displayedCells.enumerated()), id: \.offset) { _, value in
                     if let day = value {
                         let dayEvents = visibleCalendarEvents.filter { eventCovers($0, date: day) }
                         let childMarkers = calendarChildMarkers(for: dayEvents)
@@ -2073,11 +2110,12 @@ private struct CalendarScreen: View {
                         let visibleChildMarkers = Array(childMarkers.prefix(3))
                         let additionalChildCount = max(0, childMarkers.count - visibleChildMarkers.count)
                         let isSelected = schoolCalendar.isDate(day, inSameDayAs: selectedDate)
+                        let isAdjacentMonth = !schoolCalendar.isDate(day, equalTo: month, toGranularity: .month)
                         Button { selectDay(day) } label: {
                             VStack(spacing: 3) {
                                 Text("\(schoolCalendar.component(.day, from: day))")
                                     .font(.subheadline.weight(isSelected ? .bold : .regular))
-                                    .foregroundStyle(isSelected ? .white : MeroliColor.ink)
+                                    .foregroundStyle(isSelected ? .white : (isAdjacentMonth ? HomePalette.tertiary : MeroliColor.ink))
                                     .monospacedDigit()
                                 HStack(spacing: 3) {
                                     ForEach(visibleChildMarkers) { child in
