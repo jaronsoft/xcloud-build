@@ -3117,47 +3117,13 @@ private struct SchoolYearUpdateScreen: View {
         Set(transitions.filter { $0.transitionAvailable != true }
             .compactMap(\.transitionAvailableDate)).count > 1
     }
+    private var hasUnavailableTransitions: Bool {
+        transitions.contains { $0.transitionAvailable != true }
+    }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if session.isLoadingFamily && session.family == nil {
-                        ProgressView(zh ? "正在读取学年安排…" : "Loading school year updates…")
-                            .frame(maxWidth: .infinity, minHeight: 150)
-                    } else if transitions.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(zh ? "目前没有需要确认的下一学年安排。" : "There are no school year updates to review right now.")
-                                .font(.subheadline).foregroundStyle(MeroliColor.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(18)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 16))
-                    } else {
-                        if transitions.contains(where: { $0.transitionAvailable != true }) {
-                            Text(zh
-                                ? "下一学年安排将在当前学年结束后开放确认。"
-                                : "Next school year updates will become available after the current school year ends.")
-                                .font(.subheadline).foregroundStyle(MeroliColor.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(14)
-                                .background(.white, in: RoundedRectangle(cornerRadius: 14))
-                        }
-                        if let actionError {
-                            Text(actionError)
-                                .font(.subheadline).foregroundStyle(MeroliColor.coral)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        ForEach(transitions) { transition in
-                            transitionCard(transition)
-                        }
-                    }
-                }
-                .padding(18)
-            }
-            .background(MeroliColor.canvas)
+            schoolYearContent
             .navigationTitle(zh ? "学年更新" : "School Year Update")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -3176,109 +3142,241 @@ private struct SchoolYearUpdateScreen: View {
         }
     }
 
+    @ViewBuilder
+    private var schoolYearContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                schoolYearContentBody
+            }
+            .padding(18)
+        }
+        .background(MeroliColor.canvas)
+    }
+
+    @ViewBuilder
+    private var schoolYearContentBody: some View {
+        if session.isLoadingFamily && session.family == nil {
+            ProgressView(zh ? "正在读取学年安排…" : "Loading school year updates…")
+                .frame(maxWidth: .infinity, minHeight: 150)
+        } else if transitions.isEmpty {
+            emptySchoolYearState
+        } else {
+            if hasUnavailableTransitions {
+                availabilityExplanation
+            }
+            if let actionError {
+                Text(actionError)
+                    .font(.subheadline)
+                    .foregroundStyle(MeroliColor.coral)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(transitions) { transition in
+                transitionCard(transition)
+            }
+        }
+    }
+
+    private var emptySchoolYearState: some View {
+        Text(zh ? "目前没有需要确认的下一学年安排。" : "There are no school year updates to review right now.")
+            .font(.subheadline)
+            .foregroundStyle(MeroliColor.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var availabilityExplanation: some View {
+        Text(zh
+            ? "下一学年安排将在当前学年结束后开放确认。"
+            : "Next school year updates will become available after the current school year ends.")
+            .font(.subheadline)
+            .foregroundStyle(MeroliColor.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(.white, in: RoundedRectangle(cornerRadius: 14))
+    }
+
     private func transitionCard(_ transition: SchoolYearTransitionDTO) -> some View {
         let isAvailable = transition.transitionAvailable == true
         let hasTargetYear = transition.targetSchoolYearId != nil
         return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 9) {
-                Circle()
-                    .fill(MeroliChildIdentity.color(for: transition.childId, in: session.children))
-                    .frame(width: 10, height: 10)
-                    .accessibilityHidden(true)
-                Text(transition.childName)
-                    .font(.headline).foregroundStyle(MeroliColor.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 6)
-                if !isAvailable || (!hasTargetYear && !transition.finishedK12Available) {
-                    Text(zh ? "尚未开放" : "Not open yet")
-                        .font(.caption.weight(.medium)).foregroundStyle(MeroliColor.muted)
-                }
-            }
-            Text(transition.schoolName)
-                .font(.subheadline.weight(.medium)).foregroundStyle(MeroliColor.ink)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("\(transition.schoolYearLabel) · \(localizedGrade(transition.gradeCode))")
-                .font(.caption).foregroundStyle(MeroliColor.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let targetYear = transition.targetSchoolYearLabel, !targetYear.isEmpty {
-                Text((zh ? "下一学年 · " : "Next school year · ") + targetYear)
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
-            }
-            if let suggestedGrade = transition.suggestedGradeCode {
-                Text((zh ? "建议年级 · " : "Suggested grade · ") + localizedGrade(suggestedGrade))
-                    .font(.subheadline).foregroundStyle(MeroliColor.secondary)
-            } else if transition.targetSchoolYearId != nil {
-                Text(zh ? "下一学年需要选择学校和年级。" : "Choose a school and grade for next school year.")
-                    .font(.subheadline).foregroundStyle(MeroliColor.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if unavailableDatesDiffer, let availableDate = transition.transitionAvailableDate {
-                Text((zh ? "可从 " : "Available after ") + availableDate + (zh ? " 确认" : ""))
-                    .font(.caption).foregroundStyle(MeroliColor.muted)
-            }
-
-            if isAvailable && hasTargetYear {
-                if transition.suggestedGrade != nil, let targetYearId = transition.targetSchoolYearId {
-                    Button {
-                        perform(transition, action: "confirm-grade", targetYearId: targetYearId, grade: transition.suggestedGrade)
-                    } label: {
-                        Label(zh ? "确认升至\(localizedGrade(transition.suggestedGradeCode ?? ""))" : "Confirm next grade", systemImage: "checkmark")
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(MeroliColor.ink)
-                    .disabled(session.isSavingSchoolYearTransition)
-                }
-                Button {
-                    choosingNextSchool = transition
-                } label: {
-                    Label(transition.suggestedGrade == nil
-                        ? (zh ? "选择下一所学校" : "Choose next school")
-                        : (zh ? "选择其他学校" : "Choose another school"), systemImage: "building.2")
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                .buttonStyle(.bordered)
-                .tint(MeroliColor.ink)
-                .disabled(session.isSavingSchoolYearTransition)
-
-            } else {
-                if !transition.finishedK12Available || !isAvailable {
-                    Button(zh ? "学年更新尚未开放" : "School year update not yet available") {}
-                        .buttonStyle(.bordered)
-                        .disabled(true)
-                        .accessibilityHint(zh
-                            ? "可在当前学年结束后确认"
-                            : "Available after the current school year ends")
-                }
-            }
-            if isAvailable && transition.graduating {
-                Button(zh ? "暂不确定" : "Not sure yet") {
-                    perform(transition, action: "not-sure")
-                }
-                .buttonStyle(.bordered)
-                .tint(MeroliColor.secondary)
-                .disabled(session.isSavingSchoolYearTransition)
-            }
-            if isAvailable && transition.finishedK12Available {
-                Button(zh ? "已完成 K–12" : "Finished K–12") {
-                    perform(transition, action: "finished-k12")
-                }
-                .buttonStyle(.bordered)
-                .tint(MeroliColor.secondary)
-                .disabled(session.isSavingSchoolYearTransition)
-            }
-
-            if transition.programReconfirmationRequired {
-                Text(zh ? "更新后请重新确认作息与项目。" : "Review the schedule and programs after this update.")
-                    .font(.caption).foregroundStyle(MeroliColor.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            transitionHeader(transition)
+            transitionSummary(transition)
+            transitionActions(transition, isAvailable: isAvailable, hasTargetYear: hasTargetYear)
+            programReconfirmationNotice(transition)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.white, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.line, lineWidth: 1))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(MeroliColor.line, lineWidth: 1)
+        }
+    }
+
+    private func transitionHeader(_ transition: SchoolYearTransitionDTO) -> some View {
+        HStack(spacing: 9) {
+            Circle()
+                .fill(MeroliChildIdentity.color(for: transition.childId, in: session.children))
+                .frame(width: 10, height: 10)
+                .accessibilityHidden(true)
+            Text(transition.childName)
+                .font(.headline)
+                .foregroundStyle(MeroliColor.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 6)
+            if shouldShowTransitionUnavailableLabel(transition) {
+                Text(zh ? "尚未开放" : "Not open yet")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(MeroliColor.muted)
+            }
+        }
+    }
+
+    private func shouldShowTransitionUnavailableLabel(_ transition: SchoolYearTransitionDTO) -> Bool {
+        transition.transitionAvailable != true
+            || (transition.targetSchoolYearId == nil && !transition.finishedK12Available)
+    }
+
+    @ViewBuilder
+    private func transitionSummary(_ transition: SchoolYearTransitionDTO) -> some View {
+        Text(transition.schoolName)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(MeroliColor.ink)
+            .fixedSize(horizontal: false, vertical: true)
+        Text(transitionCurrentYearText(transition))
+            .font(.caption)
+            .foregroundStyle(MeroliColor.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        if let targetYearText = transitionTargetYearText(transition) {
+            Text(targetYearText)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(MeroliColor.ink)
+        }
+        if let targetGradeText = transitionTargetGradeText(transition) {
+            Text(targetGradeText)
+                .font(.subheadline)
+                .foregroundStyle(MeroliColor.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if unavailableDatesDiffer, let availableDate = transition.transitionAvailableDate {
+            Text(transitionAvailabilityDateText(availableDate))
+                .font(.caption)
+                .foregroundStyle(MeroliColor.muted)
+        }
+    }
+
+    private func transitionCurrentYearText(_ transition: SchoolYearTransitionDTO) -> String {
+        "\(transition.schoolYearLabel) · \(localizedGrade(transition.gradeCode))"
+    }
+
+    private func transitionTargetYearText(_ transition: SchoolYearTransitionDTO) -> String? {
+        guard let targetYear = transition.targetSchoolYearLabel, !targetYear.isEmpty else { return nil }
+        return (zh ? "下一学年 · " : "Next school year · ") + targetYear
+    }
+
+    private func transitionTargetGradeText(_ transition: SchoolYearTransitionDTO) -> String? {
+        if let suggestedGrade = transition.suggestedGradeCode {
+            return (zh ? "建议年级 · " : "Suggested grade · ") + localizedGrade(suggestedGrade)
+        }
+        guard transition.targetSchoolYearId != nil else { return nil }
+        return zh ? "下一学年需要选择学校和年级。" : "Choose a school and grade for next school year."
+    }
+
+    private func transitionAvailabilityDateText(_ date: String) -> String {
+        (zh ? "可从 " : "Available after ") + date + (zh ? " 确认" : "")
+    }
+
+    @ViewBuilder
+    private func transitionActions(
+        _ transition: SchoolYearTransitionDTO,
+        isAvailable: Bool,
+        hasTargetYear: Bool
+    ) -> some View {
+        if isAvailable && hasTargetYear {
+            availableTransitionActions(transition)
+        } else if !transition.finishedK12Available || !isAvailable {
+            unavailableTransitionAction
+        }
+        if isAvailable && transition.graduating {
+            notSureAction(transition)
+        }
+        if isAvailable && transition.finishedK12Available {
+            finishedK12Action(transition)
+        }
+    }
+
+    @ViewBuilder
+    private func availableTransitionActions(_ transition: SchoolYearTransitionDTO) -> some View {
+        if transition.suggestedGrade != nil, let targetYearId = transition.targetSchoolYearId {
+            Button {
+                perform(transition, action: "confirm-grade", targetYearId: targetYearId, grade: transition.suggestedGrade)
+            } label: {
+                Label(confirmGradeButtonTitle(transition), systemImage: "checkmark")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(MeroliColor.ink)
+            .disabled(session.isSavingSchoolYearTransition)
+        }
+        Button {
+            choosingNextSchool = transition
+        } label: {
+            Label(nextSchoolButtonTitle(transition), systemImage: "building.2")
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .tint(MeroliColor.ink)
+        .disabled(session.isSavingSchoolYearTransition)
+    }
+
+    private func confirmGradeButtonTitle(_ transition: SchoolYearTransitionDTO) -> String {
+        guard zh else { return "Confirm next grade" }
+        return "确认升至\(localizedGrade(transition.suggestedGradeCode ?? ""))"
+    }
+
+    private func nextSchoolButtonTitle(_ transition: SchoolYearTransitionDTO) -> String {
+        if transition.suggestedGrade == nil {
+            return zh ? "选择下一所学校" : "Choose next school"
+        }
+        return zh ? "选择其他学校" : "Choose another school"
+    }
+
+    private var unavailableTransitionAction: some View {
+        Button(zh ? "学年更新尚未开放" : "School year update not yet available") {}
+            .buttonStyle(.bordered)
+            .disabled(true)
+            .accessibilityHint(zh ? "可在当前学年结束后确认" : "Available after the current school year ends")
+    }
+
+    private func notSureAction(_ transition: SchoolYearTransitionDTO) -> some View {
+        Button(zh ? "暂不确定" : "Not sure yet") {
+            perform(transition, action: "not-sure")
+        }
+        .buttonStyle(.bordered)
+        .tint(MeroliColor.secondary)
+        .disabled(session.isSavingSchoolYearTransition)
+    }
+
+    private func finishedK12Action(_ transition: SchoolYearTransitionDTO) -> some View {
+        Button(zh ? "已完成 K–12" : "Finished K–12") {
+            perform(transition, action: "finished-k12")
+        }
+        .buttonStyle(.bordered)
+        .tint(MeroliColor.secondary)
+        .disabled(session.isSavingSchoolYearTransition)
+    }
+
+    @ViewBuilder
+    private func programReconfirmationNotice(_ transition: SchoolYearTransitionDTO) -> some View {
+        if transition.programReconfirmationRequired {
+            Text(zh ? "更新后请重新确认作息与项目。" : "Review the schedule and programs after this update.")
+                .font(.caption)
+                .foregroundStyle(MeroliColor.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func perform(_ transition: SchoolYearTransitionDTO, action: String, targetYearId: String? = nil, grade: Int? = nil) {
@@ -5547,6 +5645,11 @@ private struct SettingsScreen: View {
             zh: zh
         )
     }
+    private var schoolYearReviewStatusText: String {
+        let count = actionableSchoolYearChildCount
+        if zh { return "\(count) 个孩子待确认" }
+        return count == 1 ? "1 child needs review" : "\(count) children need review"
+    }
     private var appVersionLabel: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
@@ -5556,158 +5659,213 @@ private struct SettingsScreen: View {
         ByteCountFormatter.string(fromByteCount: session.cachedResponseByteCount, countStyle: .file)
     }
 
+    private var familySettingsSection: some View {
+        Section(zh ? "家庭" : "Family") {
+            familyManagementRow
+            schoolYearUpdateRow
+        }
+    }
+
+    private var familyManagementRow: some View {
+        Button { showsFamilyManagement = true } label: {
+            Label(zh ? "管理孩子与学校" : "Manage Children & Schools", systemImage: "person.2")
+                .foregroundStyle(MeroliColor.ink)
+        }
+        .accessibilityIdentifier("meroli.settings.family-management")
+        .accessibilityHint(zh ? "管理孩子资料和当前学校" : "Manage children and their current schools")
+    }
+
+    @ViewBuilder
+    private var schoolYearUpdateRow: some View {
+        if actionableSchoolYearChildCount > 0 {
+            Button { showsSchoolYearUpdate = true } label: {
+                HStack(spacing: 10) {
+                    Label(zh ? "学年更新" : "School Year Update", systemImage: "arrow.forward.calendar")
+                        .foregroundStyle(MeroliColor.ink)
+                    Spacer(minLength: 8)
+                    Text(schoolYearReviewStatusText)
+                        .font(.caption)
+                        .foregroundStyle(MeroliColor.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(MeroliColor.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("meroli.settings.school-year-update")
+            .accessibilityHint(zh ? "打开学年更新流程" : "Opens school year updates")
+        } else {
+            inactiveSchoolYearUpdateRow
+        }
+    }
+
+    private var inactiveSchoolYearUpdateRow: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(zh ? "学年更新" : "School Year Update")
+                    .foregroundStyle(MeroliColor.secondary)
+                Text(inactiveSchoolYearStatus)
+                    .font(.caption)
+                    .foregroundStyle(MeroliColor.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 44, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("meroli.settings.school-year-update")
+    }
+
+    private var appPreferencesSection: some View {
+        Section {
+            Picker(zh ? "应用语言" : "App language", selection: languageSelection) {
+                Text("English").tag("en")
+                Text("简体中文").tag("zh-CN")
+            }
+            LabeledContent(zh ? "版本号" : "Version", value: appVersionLabel)
+        } header: {
+            Text(zh ? "应用偏好" : "App preferences")
+        }
+    }
+
+    private var languageSelection: Binding<String> {
+        Binding(
+            get: { session.language },
+            set: { value in Task { await session.setLanguage(value) } }
+        )
+    }
+
+    private var accountSection: some View {
+        Section(zh ? "账户" : "Account") {
+            LabeledContent(zh ? "邮箱" : "Email", value: session.email)
+            if let family = session.family, !family.id.isEmpty {
+                LabeledContent(zh ? "家庭编号" : "Family ID", value: family.id)
+            }
+            appleAccountControl
+            signOutButton
+            if let error = session.errorMessage {
+                Text(error)
+                    .foregroundStyle(MeroliColor.coral)
+                    .font(.subheadline)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var appleAccountControl: some View {
+        if session.isAppleLinked {
+            Label(zh ? "已绑定 Apple 账号" : "Apple account linked", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(MeroliColor.ink)
+        } else {
+            MeroliAppleAuthorizationButton(
+                type: .continue,
+                title: zh ? "继续使用 Apple" : "Continue with Apple",
+                height: 52,
+                accessibilityIdentifier: "meroli.settings.bind-apple",
+                onRequest: configureAppleAuthorizationRequest,
+                onCompletion: handleAppleAuthorizationResult
+            )
+        }
+    }
+
+    private func configureAppleAuthorizationRequest(_ request: ASAuthorizationAppleIDRequest) {
+        let nonce = AppleNonce.generate()
+        appleRawNonce = nonce
+        request.nonce = AppleNonce.sha256(nonce)
+        request.requestedScopes = [.email]
+    }
+
+    private func handleAppleAuthorizationResult(_ result: Result<ASAuthorization, any Error>) {
+        guard case .success(let authorization) = result,
+              let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+              let tokenData = credential.identityToken,
+              let token = String(data: tokenData, encoding: .utf8),
+              let nonce = appleRawNonce else {
+            if case .failure(let error) = result { session.errorMessage = error.localizedDescription }
+            return
+        }
+        Task { await session.bindApple(identityToken: token, rawNonce: nonce) }
+    }
+
+    private var signOutButton: some View {
+        Button {
+            isLoggingOut = true
+            Task { await session.logout(); isLoggingOut = false }
+        } label: {
+            HStack {
+                if isLoggingOut { ProgressView().tint(MeroliColor.secondary) }
+                Text(zh ? "退出登录" : "Sign out")
+            }
+            .font(.body.weight(.medium))
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 44)
+            .foregroundStyle(MeroliColor.secondary)
+            .overlay(RoundedRectangle(cornerRadius: 11).stroke(MeroliColor.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoggingOut)
+        .accessibilityIdentifier("meroli.settings.logout")
+        .accessibilityHint(zh ? "退出当前账户" : "Signs out of this account")
+    }
+
+    private var storageSection: some View {
+        Section {
+            LabeledContent(zh ? "已缓存数据" : "Cached data", value: cachedResponseSummary)
+            Button {
+                showsClearCacheConfirmation = true
+            } label: {
+                Label(zh ? "清理缓存" : "Clear cache", systemImage: "trash")
+                    .foregroundStyle(MeroliColor.secondary)
+            }
+            .accessibilityHint(zh ? "清理本机缓存数据" : "Clears cached data on this device")
+        } header: {
+            Text(zh ? "存储" : "Storage")
+        } footer: {
+            Text(zh
+                ? "清理后，家庭、学校、日历和作息数据会在下次读取时重新下载。"
+                : "Family, school, calendar, and schedule data will download again when next opened.")
+        }
+    }
+
+    private var cachedResponseSummary: String {
+        zh
+            ? "\(session.cachedResponseCount) 项 · \(cachedSize)"
+            : "\(session.cachedResponseCount) items · \(cachedSize)"
+    }
+
+    private var dangerZoneSection: some View {
+        Section(zh ? "危险操作" : "Danger zone") {
+            Button { showsDeleteAccount = true } label: {
+                Text(zh ? "删除账户" : "Delete account")
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 44)
+                    .padding(.vertical, 7)
+                    .foregroundStyle(.white)
+                    .background(destructiveColor, in: RoundedRectangle(cornerRadius: 11))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("meroli.settings.delete-account")
+            .accessibilityHint(zh ? "永久删除账户前会要求确认" : "You will be asked to confirm before your account is permanently deleted")
+            Text(zh
+                ? "删除后你将无法再登录。独占家庭的孩子、入学和作息资料会一并删除；其他成员共享的家庭资料会保留。"
+                : "You will no longer be able to sign in. Children, enrollments, and schedules in a family used only by you will be deleted. Shared family data will remain for other members.")
+                .font(.footnote)
+                .foregroundStyle(MeroliColor.muted)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List {
-                Section(zh ? "家庭" : "Family") {
-                    Button { showsFamilyManagement = true } label: {
-                        Label(zh ? "管理孩子与学校" : "Manage Children & Schools", systemImage: "person.2")
-                            .foregroundStyle(MeroliColor.ink)
-                    }
-                    .accessibilityIdentifier("meroli.settings.family-management")
-                    .accessibilityHint(zh ? "管理孩子资料和当前学校" : "Manage children and their current schools")
-
-                    if actionableSchoolYearChildCount > 0 {
-                        Button { showsSchoolYearUpdate = true } label: {
-                            HStack(spacing: 10) {
-                                Label(zh ? "学年更新" : "School Year Update", systemImage: "arrow.forward.calendar")
-                                    .foregroundStyle(MeroliColor.ink)
-                                Spacer(minLength: 8)
-                                Text(zh
-                                    ? "\(actionableSchoolYearChildCount) 个孩子待确认"
-                                    : "\(actionableSchoolYearChildCount) \(actionableSchoolYearChildCount == 1 ? "child needs" : "children need") review")
-                                    .font(.caption)
-                                    .foregroundStyle(MeroliColor.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(MeroliColor.secondary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("meroli.settings.school-year-update")
-                        .accessibilityHint(zh ? "打开学年更新流程" : "Opens school year updates")
-                    } else {
-                        HStack(spacing: 10) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(zh ? "学年更新" : "School Year Update")
-                                    .foregroundStyle(MeroliColor.secondary)
-                                Text(inactiveSchoolYearStatus)
-                                    .font(.caption)
-                                    .foregroundStyle(MeroliColor.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .frame(minHeight: 44, alignment: .leading)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityIdentifier("meroli.settings.school-year-update")
-                    }
-                }
-                Section {
-                    Picker(zh ? "应用语言" : "App language", selection: Binding(
-                        get: { session.language },
-                        set: { value in Task { await session.setLanguage(value) } }
-                    )) {
-                        Text("English").tag("en")
-                        Text("简体中文").tag("zh-CN")
-                    }
-                    LabeledContent(zh ? "版本号" : "Version", value: appVersionLabel)
-                } header: {
-                    Text(zh ? "应用偏好" : "App preferences")
-                }
-                Section(zh ? "账户" : "Account") {
-                    LabeledContent(zh ? "邮箱" : "Email", value: session.email)
-                    if let family = session.family, !family.id.isEmpty {
-                        LabeledContent(zh ? "家庭编号" : "Family ID", value: family.id)
-                    }
-                    if session.isAppleLinked {
-                        Label(zh ? "已绑定 Apple 账号" : "Apple account linked", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(MeroliColor.ink)
-                    } else {
-                        MeroliAppleAuthorizationButton(
-                            type: .continue,
-                            title: zh ? "继续使用 Apple" : "Continue with Apple",
-                            height: 52,
-                            accessibilityIdentifier: "meroli.settings.bind-apple",
-                            onRequest: { request in
-                                let nonce = AppleNonce.generate()
-                                appleRawNonce = nonce
-                                request.nonce = AppleNonce.sha256(nonce)
-                                request.requestedScopes = [.email]
-                            },
-                            onCompletion: { result in
-                                guard case .success(let authorization) = result,
-                                      let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-                                      let tokenData = credential.identityToken,
-                                      let token = String(data: tokenData, encoding: .utf8),
-                                      let nonce = appleRawNonce else {
-                                    if case .failure(let error) = result { session.errorMessage = error.localizedDescription }
-                                    return
-                                }
-                                Task { await session.bindApple(identityToken: token, rawNonce: nonce) }
-                            }
-                        )
-                    }
-                    Button {
-                        isLoggingOut = true
-                        Task { await session.logout(); isLoggingOut = false }
-                    } label: {
-                        HStack {
-                            if isLoggingOut { ProgressView().tint(MeroliColor.secondary) }
-                            Text(zh ? "退出登录" : "Sign out")
-                        }
-                        .font(.body.weight(.medium))
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 44)
-                        .foregroundStyle(MeroliColor.secondary)
-                        .overlay(RoundedRectangle(cornerRadius: 11).stroke(MeroliColor.line, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isLoggingOut)
-                    .accessibilityIdentifier("meroli.settings.logout")
-                    .accessibilityHint(zh ? "退出当前账户" : "Signs out of this account")
-                    if let error = session.errorMessage {
-                        Text(error).foregroundStyle(MeroliColor.coral).font(.subheadline)
-                    }
-                }
-                Section {
-                    LabeledContent(zh ? "已缓存数据" : "Cached data", value: zh
-                        ? "\(session.cachedResponseCount) 项 · \(cachedSize)"
-                        : "\(session.cachedResponseCount) items · \(cachedSize)")
-                    Button {
-                        showsClearCacheConfirmation = true
-                    } label: {
-                        Label(zh ? "清理缓存" : "Clear cache", systemImage: "trash")
-                            .foregroundStyle(MeroliColor.secondary)
-                    }
-                    .accessibilityHint(zh ? "清理本机缓存数据" : "Clears cached data on this device")
-                } header: {
-                    Text(zh ? "存储" : "Storage")
-                } footer: {
-                    Text(zh
-                        ? "清理后，家庭、学校、日历和作息数据会在下次读取时重新下载。"
-                        : "Family, school, calendar, and schedule data will download again when next opened.")
-                }
-                Section(zh ? "危险操作" : "Danger zone") {
-                    Button { showsDeleteAccount = true } label: {
-                        Text(zh ? "删除账户" : "Delete account")
-                            .font(.body.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 44)
-                            .padding(.vertical, 7)
-                            .foregroundStyle(.white)
-                            .background(destructiveColor, in: RoundedRectangle(cornerRadius: 11))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("meroli.settings.delete-account")
-                    .accessibilityHint(zh ? "永久删除账户前会要求确认" : "You will be asked to confirm before your account is permanently deleted")
-                    Text(zh ? "删除后你将无法再登录。独占家庭的孩子、入学和作息资料会一并删除；其他成员共享的家庭资料会保留。" : "You will no longer be able to sign in. Children, enrollments, and schedules in a family used only by you will be deleted. Shared family data will remain for other members.")
-                        .font(.footnote)
-                        .foregroundStyle(MeroliColor.muted)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                }
+                familySettingsSection
+                appPreferencesSection
+                accountSection
+                storageSection
+                dangerZoneSection
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Color.clear.frame(height: 12).accessibilityHidden(true)
