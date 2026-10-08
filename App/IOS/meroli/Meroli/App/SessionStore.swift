@@ -39,6 +39,29 @@ private struct ResponseCacheSummary {
     let byteCount: Int64
 }
 
+enum CalendarLoadPolicy: Equatable {
+    case cacheFirst
+    case forceRefresh
+}
+
+private struct CalendarSessionCacheKey: Hashable {
+    let startDate: String
+    let endDate: String
+    let childId: String?
+    let language: String
+    let userId: String
+}
+
+private struct CalendarSessionCacheEntry {
+    let events: [ParentEventDTO]
+    let fetchedAt: Date
+}
+
+private enum CalendarSessionCachePolicy {
+    static let freshness: TimeInterval = 5 * 60
+    static let maximumEntries = 24
+}
+
 private final class DailyAPIResponseCache {
     private let fileManager = FileManager.default
     private let encoder = JSONEncoder()
@@ -162,6 +185,7 @@ final class SessionStore {
     private(set) var schools: [ParentSchoolDTO] = []
     private(set) var selectedSchoolDetails: [String: ParentSchoolDTO] = [:]
     private(set) var calendarEvents: [ParentEventDTO] = []
+    private(set) var calendarErrorMessage: String?
     private(set) var homeEvents: [ParentEventDTO] = []
     private(set) var isLoadingHomeEvents = false
     private(set) var homeEventsErrorMessage: String?
@@ -184,6 +208,7 @@ final class SessionStore {
     private(set) var catalogErrorMessage: String?
     private(set) var isLoadingSchools = false
     private(set) var isLoadingCalendar = false
+    private(set) var isRefreshingCalendar = false
     private(set) var isLoadingHome = false
     private(set) var homeErrorMessage: String?
     private(set) var isLoadingSchoolOverview = false
@@ -209,6 +234,7 @@ final class SessionStore {
     @ObservationIgnored private var loadedSchoolDistrictId: String?
     @ObservationIgnored private var programsLoadGeneration = 0
     @ObservationIgnored private var calendarLoadGeneration = 0
+    @ObservationIgnored private var calendarSessionCache: [CalendarSessionCacheKey: CalendarSessionCacheEntry] = [:]
     @ObservationIgnored private var homeEventsLoadGeneration = 0
     @ObservationIgnored private var dailySchedulesLoadGeneration = 0
     @ObservationIgnored private var futureSchedulesLoadGeneration = 0
@@ -386,12 +412,20 @@ final class SessionStore {
             let transitionsResult = try decoder.decode(APIEnvelope<[SchoolYearTransitionDTO]>.self, from: transitionData).response
             completeInitializationStep()
             guard generation == familyLoadGeneration, accessToken != nil else { return }
+            let familyChanged = calendarFamilySignature(family, children, enrollments)
+                != calendarFamilySignature(familyResult, childrenResult, enrollmentsResult)
             family = familyResult
             children = childrenResult
             enrollments = enrollmentsResult
             schoolYearTransitions = transitionsResult
             homeErrorMessage = nil
             errorMessage = nil
+            if familyChanged {
+                clearCalendarSessionCache(clearVisibleEvents: true)
+                if let request = lastCalendarRequest {
+                    await loadCalendar(from: request.start, to: request.end, childId: request.childId, policy: .forceRefresh)
+                }
+            }
         } catch {
             guard generation == familyLoadGeneration else { return }
             let failureMessage = message(for: error)
@@ -552,16 +586,49 @@ final class SessionStore {
         }
     }
 
-    func loadCalendar(from startDate: Date, to endDate: Date, childId: String? = nil) async {
+    func loadCalendar(
+        from startDate: Date,
+        to endDate: Date,
+        childId: String? = nil,
+        policy: CalendarLoadPolicy = .cacheFirst
+    ) async {
         guard accessToken != nil else { return }
+        let cacheKey = calendarCacheKey(from: startDate, to: endDate, childId: childId)
+        let previousVisibleKey = lastCalendarRequest.map {
+            calendarCacheKey(from: $0.start, to: $0.end, childId: $0.childId)
+        }
         lastCalendarRequest = (startDate, endDate, childId)
         calendarLoadGeneration += 1
         let generation = calendarLoadGeneration
-        isLoadingCalendar = true
-        calendarEvents = []
-        errorMessage = nil
+        let requestUserId = userId
+        let requestLanguage = language
+        let cachedEntry = calendarSessionCache[cacheKey]
+        if let cachedEntry {
+            calendarEvents = cachedEntry.events
+            calendarErrorMessage = nil
+        } else if !(policy == .forceRefresh && previousVisibleKey == cacheKey && !calendarEvents.isEmpty) {
+            calendarEvents = []
+            calendarErrorMessage = nil
+        }
+
+        let cacheIsFresh = cachedEntry.map {
+            max(0, Date().timeIntervalSince($0.fetchedAt)) <= CalendarSessionCachePolicy.freshness
+        } ?? false
+        if policy == .cacheFirst, cacheIsFresh {
+            isLoadingCalendar = false
+            isRefreshingCalendar = false
+            calendarErrorMessage = nil
+            return
+        }
+
+        let hasCalendarData = cachedEntry != nil || !calendarEvents.isEmpty
+        isLoadingCalendar = !hasCalendarData
+        isRefreshingCalendar = hasCalendarData
         defer {
-            if generation == calendarLoadGeneration { isLoadingCalendar = false }
+            if generation == calendarLoadGeneration {
+                isLoadingCalendar = false
+                isRefreshingCalendar = false
+            }
         }
         var query = [
             URLQueryItem(name: "start_date", value: schoolDateString(startDate, childId: childId)),
@@ -569,15 +636,67 @@ final class SessionStore {
         ]
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
-            let data = try await authorized(path: "calendar", query: query, forceRefresh: true)
+            let data = try await authorized(
+                path: "calendar",
+                query: query,
+                forceRefresh: true,
+                allowsStaleResponseFallback: false
+            )
             let result = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
-            guard generation == calendarLoadGeneration, accessToken != nil else { return }
+            guard generation == calendarLoadGeneration,
+                  accessToken != nil,
+                  userId == requestUserId,
+                  language == requestLanguage else { return }
             calendarEvents = result
-            errorMessage = nil
+            calendarErrorMessage = nil
+            calendarSessionCache[cacheKey] = CalendarSessionCacheEntry(events: result, fetchedAt: Date())
+            evictOldestCalendarCacheEntriesIfNeeded()
         } catch {
             guard generation == calendarLoadGeneration else { return }
-            errorMessage = message(for: error)
+            calendarErrorMessage = message(for: error)
         }
+    }
+
+    private func calendarCacheKey(from startDate: Date, to endDate: Date, childId: String?) -> CalendarSessionCacheKey {
+        CalendarSessionCacheKey(
+            startDate: schoolDateString(startDate, childId: childId),
+            endDate: schoolDateString(endDate, childId: childId),
+            childId: childId,
+            language: language,
+            userId: userId
+        )
+    }
+
+    private func evictOldestCalendarCacheEntriesIfNeeded() {
+        while calendarSessionCache.count > CalendarSessionCachePolicy.maximumEntries,
+              let oldestKey = calendarSessionCache.min(by: { $0.value.fetchedAt < $1.value.fetchedAt })?.key {
+            calendarSessionCache.removeValue(forKey: oldestKey)
+        }
+    }
+
+    private func invalidateCalendarSessionCache() {
+        calendarSessionCache.removeAll()
+        calendarLoadGeneration += 1
+        isLoadingCalendar = false
+        isRefreshingCalendar = false
+        calendarErrorMessage = nil
+    }
+
+    private func clearCalendarSessionCache(clearVisibleEvents: Bool) {
+        invalidateCalendarSessionCache()
+        if clearVisibleEvents { calendarEvents = [] }
+    }
+
+    private func calendarFamilySignature(
+        _ family: FamilyDTO?,
+        _ children: [ChildDTO],
+        _ enrollments: [EnrollmentDTO]
+    ) -> String {
+        let childIdentity = children.map(\.id).sorted().joined(separator: ",")
+        let enrollmentIdentity = enrollments.map {
+            [$0.id, $0.childId, $0.schoolId, $0.schoolYearId, $0.gradeCode, $0.status, $0.endedAt ?? ""].joined(separator: "|")
+        }.sorted().joined(separator: ",")
+        return "\(family?.id ?? "")|\(childIdentity)|\(enrollmentIdentity)"
     }
 
     func loadCalendarEvent(id: String, isPersonal: Bool = false) async -> Result<ParentEventDTO, MeroliPresentationError> {
@@ -601,6 +720,7 @@ final class SessionStore {
             let path = id.map { "personal-events/\($0)" } ?? "personal-events"
             let data = try await authorized(path: path, method: id == nil ? "POST" : "PATCH", json: payload)
             _ = try decoder.decode(APIEnvelope<ParentEventDTO>.self, from: data).response
+            invalidateCalendarSessionCache()
             return true
         } catch {
             errorMessage = message(for: error)
@@ -611,6 +731,10 @@ final class SessionStore {
     func deletePersonalEvent(id: String) async -> Bool {
         do {
             _ = try await authorized(path: "personal-events/\(id)", method: "DELETE")
+            invalidateCalendarSessionCache()
+            if let request = lastCalendarRequest {
+                await loadCalendar(from: request.start, to: request.end, childId: request.childId, policy: .forceRefresh)
+            }
             return true
         } catch {
             errorMessage = message(for: error)
@@ -1444,6 +1568,7 @@ final class SessionStore {
             let data = try await authorized(path: "preferences", method: "PATCH", json: ["language": value])
             let updatedLanguage = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: data).response.language
             let languageChanged = language != updatedLanguage
+            if languageChanged { clearCalendarSessionCache(clearVisibleEvents: true) }
             language = updatedLanguage
             persistCachedSession()
             if languageChanged { await reloadLocalizedContent() }
@@ -1570,6 +1695,9 @@ final class SessionStore {
     private func loadIdentity() async throws {
         let profileData = try await authorized(path: "auth/me")
         let user = try decoder.decode(APIEnvelope<MePayload>.self, from: profileData).response.user
+        if !userId.isEmpty, userId != user.id {
+            clearCalendarSessionCache(clearVisibleEvents: true)
+        }
         userId = user.id
         email = user.email
         let preferencesData = try await authorized(path: "preferences")
@@ -1583,6 +1711,7 @@ final class SessionStore {
             let preference = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: data).response
             guard ["en", "zh-CN"].contains(preference.language) else { return }
             let languageChanged = language != preference.language
+            if languageChanged { clearCalendarSessionCache(clearVisibleEvents: true) }
             language = preference.language
             persistCachedSession()
             if languageChanged { await reloadLocalizedContent() }
@@ -1599,21 +1728,46 @@ final class SessionStore {
         method: String = "GET",
         json: [String: Any]? = nil,
         query: [URLQueryItem] = [],
-        forceRefresh: Bool = false
+        forceRefresh: Bool = false,
+        allowsStaleResponseFallback: Bool = true
     ) async throws -> Data {
         guard let token = accessToken else { throw APIClientError.unacceptableStatusCode(401) }
         do {
-            return try await send(path: path, method: method, authorization: token, json: json, query: query, forceRefresh: forceRefresh)
+            return try await send(
+                path: path,
+                method: method,
+                authorization: token,
+                json: json,
+                query: query,
+                forceRefresh: forceRefresh,
+                allowsStaleResponseFallback: allowsStaleResponseFallback
+            )
         } catch let error as APIClientError where error.statusCode == 401 {
             guard method == "GET" else { throw error }
             if let currentToken = accessToken, currentToken != token {
-                return try await send(path: path, method: method, authorization: currentToken, json: json, query: query, forceRefresh: forceRefresh)
+                return try await send(
+                    path: path,
+                    method: method,
+                    authorization: currentToken,
+                    json: json,
+                    query: query,
+                    forceRefresh: forceRefresh,
+                    allowsStaleResponseFallback: allowsStaleResponseFallback
+                )
             }
             guard let refreshToken = KeychainRefreshToken.read() else { throw error }
             try await rotate(refreshToken: refreshToken)
             guard let newToken = accessToken else { throw error }
             do {
-                return try await send(path: path, method: method, authorization: newToken, json: json, query: query, forceRefresh: forceRefresh)
+                return try await send(
+                    path: path,
+                    method: method,
+                    authorization: newToken,
+                    json: json,
+                    query: query,
+                    forceRefresh: forceRefresh,
+                    allowsStaleResponseFallback: allowsStaleResponseFallback
+                )
             } catch let retryError as APIClientError where retryError.statusCode == 401 {
                 clearLocalSession()
                 phase = .signedOut
@@ -1674,7 +1828,8 @@ final class SessionStore {
         json: [String: Any]? = nil,
         query: [URLQueryItem] = [],
         headers: [String: String] = [:],
-        forceRefresh: Bool = false
+        forceRefresh: Bool = false,
+        allowsStaleResponseFallback: Bool = true
     ) async throws -> Data {
         guard let api else { throw APIClientError.invalidBaseURL }
         let isCacheableRead = method.uppercased() == "GET" && !userId.isEmpty
@@ -1710,7 +1865,7 @@ final class SessionStore {
             if let statusCode = (error as? APIClientError)?.statusCode, statusCode < 500 {
                 throw error
             }
-            if let cacheUserId, userId == cacheUserId {
+            if allowsStaleResponseFallback, let cacheUserId, userId == cacheUserId {
                 if let cached, let data = cached.data {
                     responseCache.write(CachedAPIResponse(data: data, lastCheckedAt: now), key: key, userId: cacheUserId)
                     return data
@@ -1731,6 +1886,9 @@ final class SessionStore {
 
     private func clearLocalSession() {
         if !userId.isEmpty { responseCache.removeAll(userId: userId) }
+        calendarSessionCache.removeAll()
+        calendarErrorMessage = nil
+        isRefreshingCalendar = false
         schoolDirectoryByDistrict.removeAll()
         selectedSchoolDetails.removeAll()
         loadedSchoolDistrictId = nil

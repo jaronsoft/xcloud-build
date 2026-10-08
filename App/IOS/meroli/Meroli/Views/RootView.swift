@@ -1921,7 +1921,7 @@ private struct CalendarScreen: View {
                 if session.isLoadingCalendar && session.calendarEvents.isEmpty {
                     ProgressView(zh ? "正在读取日历…" : "Loading calendar…")
                         .frame(maxWidth: .infinity, minHeight: 180)
-                } else if let error = session.errorMessage, session.calendarEvents.isEmpty {
+                } else if let error = session.calendarErrorMessage, session.calendarEvents.isEmpty {
                     VStack(spacing: 14) {
                         Label(zh ? "暂时无法读取日历" : "Calendar unavailable", systemImage: "exclamationmark.triangle")
                             .font(.headline)
@@ -2041,12 +2041,12 @@ private struct CalendarScreen: View {
                 }
             }
             .task { await load() }
-            .refreshable { await load() }
+            .refreshable { await load(policy: .forceRefresh) }
             .onChange(of: scenePhase) { _, phase in handleCalendarScenePhaseChange(phase) }
             .sheet(item: $selectedEvent) { event in EventDetailSheet(event: event, zh: zh) }
             .sheet(isPresented: $showsPersonalEventEditor) {
                 PersonalEventEditor(zh: zh, initialDate: selectedDate) {
-                    Task { await load() }
+                    Task { await load(policy: .forceRefresh) }
                 }
                 .environment(session)
             }
@@ -2072,9 +2072,14 @@ private struct CalendarScreen: View {
         Task { await load() }
     }
 
-    private func load() async {
+    private func load(policy: CalendarLoadPolicy = .cacheFirst) async {
         let (start, end) = range
-        await session.loadCalendar(from: start, to: end, childId: selectedChildId.isEmpty ? nil : selectedChildId)
+        await session.loadCalendar(
+            from: start,
+            to: end,
+            childId: selectedChildId.isEmpty ? nil : selectedChildId,
+            policy: policy
+        )
     }
 
     private func monthStart(_ date: Date) -> Date {
