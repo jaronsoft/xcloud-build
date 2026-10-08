@@ -7,6 +7,7 @@ private enum MeroliColor {
     static let ink = Color(red: 23 / 255, green: 63 / 255, blue: 58 / 255)
     static let canvas = Color(red: 1, green: 253 / 255, blue: 248 / 255)
     static let muted = Color(red: 73 / 255, green: 102 / 255, blue: 97 / 255)
+    static let secondary = Color(red: 92 / 255, green: 102 / 255, blue: 96 / 255)
     static let line = Color(red: 212 / 255, green: 223 / 255, blue: 218 / 255)
     static let gold = Color(red: 239 / 255, green: 181 / 255, blue: 62 / 255)
     static let coral = Color(red: 190 / 255, green: 77 / 255, blue: 64 / 255)
