@@ -2931,6 +2931,15 @@ private struct SchoolsScreen: View {
             .sorted { $0.schoolName.localizedStandardCompare($1.schoolName) == .orderedAscending }
     }
 
+    private var childDisplayNames: [String: String] {
+        MeroliChildIdentity.displayNames(
+            children: session.children,
+            enrollments: session.enrollments,
+            schools: schoolDetails.values.sorted { $0.id < $1.id },
+            zh: zh
+        )
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -2938,27 +2947,33 @@ private struct SchoolsScreen: View {
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(zh ? "学校" : "Schools")
-                                .font(.system(.largeTitle, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
+                                .font(.system(.largeTitle, design: .serif, weight: .bold)).foregroundStyle(HomePalette.primary)
                             Text(zh ? "孩子目前就读的学校。" : "Schools currently relevant to your family.")
-                                .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                .font(.subheadline).foregroundStyle(HomePalette.secondary)
                         }
                         Spacer(minLength: 4)
                         Button { showsManagement = true } label: {
-                            Text(zh ? "管理孩子与学校" : "Manage Children & Schools")
-                                .font(.caption.weight(.semibold))
-                                .multilineTextAlignment(.center)
-                                .foregroundStyle(MeroliColor.ink)
-                                .padding(.horizontal, 12).padding(.vertical, 9)
-                                .background(.white, in: Capsule())
-                                .overlay(Capsule().stroke(MeroliColor.line, lineWidth: 1))
+                            HStack(spacing: 6) {
+                                Image(systemName: "person.2").accessibilityHidden(true)
+                                Text(zh ? "管理孩子与学校" : "Manage Children & Schools")
+                                    .multilineTextAlignment(.leading)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(HomePalette.brand)
+                            .padding(.horizontal, 11).padding(.vertical, 8)
+                            .frame(minHeight: 44)
+                            .background(HomePalette.surface, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(HomePalette.line, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(zh ? "管理孩子与学校" : "Manage Children & Schools")
                         .accessibilityIdentifier("meroli.schools.manage")
                     }
 
                     if let error = session.errorMessage {
                         Label(error, systemImage: "exclamationmark.circle.fill")
-                            .font(.subheadline).foregroundStyle(MeroliColor.coral)
+                            .font(.subheadline).foregroundStyle(HomePalette.destructive)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -2968,21 +2983,24 @@ private struct SchoolsScreen: View {
                     } else if schoolSummaries.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Image(systemName: "building.2.crop.circle")
-                                .font(.system(.title)).foregroundStyle(MeroliColor.ink)
+                                .font(.system(.title)).foregroundStyle(HomePalette.secondary)
                             Text(zh ? "还没有关联的在读学校" : "No current schools yet")
-                                .font(.headline).foregroundStyle(MeroliColor.ink)
+                                .font(.headline).foregroundStyle(HomePalette.primary)
                             Text(zh ? "添加孩子并关联学校后，学校资料会显示在这里。" : "Add a child and link a school to see your family's school information here.")
-                                .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                .font(.subheadline).foregroundStyle(HomePalette.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                             Button { showsManagement = true } label: {
                                 Text(zh ? "添加孩子" : "Add child")
                                     .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                                    .padding(.horizontal, 16).padding(.vertical, 11)
-                                    .background(MeroliColor.ink, in: Capsule())
+                                    .padding(.horizontal, 16).padding(.vertical, 11).frame(minHeight: 44)
+                                    .background(HomePalette.brand, in: Capsule())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel(zh ? "添加孩子" : "Add child")
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(18).background(.white, in: RoundedRectangle(cornerRadius: 17))
+                        .padding(18).background(HomePalette.surface, in: RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(HomePalette.line, lineWidth: 1))
                     } else {
                         VStack(spacing: 12) {
                             ForEach(schoolSummaries) { summary in
@@ -2996,43 +3014,53 @@ private struct SchoolsScreen: View {
                                                 if let district = session.districts.first(where: { $0.id == summary.districtId }) {
                                                     Text(district.name.uppercased())
                                                         .font(.caption2.weight(.semibold)).tracking(0.7)
-                                                        .foregroundStyle(MeroliColor.muted)
+                                                        .foregroundStyle(HomePalette.tertiary)
                                                 }
                                                 Text(summary.schoolName)
                                                     .font(.system(.title3, design: .serif, weight: .bold))
-                                                    .foregroundStyle(MeroliColor.ink)
+                                                    .foregroundStyle(HomePalette.primary)
                                                     .multilineTextAlignment(.leading)
+                                                    .fixedSize(horizontal: false, vertical: true)
                                                 if let gradeRange = officialGradeRange(summary.school?.availableGrades ?? []) {
-                                                    Text(gradeRange).font(.caption).foregroundStyle(MeroliColor.muted)
+                                                    Text(gradeRange).font(.caption).foregroundStyle(HomePalette.secondary)
                                                 }
                                             }
                                             Spacer(minLength: 2)
                                             Image(systemName: "chevron.right")
-                                                .font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                                .font(.caption.weight(.semibold)).foregroundStyle(HomePalette.tertiary)
                                                 .padding(.top, 4)
+                                                .accessibilityHidden(true)
                                         }
 
-                                        Divider().overlay(MeroliColor.line)
+                                        Divider().overlay(HomePalette.line)
 
                                         VStack(alignment: .leading, spacing: 8) {
                                             ForEach(summary.enrollments) { enrollment in
                                                 HStack(spacing: 8) {
                                                     Circle().fill(MeroliChildIdentity.color(for: enrollment.childId, in: session.children))
                                                         .frame(width: 9, height: 9).accessibilityHidden(true)
-                                                    Text("\(enrollment.childName) · \(localizedGrade(enrollment.gradeCode))")
-                                                        .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                                    Text(childDisplayNames[enrollment.childId] ?? enrollment.childName)
+                                                        .font(.subheadline.weight(.medium)).foregroundStyle(HomePalette.primary)
                                                         .fixedSize(horizontal: false, vertical: true)
                                                         .frame(maxWidth: .infinity, alignment: .leading)
+                                                    let gradeLabel = localizedGrade(enrollment.gradeCode)
+                                                    if !(childDisplayNames[enrollment.childId] ?? enrollment.childName).hasSuffix(" · \(gradeLabel)") {
+                                                        Text(gradeLabel).font(.subheadline).foregroundStyle(HomePalette.secondary)
+                                                            .fixedSize(horizontal: true, vertical: false)
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                     .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(.white, in: RoundedRectangle(cornerRadius: 17))
-                                    .overlay(RoundedRectangle(cornerRadius: 17).stroke(MeroliColor.line, lineWidth: 1))
-                                    .contentShape(RoundedRectangle(cornerRadius: 17))
+                                    .background(HomePalette.surface, in: RoundedRectangle(cornerRadius: 16))
+                                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(HomePalette.line, lineWidth: 1))
+                                    .contentShape(RoundedRectangle(cornerRadius: 16))
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(schoolAccessibilityLabel(summary))
+                                .accessibilityHint(zh ? "打开学校资料" : "Opens school details")
                                 .accessibilityIdentifier("meroli.schools.\(summary.schoolId)")
                             }
                         }
@@ -3043,7 +3071,7 @@ private struct SchoolsScreen: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Color.clear.frame(height: 12).accessibilityHidden(true)
             }
-            .background(MeroliColor.canvas)
+            .background(HomePalette.canvas)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await loadSchools(forceRefresh: true) }
@@ -3085,6 +3113,18 @@ private struct SchoolsScreen: View {
 
     private func localizedGrade(_ grade: String) -> String {
         MeroliGradePresentation.label(grade, zh: zh)
+    }
+
+    private func schoolAccessibilityLabel(_ summary: FamilySchoolSummary) -> String {
+        let district = session.districts.first(where: { $0.id == summary.districtId })?.name
+        let gradeRange = officialGradeRange(summary.school?.availableGrades ?? [])
+        let children = summary.enrollments.map { enrollment -> String in
+            let name = childDisplayNames[enrollment.childId] ?? enrollment.childName
+            let grade = localizedGrade(enrollment.gradeCode)
+            return name.hasSuffix(" · \(grade)") ? name : "\(name), \(grade)"
+        }
+        return ([district, summary.schoolName, gradeRange].compactMap { $0 } + children)
+            .joined(separator: ". ")
     }
 }
 
