@@ -1116,7 +1116,7 @@ private struct HomeScreen: View {
                 await session.loadDailySchedules(for: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
                 await loadNextInstructionalDayIfNeeded()
                 async let futureSchedules: Void = session.loadFutureDailySchedules(from: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
-                async let homeEvents: Void = loadHomeEvents()
+                async let homeEvents: Void = loadHomeEvents(policy: .forceRefresh)
                 _ = await (futureSchedules, homeEvents)
             }
             .task { if session.dailySchedules.isEmpty || session.homeEvents.isEmpty || session.futureDailySchedules.isEmpty { refresh() } }
@@ -1153,13 +1153,14 @@ private struct HomeScreen: View {
         await session.loadNextInstructionalDay(after: date, childId: selectedChildId.isEmpty ? nil : selectedChildId)
     }
 
-    private func loadHomeEvents() async {
+    private func loadHomeEvents(policy: HomeEventsLoadPolicy = .cacheFirst) async {
         let childIds = selectedChildId.isEmpty ? session.children.map(\.id) : [selectedChildId]
         let startKey = childIds.map { dateKey(offset: 0, childId: $0) }.min() ?? dateKey(offset: 0)
         let endKey = childIds.map { dateKey(offset: 7, childId: $0) }.max() ?? dateKey(offset: 7)
         await session.loadHomeEvents(
             from: dateFromKey(startKey), to: dateFromKey(endKey),
-            childId: selectedChildId.isEmpty ? nil : selectedChildId
+            childId: selectedChildId.isEmpty ? nil : selectedChildId,
+            policy: policy
         )
     }
 

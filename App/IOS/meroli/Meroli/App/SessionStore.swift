@@ -44,6 +44,11 @@ enum CalendarLoadPolicy: Equatable {
     case forceRefresh
 }
 
+enum HomeEventsLoadPolicy: Equatable {
+    case cacheFirst
+    case forceRefresh
+}
+
 private struct CalendarSessionCacheKey: Hashable {
     let startDate: String
     let endDate: String
@@ -57,7 +62,20 @@ private struct CalendarSessionCacheEntry {
     let fetchedAt: Date
 }
 
-private enum CalendarSessionCachePolicy {
+private struct HomeEventsSessionCacheKey: Hashable {
+    let startDate: String
+    let endDate: String
+    let childId: String?
+    let language: String
+    let userId: String
+}
+
+private struct HomeEventsSessionCacheEntry {
+    let events: [ParentEventDTO]
+    let fetchedAt: Date
+}
+
+private enum SessionEventCachePolicy {
     static let freshness: TimeInterval = 5 * 60
     static let maximumEntries = 24
 }
@@ -235,6 +253,7 @@ final class SessionStore {
     @ObservationIgnored private var programsLoadGeneration = 0
     @ObservationIgnored private var calendarLoadGeneration = 0
     @ObservationIgnored private var calendarSessionCache: [CalendarSessionCacheKey: CalendarSessionCacheEntry] = [:]
+    @ObservationIgnored private var homeEventsSessionCache: [HomeEventsSessionCacheKey: HomeEventsSessionCacheEntry] = [:]
     @ObservationIgnored private var homeEventsLoadGeneration = 0
     @ObservationIgnored private var dailySchedulesLoadGeneration = 0
     @ObservationIgnored private var futureSchedulesLoadGeneration = 0
@@ -422,6 +441,7 @@ final class SessionStore {
             errorMessage = nil
             if familyChanged {
                 clearCalendarSessionCache(clearVisibleEvents: true)
+                invalidateHomeEventsSessionCache(clearVisibleEvents: true)
                 if let request = lastCalendarRequest {
                     await loadCalendar(from: request.start, to: request.end, childId: request.childId, policy: .forceRefresh)
                 }
@@ -612,7 +632,7 @@ final class SessionStore {
         }
 
         let cacheIsFresh = cachedEntry.map {
-            max(0, Date().timeIntervalSince($0.fetchedAt)) <= CalendarSessionCachePolicy.freshness
+            max(0, Date().timeIntervalSince($0.fetchedAt)) <= SessionEventCachePolicy.freshness
         } ?? false
         if policy == .cacheFirst, cacheIsFresh {
             isLoadingCalendar = false
@@ -668,7 +688,7 @@ final class SessionStore {
     }
 
     private func evictOldestCalendarCacheEntriesIfNeeded() {
-        while calendarSessionCache.count > CalendarSessionCachePolicy.maximumEntries,
+        while calendarSessionCache.count > SessionEventCachePolicy.maximumEntries,
               let oldestKey = calendarSessionCache.min(by: { $0.value.fetchedAt < $1.value.fetchedAt })?.key {
             calendarSessionCache.removeValue(forKey: oldestKey)
         }
@@ -685,6 +705,14 @@ final class SessionStore {
     private func clearCalendarSessionCache(clearVisibleEvents: Bool) {
         invalidateCalendarSessionCache()
         if clearVisibleEvents { calendarEvents = [] }
+    }
+
+    private func invalidateHomeEventsSessionCache(clearVisibleEvents: Bool) {
+        homeEventsSessionCache.removeAll()
+        homeEventsLoadGeneration += 1
+        isLoadingHomeEvents = false
+        homeEventsErrorMessage = nil
+        if clearVisibleEvents { homeEvents = [] }
     }
 
     private func calendarFamilySignature(
@@ -721,6 +749,7 @@ final class SessionStore {
             let data = try await authorized(path: path, method: id == nil ? "POST" : "PATCH", json: payload)
             _ = try decoder.decode(APIEnvelope<ParentEventDTO>.self, from: data).response
             invalidateCalendarSessionCache()
+            invalidateHomeEventsSessionCache(clearVisibleEvents: false)
             return true
         } catch {
             errorMessage = message(for: error)
@@ -732,6 +761,7 @@ final class SessionStore {
         do {
             _ = try await authorized(path: "personal-events/\(id)", method: "DELETE")
             invalidateCalendarSessionCache()
+            invalidateHomeEventsSessionCache(clearVisibleEvents: false)
             if let request = lastCalendarRequest {
                 await loadCalendar(from: request.start, to: request.end, childId: request.childId, policy: .forceRefresh)
             }
@@ -742,12 +772,43 @@ final class SessionStore {
         }
     }
 
-    func loadHomeEvents(from startDate: Date, to endDate: Date, childId: String? = nil) async {
+    func loadHomeEvents(
+        from startDate: Date,
+        to endDate: Date,
+        childId: String? = nil,
+        policy: HomeEventsLoadPolicy = .cacheFirst
+    ) async {
         guard accessToken != nil else { return }
+        let cacheKey = homeEventsCacheKey(from: startDate, to: endDate, childId: childId)
+        let previousVisibleKey = lastHomeEventsRequest.map {
+            homeEventsCacheKey(from: $0.start, to: $0.end, childId: $0.childId)
+        }
         lastHomeEventsRequest = (startDate, endDate, childId)
         homeEventsLoadGeneration += 1
         let generation = homeEventsLoadGeneration
-        isLoadingHomeEvents = true
+        let requestUserId = userId
+        let requestLanguage = language
+        let cachedEntry = homeEventsSessionCache[cacheKey]
+
+        if let cachedEntry {
+            homeEvents = cachedEntry.events
+            homeEventsErrorMessage = nil
+        } else {
+            if previousVisibleKey != cacheKey { homeEvents = [] }
+            homeEventsErrorMessage = nil
+        }
+
+        let cacheIsFresh = cachedEntry.map {
+            max(0, Date().timeIntervalSince($0.fetchedAt)) <= SessionEventCachePolicy.freshness
+        } ?? false
+        if policy == .cacheFirst, cacheIsFresh {
+            isLoadingHomeEvents = false
+            homeEventsErrorMessage = nil
+            return
+        }
+
+        // 缓存命中时静默刷新，冷加载才显示页面阻塞状态。
+        isLoadingHomeEvents = cachedEntry == nil
         defer {
             if generation == homeEventsLoadGeneration { isLoadingHomeEvents = false }
         }
@@ -757,14 +818,44 @@ final class SessionStore {
         ]
         if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         do {
-            let data = try await authorized(path: "calendar", query: query, forceRefresh: true)
+            let data = try await authorized(
+                path: "calendar",
+                query: query,
+                forceRefresh: true,
+                allowsStaleResponseFallback: false
+            )
             let result = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
-            guard generation == homeEventsLoadGeneration, accessToken != nil else { return }
+            guard generation == homeEventsLoadGeneration,
+                  accessToken != nil,
+                  userId == requestUserId,
+                  language == requestLanguage else { return }
             homeEvents = result
             homeEventsErrorMessage = nil
+            homeEventsSessionCache[cacheKey] = HomeEventsSessionCacheEntry(events: result, fetchedAt: Date())
+            evictOldestHomeEventsCacheEntriesIfNeeded()
         } catch {
-            guard generation == homeEventsLoadGeneration else { return }
+            guard generation == homeEventsLoadGeneration,
+                  accessToken != nil,
+                  userId == requestUserId,
+                  language == requestLanguage else { return }
             homeEventsErrorMessage = message(for: error)
+        }
+    }
+
+    private func homeEventsCacheKey(from startDate: Date, to endDate: Date, childId: String?) -> HomeEventsSessionCacheKey {
+        HomeEventsSessionCacheKey(
+            startDate: schoolDateString(startDate, childId: childId),
+            endDate: schoolDateString(endDate, childId: childId),
+            childId: childId,
+            language: language,
+            userId: userId
+        )
+    }
+
+    private func evictOldestHomeEventsCacheEntriesIfNeeded() {
+        while homeEventsSessionCache.count > SessionEventCachePolicy.maximumEntries,
+              let oldestKey = homeEventsSessionCache.min(by: { $0.value.fetchedAt < $1.value.fetchedAt })?.key {
+            homeEventsSessionCache.removeValue(forKey: oldestKey)
         }
     }
 
@@ -1568,7 +1659,10 @@ final class SessionStore {
             let data = try await authorized(path: "preferences", method: "PATCH", json: ["language": value])
             let updatedLanguage = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: data).response.language
             let languageChanged = language != updatedLanguage
-            if languageChanged { clearCalendarSessionCache(clearVisibleEvents: true) }
+            if languageChanged {
+                clearCalendarSessionCache(clearVisibleEvents: true)
+                invalidateHomeEventsSessionCache(clearVisibleEvents: true)
+            }
             language = updatedLanguage
             persistCachedSession()
             if languageChanged { await reloadLocalizedContent() }
@@ -1697,6 +1791,7 @@ final class SessionStore {
         let user = try decoder.decode(APIEnvelope<MePayload>.self, from: profileData).response.user
         if !userId.isEmpty, userId != user.id {
             clearCalendarSessionCache(clearVisibleEvents: true)
+            invalidateHomeEventsSessionCache(clearVisibleEvents: true)
         }
         userId = user.id
         email = user.email
@@ -1711,7 +1806,10 @@ final class SessionStore {
             let preference = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: data).response
             guard ["en", "zh-CN"].contains(preference.language) else { return }
             let languageChanged = language != preference.language
-            if languageChanged { clearCalendarSessionCache(clearVisibleEvents: true) }
+            if languageChanged {
+                clearCalendarSessionCache(clearVisibleEvents: true)
+                invalidateHomeEventsSessionCache(clearVisibleEvents: true)
+            }
             language = preference.language
             persistCachedSession()
             if languageChanged { await reloadLocalizedContent() }
@@ -1887,6 +1985,7 @@ final class SessionStore {
     private func clearLocalSession() {
         if !userId.isEmpty { responseCache.removeAll(userId: userId) }
         calendarSessionCache.removeAll()
+        homeEventsSessionCache.removeAll()
         calendarErrorMessage = nil
         isRefreshingCalendar = false
         schoolDirectoryByDistrict.removeAll()
