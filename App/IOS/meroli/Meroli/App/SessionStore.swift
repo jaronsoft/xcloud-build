@@ -196,6 +196,7 @@ final class SessionStore {
     private(set) var isRestoringSession = false
     private(set) var initializationProgress = 0.0
     private(set) var isSavingChild = false
+    private(set) var deletingChildId: String?
     var errorMessage: String?
 
     @ObservationIgnored private let api: APIClient?
@@ -1357,6 +1358,47 @@ final class SessionStore {
             if let index = children.firstIndex(where: { $0.id == id }) { children[index] = updated }
             return true
         } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func deleteChild(id: String) async -> Bool {
+        guard deletingChildId == nil else { return false }
+        guard children.contains(where: { $0.id == id }) else {
+            errorMessage = usesChinese ? "无法找到这位家庭成员，请刷新后重试。" : "This family member could not be found. Refresh and try again."
+            return false
+        }
+
+        deletingChildId = id
+        errorMessage = nil
+        defer { deletingChildId = nil }
+
+        do {
+            let data = try await authorized(path: "children/\(id)", method: "DELETE")
+            let deleted = try decoder.decode(APIEnvelope<Bool>.self, from: data).response
+            guard deleted else {
+                errorMessage = usesChinese ? "孩子未能从家庭中移除，请稍后重试。" : "The child could not be removed from the family. Try again shortly."
+                return false
+            }
+
+            scheduleProfile = nil
+            transitionPrograms = []
+            hasLoadedTransitionPrograms = false
+            await loadFamily(forceRefresh: true)
+            guard phase == .signedIn, family != nil else { return false }
+            guard !children.contains(where: { $0.id == id }) else {
+                if errorMessage == nil {
+                    errorMessage = usesChinese ? "移除结果已提交，但家庭资料尚未更新。请刷新后确认。" : "The removal was submitted, but family details have not refreshed. Refresh to confirm."
+                }
+                return false
+            }
+            return true
+        } catch {
+            if requiresReauthentication(error) {
+                clearLocalSession()
+                phase = .signedOut
+            }
             errorMessage = message(for: error)
             return false
         }

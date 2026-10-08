@@ -192,6 +192,7 @@ struct DailyScheduleDTO: Decodable, Identifiable {
     let arrivalTime: String?
     let dismissalTime: String?
     let reason: String?
+    let appliedPrograms: [String]
     let eventTitles: [String]
     let periods: [DailySchedulePeriodDTO]?
 }
