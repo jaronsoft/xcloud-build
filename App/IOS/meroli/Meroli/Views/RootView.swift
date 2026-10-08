@@ -775,7 +775,7 @@ private struct HomeScheduleStatusStyle {
     let background: Color
 }
 
-private struct HomeEventVisualStyle {
+private struct EventVisualStyle {
     let tag: String?
     let foreground: Color
     let accent: Color
@@ -1878,7 +1878,7 @@ private struct CalendarScreen: View {
                     Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
                         .accessibilityLabel(zh ? "上个月" : "Previous month")
                     Spacer()
-                    Text(monthTitle).font(.system(.title2, design: .serif, weight: .bold)).foregroundStyle(MeroliColor.ink)
+                    Text(monthTitle).font(.system(.title2, design: .serif, weight: .bold)).foregroundStyle(HomePalette.primary)
                     Spacer()
                     Button { shiftMonth(1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
                         .accessibilityLabel(zh ? "下个月" : "Next month")
@@ -1921,7 +1921,7 @@ private struct CalendarScreen: View {
                 } else if displayMode == "month" {
                     monthCalendar
                     HStack {
-                        Text(dateHeading(selectedDate)).font(.headline).foregroundStyle(MeroliColor.ink)
+                        Text(dateHeading(selectedDate)).font(.headline).foregroundStyle(HomePalette.primary)
                         Spacer()
                     }
                     .padding(.horizontal, 18)
@@ -2078,6 +2078,7 @@ private struct CalendarScreen: View {
                                 Text("\(schoolCalendar.component(.day, from: day))")
                                     .font(.subheadline.weight(isSelected ? .bold : .regular))
                                     .foregroundStyle(isSelected ? .white : MeroliColor.ink)
+                                    .monospacedDigit()
                                 HStack(spacing: 3) {
                                     ForEach(visibleChildMarkers) { child in
                                         Circle().fill(MeroliChildIdentity.color(for: child.id, in: session.children))
@@ -2431,14 +2432,14 @@ private struct EventRow: View {
         return event.children.filter { $0.id == childIdFilter }
     }
 
-    private var homeVisualStyle: HomeEventVisualStyle {
+    private var visualStyle: EventVisualStyle {
         let type = event.eventType.uppercased()
         let action = event.scheduleAction.uppercased()
         let category = (event.category ?? "").uppercased()
         let noSchoolTypes: Set<String> = ["NO_SCHOOL", "PUPIL_FREE_DAY", "BREAK", "HOLIDAY"]
 
         if noSchoolTypes.contains(type) || action == "NO_SCHOOL" {
-            return HomeEventVisualStyle(
+            return EventVisualStyle(
                 tag: zh ? "停课" : "No school",
                 foreground: HomePalette.destructive,
                 accent: HomePalette.destructive,
@@ -2446,7 +2447,7 @@ private struct EventRow: View {
             )
         }
         if MeroliEventPresentation.isScheduleChange(event) {
-            return HomeEventVisualStyle(
+            return EventVisualStyle(
                 tag: zh ? "作息调整" : "Schedule change",
                 foreground: HomePalette.amber,
                 accent: HomePalette.amberAccent,
@@ -2454,7 +2455,7 @@ private struct EventRow: View {
             )
         }
         if MeroliEventPresentation.isHomeActionRequired(event) {
-            return HomeEventVisualStyle(
+            return EventVisualStyle(
                 tag: zh ? "需处理" : "Action",
                 foreground: HomePalette.amber,
                 accent: HomePalette.amberAccent,
@@ -2495,18 +2496,14 @@ private struct EventRow: View {
         }
 
         guard let (tag, foreground, accent, background) = knownCategory else {
-            return HomeEventVisualStyle(tag: nil, foreground: HomePalette.secondary, accent: HomePalette.tertiary, background: HomePalette.surface2)
+            return EventVisualStyle(tag: nil, foreground: HomePalette.secondary, accent: HomePalette.tertiary, background: HomePalette.surface2)
         }
-        return HomeEventVisualStyle(tag: tag, foreground: foreground, accent: accent, background: background)
+        return EventVisualStyle(tag: tag, foreground: foreground, accent: accent, background: background)
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            RoundedRectangle(cornerRadius: 2).fill(
-                homeStyle
-                    ? homeVisualStyle.accent
-                    : (MeroliEventPresentation.isActionRequired(event) ? MeroliColor.coral : MeroliColor.gold)
-            )
+            RoundedRectangle(cornerRadius: 2).fill(visualStyle.accent)
                 .frame(width: 4)
                 .padding(.vertical, 2)
                 .accessibilityHidden(true)
@@ -2517,7 +2514,7 @@ private struct EventRow: View {
                     }
                     Text(event.title)
                         .font(.headline)
-                        .foregroundStyle(homeStyle ? HomePalette.primary : MeroliColor.ink)
+                        .foregroundStyle(HomePalette.primary)
                         .multilineTextAlignment(.leading)
                     Spacer(minLength: 2)
                     Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(homeStyle ? HomePalette.tertiary : MeroliColor.muted)
@@ -2541,23 +2538,24 @@ private struct EventRow: View {
                     }
                 }
                 .font(.caption)
-                .foregroundStyle(homeStyle ? HomePalette.secondary : MeroliColor.muted)
+                .foregroundStyle(HomePalette.secondary)
                 .monospacedDigit()
-                if homeStyle, let tag = homeVisualStyle.tag {
+                if let tag = visualStyle.tag {
                     Text(tag)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(homeVisualStyle.foreground)
+                        .foregroundStyle(visualStyle.foreground)
                         .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(homeVisualStyle.background, in: Capsule())
+                        .background(visualStyle.background, in: Capsule())
                 }
-                if !homeStyle && showsActionLabel && MeroliEventPresentation.isActionRequired(event) {
+                if !homeStyle && showsActionLabel && MeroliEventPresentation.isActionRequired(event)
+                    && visualStyle.tag != (zh ? "需处理" : "Action") {
                     Text(zh ? "需处理" : "Action")
-                        .font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.coral)
+                        .font(.caption.weight(.semibold)).foregroundStyle(HomePalette.amber)
                         .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(MeroliColor.coral.opacity(0.1), in: Capsule())
+                        .background(HomePalette.amberPale, in: Capsule())
                 }
                 if !event.action.isEmpty {
-                    Text(event.action).font(.subheadline).foregroundStyle(homeStyle ? HomePalette.secondary : MeroliColor.coral)
+                    Text(event.action).font(.subheadline).foregroundStyle(homeStyle ? HomePalette.secondary : HomePalette.amber)
                 }
             }
         }
