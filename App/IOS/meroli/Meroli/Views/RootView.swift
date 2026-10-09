@@ -9,6 +9,10 @@ private enum MeroliColor {
     static let muted = Color(red: 73 / 255, green: 102 / 255, blue: 97 / 255)
     static let secondary = Color(red: 92 / 255, green: 102 / 255, blue: 96 / 255)
     static let line = Color(red: 212 / 255, green: 223 / 255, blue: 218 / 255)
+    static let brand = Color(red: 30 / 255, green: 70 / 255, blue: 52 / 255)
+    static let brandPale = Color(red: 238 / 255, green: 244 / 255, blue: 239 / 255)
+    static let surface2 = Color(red: 239 / 255, green: 235 / 255, blue: 223 / 255)
+    static let schoolDetailLine = Color(red: 229 / 255, green: 224 / 255, blue: 210 / 255)
     static let gold = Color(red: 239 / 255, green: 181 / 255, blue: 62 / 255)
     static let coral = Color(red: 190 / 255, green: 77 / 255, blue: 64 / 255)
     static let paleGreen = Color(red: 235 / 255, green: 243 / 255, blue: 238 / 255)
@@ -4185,8 +4189,9 @@ private struct ParentSchoolOverviewSheet: View {
                                 .font(.subheadline.weight(.semibold))
                             }
                         }
-                        .padding(17).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                         VStack(alignment: .leading, spacing: 10) {
                             Text(zh ? "今日适用的作息" : "Today's applicable schedule")
                                 .font(.headline).foregroundStyle(MeroliColor.ink)
@@ -4234,8 +4239,9 @@ private struct ParentSchoolOverviewSheet: View {
                                 }
                             }
                         }
-                        .padding(15).frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                         .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                         let bellSchedules = overview.bellSchedules ?? []
                             if let children = overview.children, !children.isEmpty {
                                 VStack(alignment: .leading, spacing: 10) {
@@ -4266,8 +4272,9 @@ private struct ParentSchoolOverviewSheet: View {
                                         if child.id != children.last?.id { Divider().overlay(MeroliColor.line) }
                                     }
                                 }
-                                .padding(17).frame(maxWidth: .infinity, alignment: .leading)
-                                .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(MeroliColor.brandPale, in: RoundedRectangle(cornerRadius: 16))
+                                .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                             }
                             if !bellSchedules.isEmpty {
                                 Button { showsFullBellSchedule = true } label: {
@@ -4277,12 +4284,14 @@ private struct ParentSchoolOverviewSheet: View {
                                         Image(systemName: "chevron.right").font(.caption.weight(.semibold))
                                     }
                                     .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(MeroliColor.ink)
+                                    .foregroundStyle(MeroliColor.brand)
                                     .padding(16)
                                     .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-                                    .background(.white, in: RoundedRectangle(cornerRadius: 15))
+                                    .background(MeroliColor.brandPale, in: RoundedRectangle(cornerRadius: 16))
+                                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityElement(children: .combine)
                                 .sheet(isPresented: $showsFullBellSchedule) {
                                     ParentFullBellScheduleSheet(schoolName: overview.schoolName, schedules: bellSchedules)
                                 }
@@ -4294,6 +4303,9 @@ private struct ParentSchoolOverviewSheet: View {
                                     .font(.subheadline.weight(.semibold))
                                 Text(zh ? "Meroli 不会替你向学校提交请假。请以学校官方流程为准。" : "Meroli does not submit absences for you. Follow the school's official process.")
                                     .font(.footnote).foregroundStyle(MeroliColor.muted)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(12)
+                                    .background(MeroliColor.surface2, in: RoundedRectangle(cornerRadius: 12))
                                 if !attendance.absenceInstruction.isEmpty {
                                     infoParagraph(title: zh ? "缺课" : "Absence", text: attendance.absenceInstruction)
                                 }
@@ -4323,8 +4335,9 @@ private struct ParentSchoolOverviewSheet: View {
                                 Text((zh ? "最后核实：" : "Last verified: ") + String(attendance.lastVerifiedAt.prefix(10)))
                                     .font(.caption).foregroundStyle(MeroliColor.muted)
                             }
-                            .padding(17).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                         }
                         if let performance = overview.performance {
                             VStack(alignment: .leading, spacing: 12) {
@@ -4383,8 +4396,9 @@ private struct ParentSchoolOverviewSheet: View {
                                 }
                                 .buttonStyle(.bordered)
                             }
-                            .padding(17).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                             .sheet(isPresented: $showsFullPerformance) {
                                 SchoolPerformanceDetailsSheet(schoolId: schoolId, schoolName: overview.schoolName, performance: performance)
                             }
@@ -4395,14 +4409,16 @@ private struct ParentSchoolOverviewSheet: View {
                                 Text(zh ? "官方学校表现数据暂不可用。" : "Official school performance data is not available.")
                                     .font(.subheadline).foregroundStyle(MeroliColor.muted)
                             }
-                            .padding(17).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                         }
                         if overview.attendance == nil && overview.performance == nil {
                             Text(zh ? "学校尚未发布考勤或表现资料。" : "The school has not published attendance or performance information yet.")
                                 .font(.subheadline).foregroundStyle(MeroliColor.muted)
-                                .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                                 .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                                .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                         }
                     } else if let error = session.schoolOverviewErrorMessage ?? session.errorMessage {
                         VStack(alignment: .leading, spacing: 12) {
@@ -4421,8 +4437,9 @@ private struct ParentSchoolOverviewSheet: View {
                             .disabled(session.isLoadingSchoolOverview || session.isLoadingSchoolPerformanceHistory)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(17)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                        .padding(16)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                     }
                 }
                 .padding(20)
@@ -4522,7 +4539,7 @@ private struct ParentSchoolOverviewSheet: View {
     }
 
     private func performanceLegend() -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(zh ? "California School Dashboard 官方表现颜色" : "California School Dashboard official performance colors")
                 .font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 105), alignment: .leading)], alignment: .leading, spacing: 5) {
@@ -4542,7 +4559,8 @@ private struct ParentSchoolOverviewSheet: View {
                 .font(.caption2).foregroundStyle(MeroliColor.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 3)
+        .padding(12)
+        .background(MeroliColor.surface2, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func performanceChangeLabel(_ meaning: String) -> String {
@@ -4725,9 +4743,10 @@ private struct SchoolPerformanceDetailsSheet: View {
                             if metric.id != metrics.last?.id { Divider().overlay(MeroliColor.line) }
                         }
                     }
-                    .padding(17)
+                    .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                    .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
 
                     performanceHistorySection
 
@@ -4753,9 +4772,10 @@ private struct SchoolPerformanceDetailsSheet: View {
                             }
                         }
                     }
-                    .padding(17)
+                    .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                    .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                 }
                 .padding(18)
             }
@@ -4854,8 +4874,9 @@ private struct SchoolPerformanceDetailsSheet: View {
                     .font(.subheadline).foregroundStyle(MeroliColor.muted)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(17)
-            .background(.white, in: RoundedRectangle(cornerRadius: 17))
+            .padding(16)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
         } else if let error = session.schoolPerformanceHistoryErrorMessage {
             VStack(alignment: .leading, spacing: 10) {
                 Text(zh ? "历史数据暂时无法加载" : "History could not be loaded")
@@ -4870,8 +4891,9 @@ private struct SchoolPerformanceDetailsSheet: View {
                 .disabled(session.isLoadingSchoolPerformanceHistory)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(17)
-            .background(.white, in: RoundedRectangle(cornerRadius: 17))
+            .padding(16)
+            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
         } else if let history = session.schoolPerformanceHistory {
             VStack(alignment: .leading, spacing: 10) {
                 DisclosureGroup {
@@ -4888,9 +4910,10 @@ private struct SchoolPerformanceDetailsSheet: View {
                 }
                 .tint(MeroliColor.ink)
             }
-            .padding(17)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white, in: RoundedRectangle(cornerRadius: 17))
+            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
         } else {
             VStack(alignment: .leading, spacing: 6) {
                 Text(zh ? "历史数据" : "History")
@@ -4898,9 +4921,10 @@ private struct SchoolPerformanceDetailsSheet: View {
                 Text(zh ? "暂无可用的历史数据。" : "Historical data is not available.")
                     .font(.subheadline).foregroundStyle(MeroliColor.muted)
             }
-            .padding(17)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white, in: RoundedRectangle(cornerRadius: 17))
+            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
         }
     }
 
@@ -5062,7 +5086,7 @@ private struct SchoolPerformanceDetailsSheet: View {
     }
 
     private func performanceLegend() -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(zh ? "California School Dashboard 官方表现颜色" : "California School Dashboard official performance colors")
                 .font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 105), alignment: .leading)], alignment: .leading, spacing: 5) {
@@ -5082,6 +5106,8 @@ private struct SchoolPerformanceDetailsSheet: View {
                 .font(.caption2).foregroundStyle(MeroliColor.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(MeroliColor.surface2, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func performanceLegendLabel(_ code: String, label: String) -> String {
