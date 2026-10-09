@@ -13,6 +13,7 @@ private enum MeroliColor {
     static let brandPale = Color(red: 238 / 255, green: 244 / 255, blue: 239 / 255)
     static let surface2 = Color(red: 239 / 255, green: 235 / 255, blue: 223 / 255)
     static let schoolDetailLine = Color(red: 229 / 255, green: 224 / 255, blue: 210 / 255)
+    static let amberPale = Color(red: 247 / 255, green: 234 / 255, blue: 212 / 255)
     static let gold = Color(red: 239 / 255, green: 181 / 255, blue: 62 / 255)
     static let coral = Color(red: 190 / 255, green: 77 / 255, blue: 64 / 255)
     static let paleGreen = Color(red: 235 / 255, green: 243 / 255, blue: 238 / 255)
@@ -5221,7 +5222,11 @@ private struct ParentFullBellScheduleSheet: View {
                         VStack(alignment: .leading, spacing: 14) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(categoryLabel(schedule.scheduleCategory))
-                                    .font(.headline).foregroundStyle(MeroliColor.ink)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(categoryForeground(schedule.scheduleCategory))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(categoryBackground(schedule.scheduleCategory), in: Capsule())
                                 Text(schedule.name).font(.subheadline).foregroundStyle(MeroliColor.muted)
                                 if schedule.effectiveFrom != nil || schedule.effectiveTo != nil {
                                     Text("\(schedule.effectiveFrom ?? "—") – \(schedule.effectiveTo ?? "—")")
@@ -5229,21 +5234,30 @@ private struct ParentFullBellScheduleSheet: View {
                                 }
                             }
                             ForEach(schedule.variants) { variant in
-                                VStack(alignment: .leading, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 10) {
                                     Text(variant.name).font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
                                     HStack {
                                         if let arrival = variant.arrivalTime {
-                                            Label(zh ? "到校 \(arrival)" : "Arrival \(arrival)", systemImage: "sunrise")
+                                            HStack(spacing: 5) {
+                                                Label(zh ? "到校" : "Arrival", systemImage: "sunrise")
+                                                Text(arrival).monospacedDigit()
+                                            }
+                                            .accessibilityElement(children: .combine)
                                         }
                                         Spacer(minLength: 6)
                                         if let dismissal = variant.dismissalTime {
-                                            Label(zh ? "放学 \(dismissal)" : "Dismissal \(dismissal)", systemImage: "sunset")
+                                            HStack(spacing: 5) {
+                                                Label(zh ? "放学" : "Dismissal", systemImage: "sunset")
+                                                Text(dismissal).monospacedDigit()
+                                            }
+                                            .accessibilityElement(children: .combine)
                                         }
                                     }
                                     .font(.caption).foregroundStyle(MeroliColor.muted)
                                     if variant.periods.isEmpty {
                                         Text(zh ? "学校尚未发布课时详情。" : "Period details have not been published.")
                                             .font(.caption).foregroundStyle(MeroliColor.muted)
+                                            .padding(.top, 2)
                                     } else {
                                         VStack(spacing: 0) {
                                             ForEach(variant.periods) { period in
@@ -5264,16 +5278,21 @@ private struct ParentFullBellScheduleSheet: View {
                                         }
                                     }
                                 }
-                                .padding(.top, 4)
-                                if variant.id != schedule.variants.last?.id { Divider().overlay(MeroliColor.line) }
+                                .padding(13)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(MeroliColor.surface2, in: RoundedRectangle(cornerRadius: 13))
                             }
                         }
-                        .padding(17)
+                        .padding(16)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 17))
+                        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                     }
                     Text(zh ? "时段以学校当前发布的官方作息为准。" : "Times follow the school’s currently published schedule.")
                         .font(.footnote).foregroundStyle(MeroliColor.muted)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(MeroliColor.surface2, in: RoundedRectangle(cornerRadius: 12))
                 }
                 .padding(20)
             }
@@ -5293,6 +5312,22 @@ private struct ParentFullBellScheduleSheet: View {
         case "EARLY_RELEASE": return zh ? "提前放学" : "Early release"
         case "WEDNESDAY": return zh ? "周三作息" : "Wednesday"
         default: return zh ? "学校作息" : "School schedule"
+        }
+    }
+
+    private func categoryForeground(_ category: String) -> Color {
+        switch category {
+        case "LATE_START", "MINIMUM_DAY", "EARLY_RELEASE": return MeroliColor.ink
+        case "REGULAR": return MeroliColor.brand
+        default: return MeroliColor.secondary
+        }
+    }
+
+    private func categoryBackground(_ category: String) -> Color {
+        switch category {
+        case "LATE_START", "MINIMUM_DAY", "EARLY_RELEASE": return MeroliColor.amberPale
+        case "REGULAR": return MeroliColor.brandPale
+        default: return MeroliColor.surface2
         }
     }
 }
