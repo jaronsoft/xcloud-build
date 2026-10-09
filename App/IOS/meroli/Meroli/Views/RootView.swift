@@ -4337,6 +4337,7 @@ private struct ParentSchoolOverviewSheet: View {
                                     .font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.muted)
                                 Text("\(performance.sourceName) · \(performance.reportingCycle)")
                                     .font(.caption).foregroundStyle(MeroliColor.muted)
+                                performanceLegend()
                                 let summaryCodes = ["ELA", "MATH", "CHRONIC_ABSENTEEISM"]
                                 let summaryMetrics = summaryCodes.compactMap { code in
                                     performance.metrics.first { $0.applicable && $0.metricCode == code }
@@ -4355,13 +4356,18 @@ private struct ParentSchoolOverviewSheet: View {
                                                 .fixedSize(horizontal: false, vertical: true)
                                         }
                                         Spacer(minLength: 6)
-                                        if metric.officialStatus.uppercased() == "REPORTED",
-                                           let level = metric.presentation?.performanceLevelLabel ?? performanceLevelLabel(metric.officialPerformanceLevel) {
-                                            if let colorName = performanceColorLabel(metric.officialColor),
-                                               performanceColor(metric.officialColor) != nil {
-                                                Text("\(colorName) · \(level)")
-                                                    .font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
-                                            } else {
+                                        if metric.officialStatus.uppercased() == "REPORTED" {
+                                            let colorName = performanceColorLabel(metric.officialColor)
+                                            let level = metric.presentation?.performanceLevelLabel ?? performanceLevelLabel(metric.officialPerformanceLevel)
+                                            if let colorName {
+                                                HStack(spacing: 5) {
+                                                    if let color = performanceColor(metric.officialColor) {
+                                                        Circle().fill(color).frame(width: 7, height: 7).accessibilityHidden(true)
+                                                    }
+                                                    Text(([colorName, level].compactMap { $0 }).joined(separator: " · "))
+                                                        .font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                                }
+                                            } else if let level {
                                                 Text(level).font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
                                             }
                                         }
@@ -4516,22 +4522,23 @@ private struct ParentSchoolOverviewSheet: View {
     }
 
     private func performanceLegend() -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(zh ? "California School Dashboard 官方等级" : "California School Dashboard official levels")
+        VStack(alignment: .leading, spacing: 6) {
+            Text(zh ? "California School Dashboard 官方表现颜色" : "California School Dashboard official performance colors")
                 .font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
-            HStack(spacing: 9) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 105), alignment: .leading)], alignment: .leading, spacing: 5) {
                 ForEach(["BLUE", "GREEN", "YELLOW", "ORANGE", "RED"], id: \.self) { code in
                     if let color = performanceColor(code), let label = performanceColorLabel(code) {
-                        HStack(spacing: 3) {
+                        HStack(spacing: 5) {
                             Circle().fill(color).frame(width: 7, height: 7).accessibilityHidden(true)
-                            Text(label).font(.caption2).foregroundStyle(MeroliColor.muted)
+                            Text(performanceLegendLabel(code, label: label))
+                                .font(.caption).foregroundStyle(MeroliColor.muted)
                         }
                     }
                 }
             }
             Text(zh
-                 ? "官方等级综合当前表现与较上一年的变化，不是 Meroli 对学校的评分或排名。"
-                 : "Official levels combine current performance and change from the prior year. They are not a Meroli rating or ranking.")
+                 ? "官方颜色由 California School Dashboard 发布，不是 Meroli 对学校的评分或排名。"
+                 : "These are official California School Dashboard results, not a Meroli rating or ranking.")
                 .font(.caption2).foregroundStyle(MeroliColor.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -4608,6 +4615,14 @@ private struct ParentSchoolOverviewSheet: View {
         case "ORANGE": return zh ? "橙色" : "Orange"
         case "RED": return zh ? "红色" : "Red"
         default: return nil
+        }
+    }
+
+    private func performanceLegendLabel(_ code: String, label: String) -> String {
+        switch code {
+        case "BLUE": return zh ? "\(label)（最高）" : "\(label) (highest)"
+        case "RED": return zh ? "\(label)（最低）" : "\(label) (lowest)"
+        default: return label
         }
     }
 
@@ -4761,14 +4776,18 @@ private struct SchoolPerformanceDetailsSheet: View {
                 Text(metric.presentation?.parentLabel ?? performanceMetricLabel(metric.metricCode))
                     .font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
                 Spacer(minLength: 4)
-                if metric.officialStatus.uppercased() == "REPORTED",
-                   let level = metric.presentation?.performanceLevelLabel ?? performanceLevelLabel(metric.officialPerformanceLevel) {
-                    if let color = performanceColor(metric.officialColor), let colorName = performanceColorLabel(metric.officialColor) {
+                if metric.officialStatus.uppercased() == "REPORTED" {
+                    let colorName = performanceColorLabel(metric.officialColor)
+                    let level = metric.presentation?.performanceLevelLabel ?? performanceLevelLabel(metric.officialPerformanceLevel)
+                    if let colorName {
                         HStack(spacing: 5) {
-                            Circle().fill(color).frame(width: 8, height: 8).accessibilityHidden(true)
-                            Text("\(colorName) · \(level)").font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                            if let color = performanceColor(metric.officialColor) {
+                                Circle().fill(color).frame(width: 8, height: 8).accessibilityHidden(true)
+                            }
+                            Text(([colorName, level].compactMap { $0 }).joined(separator: " · "))
+                                .font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
                         }
-                    } else {
+                    } else if let level {
                         Text(level).font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
                     }
                 }
@@ -4938,10 +4957,14 @@ private struct SchoolPerformanceDetailsSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 6)
                 VStack(alignment: .trailing, spacing: 3) {
-                    if metric.officialStatus.uppercased() == "REPORTED",
-                       let level = metric.presentation?.performanceLevelLabel ?? performanceLevelLabel(metric.officialPerformanceLevel) {
-                        Text([performanceColorLabel(metric.officialColor), level].compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption2.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                    if metric.officialStatus.uppercased() == "REPORTED" {
+                        let labels = [performanceColorLabel(metric.officialColor),
+                            metric.presentation?.performanceLevelLabel ?? performanceLevelLabel(metric.officialPerformanceLevel)]
+                            .compactMap { $0 }
+                        if !labels.isEmpty {
+                            Text(labels.joined(separator: " · "))
+                                .font(.caption2.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                        }
                     }
                     Text(historyMetricValue(metric))
                         .font(.caption.weight(.medium)).foregroundStyle(MeroliColor.muted)
@@ -5039,25 +5062,34 @@ private struct SchoolPerformanceDetailsSheet: View {
     }
 
     private func performanceLegend() -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(zh ? "California School Dashboard 官方等级" : "California School Dashboard official levels")
+        VStack(alignment: .leading, spacing: 6) {
+            Text(zh ? "California School Dashboard 官方表现颜色" : "California School Dashboard official performance colors")
                 .font(.caption.weight(.semibold)).foregroundStyle(MeroliColor.ink)
-            HStack(spacing: 9) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 105), alignment: .leading)], alignment: .leading, spacing: 5) {
                 ForEach(["BLUE", "GREEN", "YELLOW", "ORANGE", "RED"], id: \.self) { code in
                     if let color = performanceColor(code), let label = performanceColorLabel(code) {
-                        HStack(spacing: 3) {
+                        HStack(spacing: 5) {
                             Circle().fill(color).frame(width: 7, height: 7).accessibilityHidden(true)
-                            Text(label).font(.caption2).foregroundStyle(MeroliColor.muted)
+                            Text(performanceLegendLabel(code, label: label))
+                                .font(.caption).foregroundStyle(MeroliColor.muted)
                         }
                     }
                 }
             }
             Text(zh
-                ? "官方等级综合当前表现与较上一年的变化，不是 Meroli 对学校的评分或排名。"
-                : "Official levels combine current performance and change from the prior year. They are not a Meroli rating or ranking.")
+                ? "官方表现颜色综合当前表现及与上一年度的变化。官方颜色由 California School Dashboard 发布，不是 Meroli 对学校的评分或排名。"
+                : "Official performance colors reflect current performance and change from the prior year. These are official California School Dashboard results, not a Meroli rating or ranking.")
                 .font(.caption2).foregroundStyle(MeroliColor.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func performanceLegendLabel(_ code: String, label: String) -> String {
+        switch code {
+        case "BLUE": return zh ? "\(label)（最高）" : "\(label) (highest)"
+        case "RED": return zh ? "\(label)（最低）" : "\(label) (lowest)"
+        default: return label
+        }
     }
 
     private func metricDisplayValue(_ metric: ParentPerformanceMetricDTO) -> String {
