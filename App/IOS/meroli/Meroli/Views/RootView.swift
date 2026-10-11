@@ -40,6 +40,7 @@ struct RootView: View {
     @Environment(SessionStore.self) private var session
     @AppStorage("meroli.hasCompletedNetworkGuide") private var hasCompletedNetworkGuide = false
     @State private var isStartupSplashVisible = true
+    @State private var hasStartedSessionRestore = false
 
     var body: some View {
         ZStack {
@@ -48,7 +49,7 @@ struct RootView: View {
                 if !hasCompletedNetworkGuide {
                     NetworkAccessGuideView {
                         hasCompletedNetworkGuide = true
-                        Task { await session.restore() }
+                        beginSessionRestore()
                     }
                 } else {
                     switch session.phase {
@@ -78,15 +79,19 @@ struct RootView: View {
             }
         }
         .task {
-            try? await Task.sleep(nanoseconds: 850_000_000)
+            if hasCompletedNetworkGuide { beginSessionRestore() }
+            try? await Task.sleep(nanoseconds: 250_000_000)
             withAnimation(.easeOut(duration: 0.22)) {
                 isStartupSplashVisible = false
             }
-            if hasCompletedNetworkGuide {
-                await session.restore()
-            }
         }
         .onOpenURL { session.handleIncomingURL($0) }
+    }
+
+    private func beginSessionRestore() {
+        guard !hasStartedSessionRestore else { return }
+        hasStartedSessionRestore = true
+        Task { await session.restore() }
     }
 }
 
@@ -654,7 +659,7 @@ private struct FamilyTabView: View {
         .toolbarBackground(.visible, for: .tabBar)
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active, session.phase == .signedIn else { return }
-            Task { await session.loadFamily() }
+            Task { await session.loadFamily(forceRefresh: true) }
         }
     }
 }
@@ -3142,6 +3147,7 @@ private struct FamilyScreen: View {
     @State private var viewingSchoolInfo: EnrollmentDTO?
     @State private var childToRemove: ChildDTO?
     @State private var showsRemoveChildConfirmation = false
+    @State private var showsRemoveChildWarning = false
     @State private var showsSchoolYearUpdate = false
     @State private var scheduleProfiles: [String: ScheduleProfileDTO] = [:]
     private var zh: Bool { session.usesChinese }
@@ -3390,7 +3396,7 @@ private struct FamilyScreen: View {
 
                                     Button(role: .destructive) {
                                         childToRemove = child
-                                        showsRemoveChildConfirmation = true
+                                        showsRemoveChildWarning = true
                                     } label: {
                                         Label(zh ? "删除孩子" : "Remove Child", systemImage: "person.crop.circle.badge.minus")
                                             .font(.subheadline.weight(.medium))
@@ -3473,7 +3479,7 @@ private struct FamilyScreen: View {
             }
             .sheet(isPresented: $showsSchoolYearUpdate) { SchoolYearUpdateScreen() }
             .confirmationDialog(
-                childToRemove.map { zh ? "删除\($0.nickname)？" : "Remove \($0.nickname)?" }
+                childToRemove.map { zh ? "最终确认：删除\($0.nickname)？" : "Final confirmation: delete \($0.nickname)?" }
                     ?? (zh ? "删除孩子？" : "Remove child?"),
                 isPresented: $showsRemoveChildConfirmation,
                 titleVisibility: .visible
@@ -3494,8 +3500,24 @@ private struct FamilyScreen: View {
                 }
             } message: {
                 Text(zh
-                    ? "此孩子将从当前家庭中移除。请确认后继续。"
-                    : "This child will be removed from this family. Confirm to continue.")
+                    ? "这会将孩子及其关联资料从家庭中移除。"
+                    : "This removes the child and linked records from the family.")
+            }
+            .alert(
+                zh ? "删除孩子及其学校资料？" : "Remove child and school information?",
+                isPresented: $showsRemoveChildWarning
+            ) {
+                Button(zh ? "继续查看最终确认" : "Continue to final confirmation") {
+                    showsRemoveChildConfirmation = true
+                }
+                Button(zh ? "取消" : "Cancel", role: .cancel) { childToRemove = nil }
+            } message: {
+                Text(childToRemove.map { child in
+                    zh
+                        ? "删除\(child.nickname)会将其从家庭中移除，并隐藏孩子的学校入学、作息和项目资料。只有确实要移除此孩子时才继续。"
+                        : "Deleting \(child.nickname) removes them from your family and hides their school enrollment, schedule and program information. Continue only if you really want to remove this child."
+                } ?? (zh ? "这会隐藏孩子及其关联的学校资料。只有确实要移除此孩子时才继续。"
+                    : "This hides the child and linked school information. Continue only if you really want to remove this child."))
             }
         }
     }
@@ -5960,7 +5982,9 @@ private struct AddChildSheet: View {
                         .map { zh && !$0.displayNameZh.isEmpty ? $0.displayNameZh : $0.displayNameEn },
                     selectionStatus: selectionStatus,
                     zh: zh,
-                    onConfirm: save
+                    onConfirm: { confirmingDifferentChild in
+                        await save(confirmingDifferentChild: confirmingDifferentChild)
+                    }
                 )
             }
             .refreshable {
@@ -5975,19 +5999,20 @@ private struct AddChildSheet: View {
         .presentationDetents([.medium, .large])
     }
 
-    private func save() {
+    private func save(confirmingDifferentChild: Bool = false) async -> Bool {
         isFocused = false
-        guard let school = selectedSchool, let schoolYear = currentSchoolYear else { return }
-        Task {
-            if await session.subscribeChild(
-                nickname: nickname,
-                school: school,
-                schoolYear: schoolYear,
-                gradeCode: gradeCode,
-                selectionStatus: selectionStatus,
-                programIds: selectedProgramIds.sorted()
-            ) { dismiss() }
-        }
+        guard let school = selectedSchool, let schoolYear = currentSchoolYear else { return false }
+        let success = await session.subscribeChild(
+            nickname: nickname,
+            school: school,
+            schoolYear: schoolYear,
+            gradeCode: gradeCode,
+            selectionStatus: selectionStatus,
+            programIds: selectedProgramIds.sorted(),
+            confirmDifferentChild: confirmingDifferentChild
+        )
+        if success { dismiss() }
+        return success
     }
 
     private func load() async {
@@ -6024,7 +6049,8 @@ private struct SchoolSetupReviewView: View {
     let programNames: [String]
     let selectionStatus: String
     let zh: Bool
-    let onConfirm: () -> Void
+    let onConfirm: (Bool) async -> Bool
+    @State private var showsDeletedChildMatchConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -6055,7 +6081,16 @@ private struct SchoolSetupReviewView: View {
 
                 Text(zh ? "确认后会将孩子和学校资料保存到家庭中。" : "Confirm to save this child and school setup to your family.")
                     .font(.subheadline).foregroundStyle(MeroliColor.muted)
-                Button(action: onConfirm) {
+                Button {
+                    Task {
+                        if await onConfirm(false) {
+                            return
+                        }
+                        if session.requiresDifferentChildConfirmation {
+                            showsDeletedChildMatchConfirmation = true
+                        }
+                    }
+                } label: {
                     HStack {
                         Spacer()
                         if session.isSavingChild { ProgressView().padding(.trailing, 7) }
@@ -6077,6 +6112,19 @@ private struct SchoolSetupReviewView: View {
         .background(MeroliColor.canvas.ignoresSafeArea())
         .navigationTitle(zh ? "核对学校资料" : "Review setup")
         .navigationBarTitleDisplayMode(.inline)
+        .alert(
+            zh ? "发现同名的已移除孩子" : "A removed child has this name",
+            isPresented: $showsDeletedChildMatchConfirmation
+        ) {
+            Button(zh ? "这是另一位孩子，继续添加" : "This is a different child; continue") {
+                Task { _ = await onConfirm(true) }
+            }
+            Button(zh ? "取消" : "Cancel", role: .cancel) {}
+        } message: {
+            Text(zh
+                ? "家庭中有相同称呼的已移除资料。若是同一位孩子，请联系支持人员恢复；若是另一位孩子，可明确确认后新建。"
+                : "A removed profile with the same name exists. Contact support if this is the same child; explicitly continue only if this is a different child.")
+        }
     }
 
     private var programSummary: String {

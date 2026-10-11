@@ -30,8 +30,67 @@ private struct CachedAuthSession: Codable {
 }
 
 private struct CachedAPIResponse: Codable {
+    let cacheSchemaVersion: Int
     let data: Data?
     var lastCheckedAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case cacheSchemaVersion
+        case cacheVersion
+        case data
+        case lastCheckedAt
+    }
+
+    init(cacheSchemaVersion: Int, data: Data?, lastCheckedAt: Date) {
+        self.cacheSchemaVersion = cacheSchemaVersion
+        self.data = data
+        self.lastCheckedAt = lastCheckedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        cacheSchemaVersion = try values.decodeIfPresent(Int.self, forKey: .cacheSchemaVersion)
+            ?? values.decode(Int.self, forKey: .cacheVersion)
+        data = try values.decodeIfPresent(Data.self, forKey: .data)
+        lastCheckedAt = try values.decode(Date.self, forKey: .lastCheckedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(cacheSchemaVersion, forKey: .cacheSchemaVersion)
+        try values.encodeIfPresent(data, forKey: .data)
+        try values.encode(lastCheckedAt, forKey: .lastCheckedAt)
+    }
+}
+
+private enum FamilyResponseCachePolicy {
+    static let schemaVersion = MeroliCacheLifecyclePolicy.currentSchemaVersion
+    static let freshness: TimeInterval = 5 * 60
+}
+
+private enum CacheReadStatus: Equatable {
+    case hit
+    case migrated
+    case miss
+}
+
+private enum FamilyCacheSnapshotStatus {
+    case absent
+    case available(migrated: Bool)
+}
+
+private func cacheDiagnostic(_ event: String) {
+#if DEBUG
+    print("[MeroliCache] \(event)")
+#endif
+}
+
+private func isValidCacheEnvelope(_ data: Data) -> Bool {
+    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+    guard object.keys.contains(where: { $0.caseInsensitiveCompare("response") == .orderedSame }) else { return false }
+    if let success = object.first(where: { $0.key.caseInsensitiveCompare("success") == .orderedSame })?.value as? Bool,
+       !success { return false }
+    return true
 }
 
 private struct ResponseCacheSummary {
@@ -85,22 +144,70 @@ private final class DailyAPIResponseCache {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    func read(key: String, userId: String) -> CachedAPIResponse? {
+    func read(key: String, userId: String) -> (response: CachedAPIResponse?, status: CacheReadStatus) {
         guard let url = fileURL(key: key, userId: userId),
-              let data = try? Data(contentsOf: url) else { return nil }
-        return try? decoder.decode(CachedAPIResponse.self, from: data)
+              let data = try? Data(contentsOf: url) else {
+            cacheDiagnostic("CACHE_MISS")
+            return (nil, .miss)
+        }
+        guard let response = try? decoder.decode(CachedAPIResponse.self, from: data) else {
+            cacheDiagnostic("CACHE_CORRUPT")
+            return (nil, .miss)
+        }
+
+        switch MeroliCacheLifecyclePolicy.schemaAction(storedVersion: response.cacheSchemaVersion) {
+        case .use:
+            cacheDiagnostic("CACHE_HIT")
+            return (response, .hit)
+        case .migrate:
+            let migrated = CachedAPIResponse(
+                cacheSchemaVersion: FamilyResponseCachePolicy.schemaVersion,
+                data: response.data,
+                lastCheckedAt: response.lastCheckedAt
+            )
+            if write(migrated, key: key, userId: userId) {
+                cacheDiagnostic("CACHE_MIGRATED")
+            } else {
+                cacheDiagnostic("CACHE_MIGRATION_FAILED")
+            }
+            return (response, .migrated)
+        case .invalidateEntry:
+            try? fileManager.removeItem(at: url)
+            cacheDiagnostic("CACHE_INVALIDATED")
+            return (nil, .miss)
+        case .unsupportedFuture:
+            cacheDiagnostic("CACHE_SCHEMA_UNSUPPORTED")
+            return (nil, .miss)
+        }
     }
 
-    func write(_ response: CachedAPIResponse, key: String, userId: String) {
+    @discardableResult
+    func write(_ response: CachedAPIResponse, key: String, userId: String) -> Bool {
         guard let url = fileURL(key: key, userId: userId),
-              let data = try? encoder.encode(response) else { return }
-        try? data.write(to: url, options: .atomic)
-        try? fileManager.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
+              let data = try? encoder.encode(response) else {
+            cacheDiagnostic("CACHE_WRITE_FAILED")
+            return false
+        }
+        if let existingData = try? Data(contentsOf: url),
+           let existing = try? decoder.decode(CachedAPIResponse.self, from: existingData),
+           case .unsupportedFuture = MeroliCacheLifecyclePolicy.schemaAction(storedVersion: existing.cacheSchemaVersion) {
+            cacheDiagnostic("CACHE_WRITE_SKIPPED_FUTURE_SCHEMA")
+            return false
+        }
+        do {
+            try MeroliCacheLifecyclePolicy.writeAtomically(data: data, to: url)
+            try? fileManager.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
+            return true
+        } catch {
+            cacheDiagnostic("CACHE_WRITE_FAILED")
+            return false
+        }
     }
 
     func removeAll(userId: String) {
         guard let directory = directoryURL(userId: userId) else { return }
         try? fileManager.removeItem(at: directory)
+        cacheDiagnostic("CACHE_INVALIDATED")
     }
 
     func summary(userId: String) -> ResponseCacheSummary {
@@ -141,6 +248,7 @@ private struct OnboardingSubscribeReceipt: Codable, Equatable {
     let selectionStatus: String
     let scheduleVariantCode: String
     let programIds: [String]
+    let confirmDifferentChild: Bool?
 }
 
 struct EnrollmentRemovalSnapshot: Codable, Equatable, Identifiable {
@@ -238,15 +346,20 @@ final class SessionStore {
     private(set) var pendingSchoolChange: EnrollmentSchoolChangeReceipt?
     private(set) var isRestoringSession = false
     private(set) var initializationProgress = 0.0
+    private(set) var startupMode: MeroliCacheStartMode?
     private(set) var isSavingChild = false
     private(set) var deletingChildId: String?
+    private(set) var requiresDifferentChildConfirmation = false
     var errorMessage: String?
 
     @ObservationIgnored private let api: APIClient?
     @ObservationIgnored private var accessToken: String?
+    @ObservationIgnored private var isCachedIdentityValidated = false
     @ObservationIgnored private var rotationTask: Task<Void, Error>?
     @ObservationIgnored private var isRemovingEnrollment = false
     @ObservationIgnored private var familyLoadGeneration = 0
+    @ObservationIgnored private var lastFamilyResponseError: Error?
+    @ObservationIgnored private var networkConfirmedFamilyPaths: Set<String> = []
     @ObservationIgnored private var schoolsLoadGeneration = 0
     @ObservationIgnored private var schoolDirectoryByDistrict: [String: [ParentSchoolDTO]] = [:]
     @ObservationIgnored private var loadedSchoolDistrictId: String?
@@ -309,8 +422,20 @@ final class SessionStore {
             userId = cached.userId
             email = cached.email
             language = cached.language
+            isCachedIdentityValidated = false
+            let cacheSnapshot = loadFamilyCacheForDisplay(userId: cached.userId)
+            if case let .available(migrated) = cacheSnapshot {
+                startupMode = MeroliCacheLifecyclePolicy.startMode(hasUsableCache: true, migrationOccurred: migrated)
+                cacheDiagnostic("START_MODE=\(startupMode?.rawValue ?? MeroliCacheStartMode.returningCache.rawValue)")
+                phase = .signedIn
+                Task { await self.validateRestoredCacheSession(userId: cached.userId) }
+                return
+            }
+            startupMode = MeroliCacheStartMode.firstInstall
+            cacheDiagnostic("START_MODE=FIRST_INSTALL")
             await refreshCachedLanguagePreference()
             if phase == .signedOut { return }
+            guard isCachedIdentityValidated else { phase = .restoreUnavailable; return }
             await finishSessionRestore()
             if phase == .signedIn { await resumePendingSubscription() }
             return
@@ -410,51 +535,89 @@ final class SessionStore {
     }
 
     func loadFamily(forceRefresh: Bool = false) async {
-        guard phase == .signedIn || accessToken != nil else { return }
+        guard (phase == .signedIn || accessToken != nil),
+              accessToken != nil,
+              !userId.isEmpty else { return }
         familyLoadGeneration += 1
         let generation = familyLoadGeneration
+        let requestUserId = userId
         isLoadingFamily = true
         defer {
             if generation == familyLoadGeneration { isLoadingFamily = false }
         }
+        let cachedFamily: (FamilyDTO, Date)? = cachedFamilyResponse(FamilyDTO.self, path: "family", userId: requestUserId)
+        let cachedChildren: ([ChildDTO], Date)? = cachedFamilyResponse([ChildDTO].self, path: "children", userId: requestUserId)
+        let cachedEnrollments: ([EnrollmentDTO], Date)? = cachedFamilyResponse([EnrollmentDTO].self, path: "enrollments", userId: requestUserId)
+
+        let previousSignature = calendarFamilySignature(family, children, enrollments)
+        if !networkConfirmedFamilyPaths.contains("family"), let cachedFamily { family = cachedFamily.0 }
+        if !networkConfirmedFamilyPaths.contains("children"), let cachedChildren { children = cachedChildren.0 }
+        if !networkConfirmedFamilyPaths.contains("enrollments"), let cachedEnrollments { enrollments = cachedEnrollments.0 }
+
+        let criticalCacheIsFresh = [cachedFamily?.1, cachedChildren?.1, cachedEnrollments?.1].allSatisfy { checkedAt in
+            guard let checkedAt else { return false }
+            let age = Date().timeIntervalSince(checkedAt)
+            return age >= 0 && age <= FamilyResponseCachePolicy.freshness
+        }
+        if !criticalCacheIsFresh && (cachedFamily != nil || cachedChildren != nil || cachedEnrollments != nil) {
+            cacheDiagnostic("CACHE_STALE")
+        }
+        var refreshError: Error?
+
+        if forceRefresh || !criticalCacheIsFresh {
+            if let result = await refreshFamilyResponse(FamilyDTO.self, path: "family", userId: requestUserId, generation: generation) {
+                family = MeroliCacheLifecyclePolicy.resolvedValue(cached: family, network: result, networkSucceeded: true)
+            } else if generation == familyLoadGeneration {
+                family = MeroliCacheLifecyclePolicy.resolvedValue(cached: family, network: nil, networkSucceeded: false)
+                refreshError = lastFamilyResponseError
+            }
+            completeInitializationStep()
+
+            if let result = await refreshFamilyResponse([ChildDTO].self, path: "children", userId: requestUserId, generation: generation) {
+                children = MeroliCacheLifecyclePolicy.resolvedValue(cached: children, network: result, networkSucceeded: true) ?? children
+            } else if generation == familyLoadGeneration, refreshError == nil {
+                children = MeroliCacheLifecyclePolicy.resolvedValue(cached: children, network: nil, networkSucceeded: false) ?? children
+                refreshError = lastFamilyResponseError
+            }
+            completeInitializationStep()
+
+            if let result = await refreshFamilyResponse([EnrollmentDTO].self, path: "enrollments", userId: requestUserId, generation: generation) {
+                enrollments = MeroliCacheLifecyclePolicy.resolvedValue(cached: enrollments, network: result, networkSucceeded: true) ?? enrollments
+            } else if generation == familyLoadGeneration, refreshError == nil {
+                enrollments = MeroliCacheLifecyclePolicy.resolvedValue(cached: enrollments, network: nil, networkSucceeded: false) ?? enrollments
+                refreshError = lastFamilyResponseError
+            }
+            completeInitializationStep()
+        } else {
+            completeInitializationStep()
+            completeInitializationStep()
+            completeInitializationStep()
+        }
+
+        guard generation == familyLoadGeneration,
+              accessToken != nil,
+              userId == requestUserId else { return }
+
         do {
-            let familyData = try await authorized(path: "family", forceRefresh: forceRefresh)
-            let familyResult = try decoder.decode(APIEnvelope<FamilyDTO>.self, from: familyData).response
-            completeInitializationStep()
-            let childData = try await authorized(path: "children", forceRefresh: forceRefresh)
-            let childrenResult = try decoder.decode(APIEnvelope<[ChildDTO]>.self, from: childData).response
-            completeInitializationStep()
-            let enrollmentData = try await authorized(path: "enrollments", forceRefresh: forceRefresh)
-            let enrollmentsResult = try decoder.decode(APIEnvelope<[EnrollmentDTO]>.self, from: enrollmentData).response
-            completeInitializationStep()
             let transitionData = try await authorized(path: "school-year-transition/preview", forceRefresh: forceRefresh)
             let transitionsResult = try decoder.decode(APIEnvelope<[SchoolYearTransitionDTO]>.self, from: transitionData).response
-            completeInitializationStep()
-            guard generation == familyLoadGeneration, accessToken != nil else { return }
-            let familyChanged = calendarFamilySignature(family, children, enrollments)
-                != calendarFamilySignature(familyResult, childrenResult, enrollmentsResult)
-            family = familyResult
-            children = childrenResult
-            enrollments = enrollmentsResult
+            guard generation == familyLoadGeneration, userId == requestUserId else { return }
             schoolYearTransitions = transitionsResult
-            homeErrorMessage = nil
-            errorMessage = nil
-            if familyChanged {
-                clearCalendarSessionCache(clearVisibleEvents: true)
-                invalidateHomeEventsSessionCache(clearVisibleEvents: true)
-                if let request = lastCalendarRequest {
-                    await loadCalendar(from: request.start, to: request.end, childId: request.childId, policy: .forceRefresh)
-                }
-            }
         } catch {
-            guard generation == familyLoadGeneration else { return }
-            let failureMessage = message(for: error)
-            if (error as? APIClientError)?.statusCode == 401 {
-                clearLocalSession()
-                phase = .signedOut
+            // 学年预览是辅助信息；失败时保留现有结果，不影响家庭身份数据。
+        }
+        completeInitializationStep()
+
+        let familyChanged = previousSignature != calendarFamilySignature(family, children, enrollments)
+        let failureMessage = refreshError.map { message(for: $0) }
+        homeErrorMessage = failureMessage
+        errorMessage = failureMessage
+        if familyChanged {
+            clearCalendarSessionCache(clearVisibleEvents: true)
+            invalidateHomeEventsSessionCache(clearVisibleEvents: true)
+            if let request = lastCalendarRequest {
+                await loadCalendar(from: request.start, to: request.end, childId: request.childId, policy: .forceRefresh)
             }
-            homeErrorMessage = failureMessage
-            errorMessage = failureMessage
         }
     }
 
@@ -498,7 +661,19 @@ final class SessionStore {
         initializationProgress = 0
         defer { isTrackingInitializationProgress = false }
         phase = .restoring
-        await loadFamily()
+        let cacheSnapshot = loadFamilyCacheForDisplay(userId: userId)
+        if case let .available(migrated) = cacheSnapshot {
+            startupMode = MeroliCacheLifecyclePolicy.startMode(hasUsableCache: true, migrationOccurred: migrated)
+            cacheDiagnostic("START_MODE=\(startupMode?.rawValue ?? MeroliCacheStartMode.returningCache.rawValue)")
+            phase = .signedIn
+            let restoredUserId = userId
+            Task { await self.revalidateFamilyAndCatalog(userId: restoredUserId) }
+            initializationProgress = 1
+            return
+        }
+        startupMode = MeroliCacheStartMode.firstInstall
+        cacheDiagnostic("START_MODE=FIRST_INSTALL")
+        await loadFamily(forceRefresh: true)
         guard phase != .signedOut else { return }
         guard homeErrorMessage == nil else {
             errorMessage = homeErrorMessage
@@ -515,6 +690,28 @@ final class SessionStore {
         }
         initializationProgress = 1
         phase = .signedIn
+    }
+
+    private func validateRestoredCacheSession(userId restoredUserId: String) async {
+        await refreshCachedLanguagePreference()
+        guard userId == restoredUserId, phase == .signedIn else { return }
+        guard isCachedIdentityValidated else {
+            homeErrorMessage = errorMessage
+            return
+        }
+        await revalidateFamilyAndCatalog(userId: restoredUserId)
+        if phase == .signedIn { await resumePendingSubscription() }
+    }
+
+    private func revalidateFamilyAndCatalog(userId expectedUserId: String) async {
+        guard userId == expectedUserId, phase == .signedIn else { return }
+        await loadFamily(forceRefresh: true)
+        guard userId == expectedUserId, phase == .signedIn else { return }
+        let catalogLoaded = await loadSchoolCatalog()
+        if !catalogLoaded && enrollments.contains(where: \.isCurrent) {
+            errorMessage = catalogErrorMessage
+            homeErrorMessage = catalogErrorMessage
+        }
     }
 
     private func completeInitializationStep() {
@@ -1214,7 +1411,8 @@ final class SessionStore {
         schoolYear: SchoolYearDTO,
         gradeCode: String,
         selectionStatus: String,
-        programIds: [String]
+        programIds: [String],
+        confirmDifferentChild: Bool = false
     ) async -> Bool {
         guard gradeNumber(for: gradeCode) != nil else {
             errorMessage = usesChinese ? "请选择有效年级。" : "Choose a valid grade."
@@ -1237,7 +1435,8 @@ final class SessionStore {
                   (saved.schoolYearId == nil || saved.schoolYearId == schoolYear.id),
                   saved.gradeCode == gradeCode,
                   saved.selectionStatus == selectionStatus,
-                  saved.programIds == programIds.sorted() else {
+                  saved.programIds == programIds.sorted(),
+                  (saved.confirmDifferentChild ?? false) == confirmDifferentChild else {
                 errorMessage = usesChinese
                     ? "上次建档提交尚待核实。请使用相同资料重试，或稍后重新打开应用。"
                     : "A previous setup is unresolved. Retry with the same details or reopen the app later."
@@ -1254,7 +1453,8 @@ final class SessionStore {
                 gradeCode: gradeCode,
                 selectionStatus: selectionStatus,
                 scheduleVariantCode: "DEFAULT",
-                programIds: programIds.sorted()
+                programIds: programIds.sorted(),
+                confirmDifferentChild: confirmDifferentChild
             )
             guard KeychainRefreshToken.saveOnboardingReceipt(receipt, key: key) else {
                 errorMessage = APIClientError.secureStorageUnavailable.localizedDescription
@@ -1285,7 +1485,8 @@ final class SessionStore {
                 "grade": grade,
                 "selection_status": receipt.selectionStatus,
                 "schedule_variant_code": receipt.scheduleVariantCode,
-                "program_ids": receipt.programIds
+                "program_ids": receipt.programIds,
+                "confirm_different_child": receipt.confirmDifferentChild ?? false
             ]
             if let schoolYearId = receipt.schoolYearId {
                 request["school_year_id"] = schoolYearId
@@ -1296,6 +1497,7 @@ final class SessionStore {
                 authorization: accessToken,
                 json: request,
                 headers: ["Idempotency-Key": receipt.idempotencyKey]
+                    .merging(childMutationHeaders) { existing, _ in existing }
             )
             _ = try decoder.decode(APIEnvelope<OnboardingSubscribeDTO>.self, from: data).response
             guard KeychainRefreshToken.deleteReceipt(key: onboardingKey()) else {
@@ -1304,7 +1506,15 @@ final class SessionStore {
             await loadFamily()
             await loadDailySchedules(for: Date())
             errorMessage = nil
+            requiresDifferentChildConfirmation = false
             return true
+        } catch APIClientError.deletedChildMatch {
+            _ = KeychainRefreshToken.deleteReceipt(key: onboardingKey())
+            requiresDifferentChildConfirmation = true
+            errorMessage = usesChinese
+                ? "发现同名的已移除孩子资料。若这是另一位孩子，请明确确认后继续；不会自动恢复旧资料。"
+                : "A removed child with this name may be recoverable. Confirm only if this is a different child; no old profile will be restored automatically."
+            return false
         } catch let error as APIClientError where error.statusCode == 422 {
             _ = KeychainRefreshToken.deleteReceipt(key: onboardingKey())
             errorMessage = message(for: error)
@@ -1623,7 +1833,8 @@ final class SessionStore {
         defer { deletingChildId = nil }
 
         do {
-            let data = try await authorized(path: "children/\(id)", method: "DELETE")
+            let data = try await authorized(
+                path: "children/\(id)", method: "DELETE", headers: childMutationHeaders)
             let deleted = try decoder.decode(APIEnvelope<Bool>.self, from: data).response
             guard deleted else {
                 errorMessage = usesChinese ? "孩子未能从家庭中移除，请稍后重试。" : "The child could not be removed from the family. Try again shortly."
@@ -1792,9 +2003,17 @@ final class SessionStore {
         if !userId.isEmpty, userId != user.id {
             clearCalendarSessionCache(clearVisibleEvents: true)
             invalidateHomeEventsSessionCache(clearVisibleEvents: true)
+            familyLoadGeneration += 1
+            family = nil
+            children = []
+            enrollments = []
+            schoolYearTransitions = []
+            networkConfirmedFamilyPaths.removeAll()
+            homeErrorMessage = nil
         }
         userId = user.id
         email = user.email
+        isCachedIdentityValidated = true
         let preferencesData = try await authorized(path: "preferences")
         language = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: preferencesData).response.language
         persistCachedSession()
@@ -1802,7 +2021,24 @@ final class SessionStore {
 
     private func refreshCachedLanguagePreference() async {
         do {
-            let data = try await authorized(path: "preferences")
+            let identityData = try await authorized(
+                path: "auth/me",
+                forceRefresh: true,
+                allowsStaleResponseFallback: false
+            )
+            let user = try decoder.decode(APIEnvelope<MePayload>.self, from: identityData).response.user
+            guard user.id == userId else {
+                clearLocalSession()
+                phase = .signedOut
+                return
+            }
+            email = user.email
+            isCachedIdentityValidated = true
+            let data = try await authorized(
+                path: "preferences",
+                forceRefresh: true,
+                allowsStaleResponseFallback: false
+            )
             let preference = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: data).response
             guard ["en", "zh-CN"].contains(preference.language) else { return }
             let languageChanged = language != preference.language
@@ -1817,7 +2053,84 @@ final class SessionStore {
             if requiresReauthentication(error) {
                 clearLocalSession()
                 phase = .signedOut
+            } else {
+                errorMessage = message(for: error)
             }
+        }
+    }
+
+    private func cachedFamilyResponse<T: Decodable>(
+        _ type: T.Type,
+        path: String,
+        userId: String
+    ) -> (T, Date, Bool)? {
+        let key = cacheKey(path: path, query: [])
+        let read = responseCache.read(key: key, userId: userId)
+        guard let cached = read.response,
+              let data = cached.data,
+              let value = try? decoder.decode(APIEnvelope<T>.self, from: data).response else { return nil }
+        return (value, cached.lastCheckedAt, read.status == .migrated)
+    }
+
+    private func loadFamilyCacheForDisplay(userId: String) -> FamilyCacheSnapshotStatus {
+        guard !userId.isEmpty else { return .absent }
+        let cachedFamily = cachedFamilyResponse(FamilyDTO.self, path: "family", userId: userId)
+        let cachedChildren = cachedFamilyResponse([ChildDTO].self, path: "children", userId: userId)
+        let cachedEnrollments = cachedFamilyResponse([EnrollmentDTO].self, path: "enrollments", userId: userId)
+        guard let cachedFamily, let cachedChildren, let cachedEnrollments else {
+            cacheDiagnostic("CACHE_MISS")
+            return .absent
+        }
+        guard MeroliCacheLifecyclePolicy.cacheBelongsToCurrentUser(cacheUserId: userId, authenticatedUserId: self.userId) else {
+            return .absent
+        }
+        if !networkConfirmedFamilyPaths.contains("family") { family = cachedFamily.0 }
+        if !networkConfirmedFamilyPaths.contains("children") { children = cachedChildren.0 }
+        if !networkConfirmedFamilyPaths.contains("enrollments") { enrollments = cachedEnrollments.0 }
+        let migrated = cachedFamily.2 || cachedChildren.2 || cachedEnrollments.2
+        return .available(migrated: migrated)
+    }
+
+    private func refreshFamilyResponse<T: Decodable>(
+        _ type: T.Type,
+        path: String,
+        userId requestUserId: String,
+        generation: Int
+    ) async -> T? {
+        guard generation == familyLoadGeneration,
+              userId == requestUserId,
+              accessToken != nil else { return nil }
+        cacheDiagnostic("NETWORK_REVALIDATE_START")
+        lastFamilyResponseError = nil
+        do {
+            let data = try await authorized(
+                path: path,
+                forceRefresh: true,
+                allowsStaleResponseFallback: false,
+                cacheSuccessfulResponse: false
+            )
+            let value = try decoder.decode(APIEnvelope<T>.self, from: data).response
+            guard generation == familyLoadGeneration,
+                  userId == requestUserId,
+                  accessToken != nil else { return nil }
+            networkConfirmedFamilyPaths.insert(path)
+            let persisted = responseCache.write(
+                CachedAPIResponse(
+                    cacheSchemaVersion: FamilyResponseCachePolicy.schemaVersion,
+                    data: data,
+                    lastCheckedAt: Date()
+                ),
+                key: cacheKey(path: path, query: []),
+                userId: requestUserId
+            )
+            cacheDiagnostic(persisted ? "NETWORK_REVALIDATE_SUCCESS" : "NETWORK_REVALIDATE_SUCCESS_CACHE_WRITE_FAILED")
+            return value
+        } catch {
+            if generation == familyLoadGeneration, userId == requestUserId {
+                lastFamilyResponseError = error
+            }
+            cacheDiagnostic("NETWORK_REVALIDATE_FAILURE")
+            return nil
         }
     }
 
@@ -1826,8 +2139,10 @@ final class SessionStore {
         method: String = "GET",
         json: [String: Any]? = nil,
         query: [URLQueryItem] = [],
+        headers: [String: String] = [:],
         forceRefresh: Bool = false,
-        allowsStaleResponseFallback: Bool = true
+        allowsStaleResponseFallback: Bool = true,
+        cacheSuccessfulResponse: Bool = true
     ) async throws -> Data {
         guard let token = accessToken else { throw APIClientError.unacceptableStatusCode(401) }
         do {
@@ -1837,8 +2152,10 @@ final class SessionStore {
                 authorization: token,
                 json: json,
                 query: query,
+                headers: headers,
                 forceRefresh: forceRefresh,
-                allowsStaleResponseFallback: allowsStaleResponseFallback
+                allowsStaleResponseFallback: allowsStaleResponseFallback,
+                cacheSuccessfulResponse: cacheSuccessfulResponse
             )
         } catch let error as APIClientError where error.statusCode == 401 {
             guard method == "GET" else { throw error }
@@ -1849,8 +2166,10 @@ final class SessionStore {
                     authorization: currentToken,
                     json: json,
                     query: query,
+                    headers: headers,
                     forceRefresh: forceRefresh,
-                    allowsStaleResponseFallback: allowsStaleResponseFallback
+                    allowsStaleResponseFallback: allowsStaleResponseFallback,
+                    cacheSuccessfulResponse: cacheSuccessfulResponse
                 )
             }
             guard let refreshToken = KeychainRefreshToken.read() else { throw error }
@@ -1863,8 +2182,10 @@ final class SessionStore {
                     authorization: newToken,
                     json: json,
                     query: query,
+                    headers: headers,
                     forceRefresh: forceRefresh,
-                    allowsStaleResponseFallback: allowsStaleResponseFallback
+                    allowsStaleResponseFallback: allowsStaleResponseFallback,
+                    cacheSuccessfulResponse: cacheSuccessfulResponse
                 )
             } catch let retryError as APIClientError where retryError.statusCode == 401 {
                 clearLocalSession()
@@ -1872,6 +2193,17 @@ final class SessionStore {
                 throw retryError
             }
         }
+    }
+
+    private var childMutationHeaders: [String: String] {
+        var headers = ["X-Meroli-Platform": "iOS"]
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+        let clientVersion = [version, build].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "+")
+        if !clientVersion.isEmpty {
+            headers["X-Meroli-Client-Version"] = String(clientVersion.prefix(40))
+        }
+        return headers
     }
 
     private func rotate(refreshToken: String) async throws {
@@ -1927,16 +2259,16 @@ final class SessionStore {
         query: [URLQueryItem] = [],
         headers: [String: String] = [:],
         forceRefresh: Bool = false,
-        allowsStaleResponseFallback: Bool = true
+        allowsStaleResponseFallback: Bool = true,
+        cacheSuccessfulResponse: Bool = true
     ) async throws -> Data {
         guard let api else { throw APIClientError.invalidBaseURL }
         let isCacheableRead = method.uppercased() == "GET" && !userId.isEmpty
         let cacheUserId = isCacheableRead ? userId : nil
         let key = cacheKey(path: path, query: query)
         let inFlightKey = cacheUserId.map { "\($0)|\(key)" } ?? key
-        let cached = cacheUserId.flatMap { responseCache.read(key: key, userId: $0) }
-        let now = Date()
-        if !forceRefresh, let data = cached?.data {
+        let cached = cacheUserId.map { responseCache.read(key: key, userId: $0) }
+        if !forceRefresh, let data = cached?.response?.data {
             return data
         }
         if !forceRefresh, let pending = inFlightReadRequests[inFlightKey] {
@@ -1950,12 +2282,14 @@ final class SessionStore {
         do {
             let data = try await request.value
             if isCacheableRead { inFlightReadRequests[inFlightKey] = nil }
-            if let cacheUserId, userId == cacheUserId {
-                responseCache.write(CachedAPIResponse(data: data, lastCheckedAt: now), key: key, userId: userId)
-            } else if method.uppercased() != "GET", !userId.isEmpty {
-                responseCache.removeAll(userId: userId)
-                schoolDirectoryByDistrict.removeAll()
-                selectedSchoolDetails.removeAll()
+            if cacheSuccessfulResponse, let cacheUserId, userId == cacheUserId, isValidCacheEnvelope(data) {
+                responseCache.write(
+                    CachedAPIResponse(cacheSchemaVersion: FamilyResponseCachePolicy.schemaVersion, data: data, lastCheckedAt: Date()),
+                    key: key,
+                    userId: userId
+                )
+            } else if cacheSuccessfulResponse && isCacheableRead {
+                cacheDiagnostic("CACHE_WRITE_SKIPPED_INVALID_PAYLOAD")
             }
             return data
         } catch {
@@ -1964,8 +2298,7 @@ final class SessionStore {
                 throw error
             }
             if allowsStaleResponseFallback, let cacheUserId, userId == cacheUserId {
-                if let cached, let data = cached.data {
-                    responseCache.write(CachedAPIResponse(data: data, lastCheckedAt: now), key: key, userId: cacheUserId)
+                if let cached, let data = cached.response?.data {
                     return data
                 }
             }
@@ -1983,7 +2316,12 @@ final class SessionStore {
     }
 
     private func clearLocalSession() {
-        if !userId.isEmpty { responseCache.removeAll(userId: userId) }
+        // 退出或重新认证只清除内存和密钥；用户缓存按 UserId 隔离并保留供下次登录复用。
+        if !MeroliCacheLifecyclePolicy.retainCacheOnLogout(), !userId.isEmpty {
+            responseCache.removeAll(userId: userId)
+        }
+        networkConfirmedFamilyPaths.removeAll()
+        isCachedIdentityValidated = false
         calendarSessionCache.removeAll()
         homeEventsSessionCache.removeAll()
         calendarErrorMessage = nil
@@ -2077,6 +2415,8 @@ final class SessionStore {
             return usesChinese ? "暂时无法读取 Meroli 数据，请稍后重试。" : "Meroli data could not be loaded. Try again shortly."
         case .secureStorageUnavailable:
             return usesChinese ? "无法安全保存登录状态，请解锁设备后重试。" : "The secure sign-in state could not be saved. Unlock your device and try again."
+        case .deletedChildMatch:
+            return usesChinese ? "发现同名的已移除孩子资料。" : "A removed child with this name may exist."
         case let .unacceptableStatusCode(status):
             if status == 401 { return usesChinese ? "邮箱或密码不正确，或登录已过期。" : "The email or password is incorrect, or your session expired." }
             if status == 409 { return usesChinese ? "此邮箱已注册，请直接登录。" : "This email is already registered. Sign in instead." }

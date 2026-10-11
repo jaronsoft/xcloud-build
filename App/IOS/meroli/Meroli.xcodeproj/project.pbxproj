@@ -14,6 +14,7 @@
 		C20000000000000000000005 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000009 /* SessionStore.swift */; };
 		C20000000000000000000006 /* ParentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000010 /* ParentModels.swift */; };
 		C20000000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000011 /* Assets.xcassets */; };
+		C20000000000000000000008 /* MeroliCacheLifecyclePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000012 /* MeroliCacheLifecyclePolicy.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 		F10000000000000000000009 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		F10000000000000000000010 /* ParentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParentModels.swift; sourceTree = "<group>"; };
 		F10000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F10000000000000000000012 /* MeroliCacheLifecyclePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeroliCacheLifecycle/MeroliCacheLifecyclePolicy.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -47,6 +49,7 @@
 				G10000000000000000000002 /* Meroli */,
 				G10000000000000000000003 /* Configuration */,
 				G10000000000000000000004 /* Products */,
+				G10000000000000000000009 /* CacheLifecycle */,
 			);
 			sourceTree = "<group>";
 		};
@@ -112,6 +115,14 @@
 				F10000000000000000000004 /* RootView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		G10000000000000000000009 /* CacheLifecycle */ = {
+			isa = PBXGroup;
+			children = (
+				F10000000000000000000012 /* MeroliCacheLifecyclePolicy.swift */,
+			);
+			path = CacheLifecycle;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -190,6 +201,7 @@
 				C20000000000000000000004 /* RootView.swift in Sources */,
 				C20000000000000000000005 /* SessionStore.swift in Sources */,
 				C20000000000000000000006 /* ParentModels.swift in Sources */,
+				C20000000000000000000008 /* MeroliCacheLifecyclePolicy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -4,6 +4,7 @@ enum APIClientError: LocalizedError {
     case invalidBaseURL
     case invalidRequestPath
     case unacceptableStatusCode(Int)
+    case deletedChildMatch
     case invalidResponse
     case secureStorageUnavailable
 
@@ -15,6 +16,8 @@ enum APIClientError: LocalizedError {
             "API 请求路径无效。"
         case let .unacceptableStatusCode(statusCode):
             "Meroli API 返回 HTTP \(statusCode)。"
+        case .deletedChildMatch:
+            "此家庭中有相同称呼的已移除孩子资料。"
         case .invalidResponse:
             "Meroli API 返回了无法读取的响应。"
         case .secureStorageUnavailable:
@@ -91,6 +94,12 @@ struct APIClient: Sendable {
             throw APIClientError.invalidResponse
         }
         guard (200..<300).contains(httpResponse.statusCode) else {
+            if httpResponse.statusCode == 409,
+               let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let extra = envelope["extra"] as? [String: Any],
+               extra["code"] as? String == "CHILD_RECOVERY_CANDIDATE" {
+                throw APIClientError.deletedChildMatch
+            }
             throw APIClientError.unacceptableStatusCode(httpResponse.statusCode)
         }
         return data
