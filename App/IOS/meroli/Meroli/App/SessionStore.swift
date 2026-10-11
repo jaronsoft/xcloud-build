@@ -545,9 +545,12 @@ final class SessionStore {
         defer {
             if generation == familyLoadGeneration { isLoadingFamily = false }
         }
-        let cachedFamily: (FamilyDTO, Date)? = cachedFamilyResponse(FamilyDTO.self, path: "family", userId: requestUserId)
-        let cachedChildren: ([ChildDTO], Date)? = cachedFamilyResponse([ChildDTO].self, path: "children", userId: requestUserId)
-        let cachedEnrollments: ([EnrollmentDTO], Date)? = cachedFamilyResponse([EnrollmentDTO].self, path: "enrollments", userId: requestUserId)
+        let cachedFamily = cachedFamilyResponse(FamilyDTO.self, path: "family", userId: requestUserId)
+            .map { ($0.value, $0.lastCheckedAt) }
+        let cachedChildren = cachedFamilyResponse([ChildDTO].self, path: "children", userId: requestUserId)
+            .map { ($0.value, $0.lastCheckedAt) }
+        let cachedEnrollments = cachedFamilyResponse([EnrollmentDTO].self, path: "enrollments", userId: requestUserId)
+            .map { ($0.value, $0.lastCheckedAt) }
 
         let previousSignature = calendarFamilySignature(family, children, enrollments)
         if !networkConfirmedFamilyPaths.contains("family"), let cachedFamily { family = cachedFamily.0 }
@@ -2063,7 +2066,7 @@ final class SessionStore {
         _ type: T.Type,
         path: String,
         userId: String
-    ) -> (T, Date, Bool)? {
+    ) -> (value: T, lastCheckedAt: Date, wasMigrated: Bool)? {
         let key = cacheKey(path: path, query: [])
         let read = responseCache.read(key: key, userId: userId)
         guard let cached = read.response,
@@ -2084,10 +2087,10 @@ final class SessionStore {
         guard MeroliCacheLifecyclePolicy.cacheBelongsToCurrentUser(cacheUserId: userId, authenticatedUserId: self.userId) else {
             return .absent
         }
-        if !networkConfirmedFamilyPaths.contains("family") { family = cachedFamily.0 }
-        if !networkConfirmedFamilyPaths.contains("children") { children = cachedChildren.0 }
-        if !networkConfirmedFamilyPaths.contains("enrollments") { enrollments = cachedEnrollments.0 }
-        let migrated = cachedFamily.2 || cachedChildren.2 || cachedEnrollments.2
+        if !networkConfirmedFamilyPaths.contains("family") { family = cachedFamily.value }
+        if !networkConfirmedFamilyPaths.contains("children") { children = cachedChildren.value }
+        if !networkConfirmedFamilyPaths.contains("enrollments") { enrollments = cachedEnrollments.value }
+        let migrated = cachedFamily.wasMigrated || cachedChildren.wasMigrated || cachedEnrollments.wasMigrated
         return .available(migrated: migrated)
     }
 
