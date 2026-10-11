@@ -347,6 +347,13 @@ final class SessionStore {
     private(set) var isRestoringSession = false
     private(set) var initializationProgress = 0.0
     private(set) var startupMode: MeroliCacheStartMode?
+    private(set) var hasUsableCachedAppState = false
+    var canRenderApp: Bool {
+        MeroliCacheLifecyclePolicy.canRenderApp(
+            hasUsableScopedCache: hasUsableCachedAppState,
+            authenticationComplete: phase == .signedIn
+        )
+    }
     private(set) var isSavingChild = false
     private(set) var deletingChildId: String?
     private(set) var requiresDifferentChildConfirmation = false
@@ -427,12 +434,16 @@ final class SessionStore {
             if case let .available(migrated) = cacheSnapshot {
                 startupMode = MeroliCacheLifecyclePolicy.startMode(hasUsableCache: true, migrationOccurred: migrated)
                 cacheDiagnostic("START_MODE=\(startupMode?.rawValue ?? MeroliCacheStartMode.returningCache.rawValue)")
+                cacheDiagnostic("STARTUP_STATE=RETURNING_CACHED")
+                cacheDiagnostic("APP_RENDER_SOURCE=CACHE")
                 phase = .signedIn
                 Task { await self.validateRestoredCacheSession(userId: cached.userId) }
                 return
             }
             startupMode = MeroliCacheStartMode.firstInstall
             cacheDiagnostic("START_MODE=FIRST_INSTALL")
+            cacheDiagnostic("FAMILY_CACHE_AVAILABLE=NO")
+            cacheDiagnostic("BLOCKING_INIT_REASON=NO_USABLE_LOCAL_STATE")
             await refreshCachedLanguagePreference()
             if phase == .signedOut { return }
             guard isCachedIdentityValidated else { phase = .restoreUnavailable; return }
@@ -444,6 +455,24 @@ final class SessionStore {
             phase = .signedOut
             return
         }
+        if let cachedUserId = KeychainRefreshToken.readLastAuthenticatedUserId(), !cachedUserId.isEmpty {
+            userId = cachedUserId
+            if let cachedLanguage = KeychainRefreshToken.readLastAuthenticatedLanguage(),
+               ["en", "zh-CN"].contains(cachedLanguage) {
+                language = cachedLanguage
+            }
+            if case let .available(migrated) = loadFamilyCacheForDisplay(userId: cachedUserId) {
+                startupMode = MeroliCacheLifecyclePolicy.startMode(hasUsableCache: true, migrationOccurred: migrated)
+                cacheDiagnostic("START_MODE=\(startupMode?.rawValue ?? MeroliCacheStartMode.returningCache.rawValue)")
+                cacheDiagnostic("STARTUP_STATE=RETURNING_CACHED_AUTH_REFRESH_PENDING")
+                cacheDiagnostic("APP_RENDER_SOURCE=CACHE")
+                phase = .signedIn
+            } else {
+                userId = ""
+                cacheDiagnostic("FAMILY_CACHE_AVAILABLE=NO")
+                cacheDiagnostic("BLOCKING_INIT_REASON=NO_USABLE_LOCAL_STATE")
+            }
+        }
         do {
             try await rotate(refreshToken: refreshToken)
             try await loadIdentity()
@@ -454,7 +483,7 @@ final class SessionStore {
                 clearLocalSession()
                 phase = .signedOut
             } else {
-                phase = .restoreUnavailable
+                phase = canRenderApp ? .signedIn : .restoreUnavailable
             }
             errorMessage = message(for: error)
         }
@@ -668,6 +697,8 @@ final class SessionStore {
         if case let .available(migrated) = cacheSnapshot {
             startupMode = MeroliCacheLifecyclePolicy.startMode(hasUsableCache: true, migrationOccurred: migrated)
             cacheDiagnostic("START_MODE=\(startupMode?.rawValue ?? MeroliCacheStartMode.returningCache.rawValue)")
+            cacheDiagnostic("STARTUP_STATE=RETURNING_CACHED")
+            cacheDiagnostic("APP_RENDER_SOURCE=CACHE")
             phase = .signedIn
             let restoredUserId = userId
             Task { await self.revalidateFamilyAndCatalog(userId: restoredUserId) }
@@ -676,6 +707,8 @@ final class SessionStore {
         }
         startupMode = MeroliCacheStartMode.firstInstall
         cacheDiagnostic("START_MODE=FIRST_INSTALL")
+        cacheDiagnostic("FAMILY_CACHE_AVAILABLE=NO")
+        cacheDiagnostic("BLOCKING_INIT_REASON=NO_USABLE_LOCAL_STATE")
         await loadFamily(forceRefresh: true)
         guard phase != .signedOut else { return }
         guard homeErrorMessage == nil else {
@@ -708,6 +741,7 @@ final class SessionStore {
 
     private func revalidateFamilyAndCatalog(userId expectedUserId: String) async {
         guard userId == expectedUserId, phase == .signedIn else { return }
+        cacheDiagnostic("BACKGROUND_REFRESH_START")
         await loadFamily(forceRefresh: true)
         guard userId == expectedUserId, phase == .signedIn else { return }
         let catalogLoaded = await loadSchoolCatalog()
@@ -715,6 +749,9 @@ final class SessionStore {
             errorMessage = catalogErrorMessage
             homeErrorMessage = catalogErrorMessage
         }
+        cacheDiagnostic(homeErrorMessage == nil && (catalogLoaded || !enrollments.contains(where: \.isCurrent))
+            ? "BACKGROUND_REFRESH_SUCCESS"
+            : "BACKGROUND_REFRESH_FAILURE")
     }
 
     private func completeInitializationStep() {
@@ -812,8 +849,12 @@ final class SessionStore {
         childId: String? = nil,
         policy: CalendarLoadPolicy = .cacheFirst
     ) async {
-        guard accessToken != nil else { return }
         let cacheKey = calendarCacheKey(from: startDate, to: endDate, childId: childId)
+        var query = [
+            URLQueryItem(name: "start_date", value: schoolDateString(startDate, childId: childId)),
+            URLQueryItem(name: "end_date", value: schoolDateString(endDate, childId: childId))
+        ]
+        if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
         let previousVisibleKey = lastCalendarRequest.map {
             calendarCacheKey(from: $0.start, to: $0.end, childId: $0.childId)
         }
@@ -822,7 +863,18 @@ final class SessionStore {
         let generation = calendarLoadGeneration
         let requestUserId = userId
         let requestLanguage = language
-        let cachedEntry = calendarSessionCache[cacheKey]
+        let persistentPath = "calendar-cache-\(requestLanguage)"
+        let persistentEntry = cachedAPIResponse(
+            [ParentEventDTO].self,
+            path: persistentPath,
+            query: query,
+            userId: requestUserId
+        ).map { CalendarSessionCacheEntry(events: $0.value, fetchedAt: $0.lastCheckedAt) }
+        let cachedEntry = calendarSessionCache[cacheKey] ?? persistentEntry
+        if calendarSessionCache[cacheKey] == nil, let persistentEntry {
+            calendarSessionCache[cacheKey] = persistentEntry
+        }
+        cacheDiagnostic(cachedEntry == nil ? "CALENDAR_CACHE_AVAILABLE=NO" : "CALENDAR_CACHE_AVAILABLE=YES")
         if let cachedEntry {
             calendarEvents = cachedEntry.events
             calendarErrorMessage = nil
@@ -831,13 +883,21 @@ final class SessionStore {
             calendarErrorMessage = nil
         }
 
-        let cacheIsFresh = cachedEntry.map {
-            max(0, Date().timeIntervalSince($0.fetchedAt)) <= SessionEventCachePolicy.freshness
-        } ?? false
+        let cacheIsFresh = cachedEntry.map { isCacheFresh($0.fetchedAt) } ?? false
+        if cachedEntry != nil && !cacheIsFresh { cacheDiagnostic("CACHE_STALE") }
         if policy == .cacheFirst, cacheIsFresh {
             isLoadingCalendar = false
             isRefreshingCalendar = false
             calendarErrorMessage = nil
+            return
+        }
+
+        guard accessToken != nil else {
+            isLoadingCalendar = false
+            isRefreshingCalendar = false
+            if cachedEntry != nil {
+                calendarErrorMessage = usesChinese ? "当前无法联网，正在显示上次成功加载的数据。" : "Offline. Showing the last successfully loaded data."
+            }
             return
         }
 
@@ -850,17 +910,14 @@ final class SessionStore {
                 isRefreshingCalendar = false
             }
         }
-        var query = [
-            URLQueryItem(name: "start_date", value: schoolDateString(startDate, childId: childId)),
-            URLQueryItem(name: "end_date", value: schoolDateString(endDate, childId: childId))
-        ]
-        if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
+        cacheDiagnostic("BACKGROUND_REFRESH_START")
         do {
             let data = try await authorized(
                 path: "calendar",
                 query: query,
-                forceRefresh: true,
-                allowsStaleResponseFallback: false
+                forceRefresh: policy == .forceRefresh || !cacheIsFresh,
+                allowsStaleResponseFallback: false,
+                cacheSuccessfulResponse: false
             )
             let result = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
             guard generation == calendarLoadGeneration,
@@ -871,9 +928,12 @@ final class SessionStore {
             calendarErrorMessage = nil
             calendarSessionCache[cacheKey] = CalendarSessionCacheEntry(events: result, fetchedAt: Date())
             evictOldestCalendarCacheEntriesIfNeeded()
+            persistAPIResponse(data, path: persistentPath, query: query, userId: requestUserId)
+            cacheDiagnostic("BACKGROUND_REFRESH_SUCCESS")
         } catch {
             guard generation == calendarLoadGeneration else { return }
             calendarErrorMessage = message(for: error)
+            cacheDiagnostic("BACKGROUND_REFRESH_FAILURE")
         }
     }
 
@@ -978,7 +1038,6 @@ final class SessionStore {
         childId: String? = nil,
         policy: HomeEventsLoadPolicy = .cacheFirst
     ) async {
-        guard accessToken != nil else { return }
         let cacheKey = homeEventsCacheKey(from: startDate, to: endDate, childId: childId)
         let previousVisibleKey = lastHomeEventsRequest.map {
             homeEventsCacheKey(from: $0.start, to: $0.end, childId: $0.childId)
@@ -988,7 +1047,22 @@ final class SessionStore {
         let generation = homeEventsLoadGeneration
         let requestUserId = userId
         let requestLanguage = language
-        let cachedEntry = homeEventsSessionCache[cacheKey]
+        var query = [
+            URLQueryItem(name: "start_date", value: schoolDateString(startDate, childId: childId)),
+            URLQueryItem(name: "end_date", value: schoolDateString(endDate, childId: childId))
+        ]
+        if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
+        let persistentPath = "home-calendar-cache-\(requestLanguage)"
+        let persistentEntry = cachedAPIResponse(
+            [ParentEventDTO].self,
+            path: persistentPath,
+            query: query,
+            userId: requestUserId
+        ).map { HomeEventsSessionCacheEntry(events: $0.value, fetchedAt: $0.lastCheckedAt) }
+        let cachedEntry = homeEventsSessionCache[cacheKey] ?? persistentEntry
+        if homeEventsSessionCache[cacheKey] == nil, let persistentEntry {
+            homeEventsSessionCache[cacheKey] = persistentEntry
+        }
 
         if let cachedEntry {
             homeEvents = cachedEntry.events
@@ -998,12 +1072,19 @@ final class SessionStore {
             homeEventsErrorMessage = nil
         }
 
-        let cacheIsFresh = cachedEntry.map {
-            max(0, Date().timeIntervalSince($0.fetchedAt)) <= SessionEventCachePolicy.freshness
-        } ?? false
+        let cacheIsFresh = cachedEntry.map { isCacheFresh($0.fetchedAt) } ?? false
+        if cachedEntry != nil && !cacheIsFresh { cacheDiagnostic("CACHE_STALE") }
         if policy == .cacheFirst, cacheIsFresh {
             isLoadingHomeEvents = false
             homeEventsErrorMessage = nil
+            return
+        }
+
+        guard accessToken != nil else {
+            isLoadingHomeEvents = false
+            if cachedEntry != nil {
+                homeEventsErrorMessage = usesChinese ? "当前无法联网，正在显示上次成功加载的数据。" : "Offline. Showing the last successfully loaded data."
+            }
             return
         }
 
@@ -1012,17 +1093,15 @@ final class SessionStore {
         defer {
             if generation == homeEventsLoadGeneration { isLoadingHomeEvents = false }
         }
-        var query = [
-            URLQueryItem(name: "start_date", value: schoolDateString(startDate, childId: childId)),
-            URLQueryItem(name: "end_date", value: schoolDateString(endDate, childId: childId))
-        ]
-        if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
+        cacheDiagnostic(cachedEntry == nil ? "HOME_EVENTS_CACHE_AVAILABLE=NO" : "HOME_EVENTS_CACHE_AVAILABLE=YES")
+        cacheDiagnostic("BACKGROUND_REFRESH_START")
         do {
             let data = try await authorized(
                 path: "calendar",
                 query: query,
-                forceRefresh: true,
-                allowsStaleResponseFallback: false
+                forceRefresh: policy == .forceRefresh || !cacheIsFresh,
+                allowsStaleResponseFallback: false,
+                cacheSuccessfulResponse: false
             )
             let result = try decoder.decode(APIEnvelope<[ParentEventDTO]>.self, from: data).response
             guard generation == homeEventsLoadGeneration,
@@ -1033,12 +1112,15 @@ final class SessionStore {
             homeEventsErrorMessage = nil
             homeEventsSessionCache[cacheKey] = HomeEventsSessionCacheEntry(events: result, fetchedAt: Date())
             evictOldestHomeEventsCacheEntriesIfNeeded()
+            persistAPIResponse(data, path: persistentPath, query: query, userId: requestUserId)
+            cacheDiagnostic("BACKGROUND_REFRESH_SUCCESS")
         } catch {
             guard generation == homeEventsLoadGeneration,
                   accessToken != nil,
                   userId == requestUserId,
                   language == requestLanguage else { return }
             homeEventsErrorMessage = message(for: error)
+            cacheDiagnostic("BACKGROUND_REFRESH_FAILURE")
         }
     }
 
@@ -1060,29 +1142,76 @@ final class SessionStore {
     }
 
     func loadDailySchedules(for date: Date, childId: String? = nil) async {
-        guard api != nil, accessToken != nil else { return }
+        guard api != nil else { return }
+        let previousDate = lastDailyScheduleDate
+        let previousChildId = lastDailyScheduleChildId
+        let value = schoolDateString(date, childId: childId)
+        let previousScheduleMatches = previousDate.map {
+            schoolDateString($0, childId: childId) == value
+        } == true && previousChildId == childId
         lastDailyScheduleDate = date
         lastDailyScheduleChildId = childId
         dailySchedulesLoadGeneration += 1
         let generation = dailySchedulesLoadGeneration
-        isLoadingHome = true
+        let requestUserId = userId
+        var query = [URLQueryItem(name: "date", value: value)]
+        if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
+        let persistentPath = "daily-schedules-cache-\(language)"
+        let cachedEntry = cachedAPIResponse(
+            [DailyScheduleDTO].self,
+            path: persistentPath,
+            query: query,
+            userId: requestUserId
+        )
+        if let cachedEntry {
+            dailySchedules = cachedEntry.value
+            cacheDiagnostic("DAILY_SCHEDULE_CACHE_AVAILABLE=YES")
+        } else {
+            if !previousScheduleMatches { dailySchedules = [] }
+            cacheDiagnostic("DAILY_SCHEDULE_CACHE_AVAILABLE=NO")
+        }
+        let cacheIsFresh = cachedEntry.map { isCacheFresh($0.lastCheckedAt) } ?? false
+        if cachedEntry != nil && !cacheIsFresh { cacheDiagnostic("CACHE_STALE") }
+        if cacheIsFresh {
+            isLoadingHome = false
+            homeErrorMessage = nil
+            return
+        }
+        guard accessToken != nil else {
+            isLoadingHome = false
+            if cachedEntry != nil {
+                homeErrorMessage = usesChinese ? "当前无法联网，正在显示上次成功加载的安排。" : "Offline. Showing the last successfully loaded schedule."
+            }
+            return
+        }
+        // 有缓存时只进行后台刷新，失败也保留最后一次成功的安排。
+        isLoadingHome = cachedEntry == nil && (!previousScheduleMatches || dailySchedules.isEmpty)
         defer {
             if generation == dailySchedulesLoadGeneration { isLoadingHome = false }
         }
         do {
-            let value = schoolDateString(date, childId: childId)
-            var query = [URLQueryItem(name: "date", value: value)]
-            if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
-            let data = try await authorized(path: "daily-schedules", query: query)
+            cacheDiagnostic("BACKGROUND_REFRESH_START")
+            let data = try await authorized(
+                path: "daily-schedules",
+                query: query,
+                forceRefresh: true,
+                allowsStaleResponseFallback: false,
+                cacheSuccessfulResponse: false
+            )
             let items = try decoder.decode(APIEnvelope<[DailyScheduleDTO]>.self, from: data).response
-            guard generation == dailySchedulesLoadGeneration, accessToken != nil else { return }
+            guard generation == dailySchedulesLoadGeneration,
+                  accessToken != nil,
+                  userId == requestUserId else { return }
             dailySchedules = items
             homeErrorMessage = nil
             errorMessage = nil
+            persistAPIResponse(data, path: persistentPath, query: query, userId: requestUserId)
+            cacheDiagnostic("BACKGROUND_REFRESH_SUCCESS")
         } catch {
-            guard generation == dailySchedulesLoadGeneration else { return }
+            guard generation == dailySchedulesLoadGeneration, userId == requestUserId else { return }
             homeErrorMessage = message(for: error)
             errorMessage = message(for: error)
+            cacheDiagnostic("BACKGROUND_REFRESH_FAILURE")
         }
     }
 
@@ -2007,6 +2136,7 @@ final class SessionStore {
             clearCalendarSessionCache(clearVisibleEvents: true)
             invalidateHomeEventsSessionCache(clearVisibleEvents: true)
             familyLoadGeneration += 1
+            hasUsableCachedAppState = false
             family = nil
             children = []
             enrollments = []
@@ -2015,10 +2145,18 @@ final class SessionStore {
             homeErrorMessage = nil
         }
         userId = user.id
+        _ = KeychainRefreshToken.saveLastAuthenticatedUserId(user.id)
         email = user.email
         isCachedIdentityValidated = true
+        if case let .available(migrated) = loadFamilyCacheForDisplay(userId: user.id) {
+            startupMode = MeroliCacheLifecyclePolicy.startMode(hasUsableCache: true, migrationOccurred: migrated)
+            phase = .signedIn
+            cacheDiagnostic("STARTUP_STATE=SAME_ACCOUNT_CACHE_REUSED")
+            cacheDiagnostic("APP_RENDER_SOURCE=CACHE")
+        }
         let preferencesData = try await authorized(path: "preferences")
         language = try decoder.decode(APIEnvelope<PreferencesDTO>.self, from: preferencesData).response.language
+        _ = KeychainRefreshToken.saveLastAuthenticatedLanguage(language)
         persistCachedSession()
     }
 
@@ -2050,6 +2188,7 @@ final class SessionStore {
                 invalidateHomeEventsSessionCache(clearVisibleEvents: true)
             }
             language = preference.language
+            _ = KeychainRefreshToken.saveLastAuthenticatedLanguage(language)
             persistCachedSession()
             if languageChanged { await reloadLocalizedContent() }
         } catch {
@@ -2075,6 +2214,46 @@ final class SessionStore {
         return (value, cached.lastCheckedAt, read.status == .migrated)
     }
 
+    private func cachedAPIResponse<T: Decodable>(
+        _ type: T.Type,
+        path: String,
+        query: [URLQueryItem],
+        userId cacheUserId: String
+    ) -> (value: T, lastCheckedAt: Date)? {
+        guard MeroliCacheLifecyclePolicy.cacheBelongsToCurrentUser(
+            cacheUserId: cacheUserId,
+            authenticatedUserId: userId
+        ) else { return nil }
+        let read = responseCache.read(key: cacheKey(path: path, query: query), userId: cacheUserId)
+        guard let cached = read.response,
+              let data = cached.data,
+              let value = try? decoder.decode(APIEnvelope<T>.self, from: data).response else { return nil }
+        return (value, cached.lastCheckedAt)
+    }
+
+    private func persistAPIResponse(
+        _ data: Data,
+        path: String,
+        query: [URLQueryItem],
+        userId cacheUserId: String
+    ) {
+        guard userId == cacheUserId, isValidCacheEnvelope(data) else { return }
+        _ = responseCache.write(
+            CachedAPIResponse(
+                cacheSchemaVersion: FamilyResponseCachePolicy.schemaVersion,
+                data: data,
+                lastCheckedAt: Date()
+            ),
+            key: cacheKey(path: path, query: query),
+            userId: cacheUserId
+        )
+    }
+
+    private func isCacheFresh(_ lastCheckedAt: Date) -> Bool {
+        let age = Date().timeIntervalSince(lastCheckedAt)
+        return age >= 0 && age <= SessionEventCachePolicy.freshness
+    }
+
     private func loadFamilyCacheForDisplay(userId: String) -> FamilyCacheSnapshotStatus {
         guard !userId.isEmpty else { return .absent }
         let cachedFamily = cachedFamilyResponse(FamilyDTO.self, path: "family", userId: userId)
@@ -2087,6 +2266,8 @@ final class SessionStore {
         guard MeroliCacheLifecyclePolicy.cacheBelongsToCurrentUser(cacheUserId: userId, authenticatedUserId: self.userId) else {
             return .absent
         }
+        hasUsableCachedAppState = true
+        cacheDiagnostic("FAMILY_CACHE_AVAILABLE=YES")
         if !networkConfirmedFamilyPaths.contains("family") { family = cachedFamily.value }
         if !networkConfirmedFamilyPaths.contains("children") { children = cachedChildren.value }
         if !networkConfirmedFamilyPaths.contains("enrollments") { enrollments = cachedEnrollments.value }
@@ -2361,6 +2542,7 @@ final class SessionStore {
         _ = KeychainRefreshToken.deleteSession()
         email = ""
         userId = ""
+        hasUsableCachedAppState = false
         language = MeroliLanguage.preferred
         family = nil
         children = []
@@ -2451,6 +2633,24 @@ private enum KeychainRefreshToken {
     private static let service = "com.wekarepartners.meroli.app"
     private static let account = "refresh-token"
     private static let sessionAccount = "auth-session-v1"
+    private static let lastUserIdAccount = "last-authenticated-user-id"
+    private static let lastLanguageAccount = "last-authenticated-language"
+
+    static func readLastAuthenticatedUserId() -> String? {
+        readValue(account: lastUserIdAccount)
+    }
+
+    static func saveLastAuthenticatedUserId(_ userId: String) -> Bool {
+        saveValue(Data(userId.utf8), account: lastUserIdAccount)
+    }
+
+    static func readLastAuthenticatedLanguage() -> String? {
+        readValue(account: lastLanguageAccount)
+    }
+
+    static func saveLastAuthenticatedLanguage(_ language: String) -> Bool {
+        saveValue(Data(language.utf8), account: lastLanguageAccount)
+    }
 
     static func readSession() -> CachedAuthSession? {
         let query: [String: Any] = [
@@ -2618,10 +2818,14 @@ private enum KeychainRefreshToken {
     }
 
     static func read() -> String? {
+        readValue(account: account)
+    }
+
+    private static func readValue(account key: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: key,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
@@ -2632,12 +2836,16 @@ private enum KeychainRefreshToken {
     }
 
     static func save(_ token: String) -> Bool {
+        saveValue(Data(token.utf8), account: account)
+    }
+
+    private static func saveValue(_ data: Data, account key: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: key
         ]
-        let attributes: [String: Any] = [kSecValueData as String: Data(token.utf8)]
+        let attributes: [String: Any] = [kSecValueData as String: data]
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {
             var insert = query

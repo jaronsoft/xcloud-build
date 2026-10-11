@@ -28,6 +28,14 @@ public enum MeroliCacheLifecyclePolicy {
         return migrationOccurred ? .cacheMigration : .returningCache
     }
 
+    public static func canRenderApp(hasUsableScopedCache: Bool, authenticationComplete: Bool) -> Bool {
+        hasUsableScopedCache || authenticationComplete
+    }
+
+    public static func shouldBlockForInitialization(hasUsableScopedCache: Bool) -> Bool {
+        !hasUsableScopedCache
+    }
+
     public static func resolvedValue<Value>(
         cached: Value?,
         network: Value?,

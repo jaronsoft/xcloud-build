@@ -41,6 +41,28 @@ final class MeroliCacheLifecyclePolicyTests: XCTestCase {
 
     func testNoUsableSnapshotUsesFirstInstallMode() {
         XCTAssertEqual(MeroliCacheLifecyclePolicy.startMode(hasUsableCache: false, migrationOccurred: false), .firstInstall)
+        XCTAssertTrue(MeroliCacheLifecyclePolicy.shouldBlockForInitialization(hasUsableScopedCache: false))
+        XCTAssertFalse(MeroliCacheLifecyclePolicy.canRenderApp(hasUsableScopedCache: false, authenticationComplete: false))
+    }
+
+    func testReturningCacheRendersWhileAuthenticationRefreshIsPending() {
+        XCTAssertTrue(MeroliCacheLifecyclePolicy.canRenderApp(hasUsableScopedCache: true, authenticationComplete: false))
+        XCTAssertFalse(MeroliCacheLifecyclePolicy.shouldBlockForInitialization(hasUsableScopedCache: true))
+    }
+
+    func testAppUpdateForceQuitAndSameAccountReloginDoNotChangeCacheReadiness() {
+        let storedSchema = 3
+        XCTAssertEqual(MeroliCacheLifecyclePolicy.schemaAction(storedVersion: storedSchema), .use)
+        for _ in ["app-update", "force-quit-relaunch", "same-account-relogin"] {
+            XCTAssertTrue(MeroliCacheLifecyclePolicy.canRenderApp(hasUsableScopedCache: true, authenticationComplete: false))
+        }
+    }
+
+    func testCachedCalendarAndHomeDataSurviveNetworkFailure() {
+        let cachedEvents = ["School holiday"]
+        let cachedSchedules = ["Evergreen schedule"]
+        XCTAssertEqual(MeroliCacheLifecyclePolicy.resolvedValue(cached: cachedEvents, network: nil, networkSucceeded: false), cachedEvents)
+        XCTAssertEqual(MeroliCacheLifecyclePolicy.resolvedValue(cached: cachedSchedules, network: nil, networkSucceeded: false), cachedSchedules)
     }
 
     func testFailedCacheReplacementLeavesPreviousValidBytesUntouched() throws {

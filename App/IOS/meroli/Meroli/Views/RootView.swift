@@ -52,11 +52,15 @@ struct RootView: View {
                         beginSessionRestore()
                     }
                 } else {
-                    switch session.phase {
-                    case .restoring: LoadingView()
-                    case .restoreUnavailable: SessionRestoreUnavailableView()
-                    case .signedOut: SignInView()
-                    case .signedIn: FamilyTabView()
+                    if session.canRenderApp {
+                        FamilyTabView()
+                    } else {
+                        switch session.phase {
+                        case .restoring: LoadingView()
+                        case .restoreUnavailable: SessionRestoreUnavailableView()
+                        case .signedOut: SignInView()
+                        case .signedIn: FamilyTabView()
+                        }
                     }
                 }
             }
@@ -994,7 +998,7 @@ private struct HomeScreen: View {
                     if let error = session.homeErrorMessage, !session.dailySchedules.isEmpty {
                         homeErrorCard(error)
                     }
-                    if session.isLoadingFamily || session.isLoadingHome {
+                    if (session.isLoadingFamily || session.isLoadingHome) && session.dailySchedules.isEmpty {
                         ProgressView(zh ? "正在读取学校安排…" : "Loading school schedules…").frame(maxWidth: .infinity, minHeight: 120)
                     } else if let error = session.homeErrorMessage, session.dailySchedules.isEmpty {
                         homeErrorCard(error)
@@ -1927,6 +1931,14 @@ private struct CalendarScreen: View {
                         selectedDate = schoolCalendar.startOfDay(for: .now)
                         Task { await load() }
                     }
+                }
+
+                if session.calendarErrorMessage != nil && !session.calendarEvents.isEmpty {
+                    Label(zh ? "离线 · 显示上次成功加载的数据" : "Offline · showing the last successfully loaded data", systemImage: "wifi.slash")
+                        .font(.caption)
+                        .foregroundStyle(MeroliColor.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
                 }
 
                 if session.isLoadingCalendar && session.calendarEvents.isEmpty {
