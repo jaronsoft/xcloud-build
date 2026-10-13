@@ -2,7 +2,9 @@
 
 > 项目关系：[项目关联与上下文检索索引](../../../documents/项目关联索引.md)
 
-AIK 是 RAG 知识库项目的产品名称，本目录是该项目面向企业知识空间的原生 SwiftUI 客户端。应用支持 SaaS 系统账号登录、多租户选择、邀请/匿名访问、历史会话、SSE 流式问答、评价及语音提问，并复用现有线上接口，不修改服务端和数据库。
+AIK 是 RAG 知识库项目的产品名称，本目录是该项目面向企业知识空间的原生 SwiftUI 客户端。
+应用支持 SaaS 系统账号登录、多租户选择、邀请/匿名访问、历史会话、SSE 流式问答、评价及语音提问，
+并复用现有线上接口，不修改服务端和数据库。
 
 ## 工程信息
 
@@ -10,7 +12,7 @@ AIK 是 RAG 知识库项目的产品名称，本目录是该项目面向企业�
 - Target / Module：`AIK`
 - Bundle ID：`com.wekarepartners.aik`
 - Apple Team ID：`R3622MSZJ7`
-- 版本：`1.0.1`；本地工程默认 Build：`100`
+- 版本：`1.1.2`；本地工程默认 Build：`103`
 - 技术基线：Swift 6、SwiftUI、Swift Concurrency、iOS 17+
 - 设备：仅 iPhone
 - 生产 API：`https://app.jaronsoft.com/api`
@@ -38,7 +40,9 @@ xcodebuild -project AIK.xcodeproj -scheme AIK \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
-TestFlight 上传使用 [ExportOptions-TestFlight.plist](./Configuration/ExportOptions-TestFlight.plist)，实际发布记录见 App Store Connect 文档。
+TestFlight 上传使用
+[ExportOptions-TestFlight.plist](./Configuration/ExportOptions-TestFlight.plist)，
+实际发布记录见 App Store Connect 文档。
 
 ## 文档
 
@@ -67,7 +71,8 @@ App/IOS/AIK/sync-to-github.sh --delete
 
 需要持续同步时可执行 `App/IOS/AIK/sync-to-github.sh --watch`。也可通过 `AIK_GITHUB_DIR` 临时覆盖目标目录。
 
-目标仓库只是镜像，不应直接修改；所有业务、工程和文档变更均应先在本目录完成，再同步到 GitHub 仓库。同步脚本始终保留目标仓库的 `.git/`，并排除 Xcode 用户状态、构建产物和签名文件。
+目标仓库只是镜像，不应直接修改；所有业务、工程和文档变更均应先在本目录完成，再同步到 GitHub 仓库。
+同步脚本始终保留目标仓库的 `.git/`，并排除 Xcode 用户状态、构建产物和签名文件。
 
 ## 安全边界
 

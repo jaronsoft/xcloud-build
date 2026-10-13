@@ -25,5 +25,15 @@ struct AppEnvironment: Sendable {
         return "\(version) (\(build))"
     }
 
-    static let privacyURL = URL(string: "https://ai.jaronsoft.com/privacy/")!
+    static var versionDisplayLabel: String {
+        String(format: String(localized: "app.version_format"), releaseLabel)
+    }
+
+    static var privacyURL: URL { legalURL(path: "privacy-policy") }
+    static var termsURL: URL { legalURL(path: "terms") }
+
+    private static func legalURL(path: String) -> URL {
+        let language = Locale.preferredLanguages.first?.hasPrefix("zh") == true ? "zh-CN" : "en-US"
+        return URL(string: "https://ai.jaronsoft.com/\(path)/?lang=\(language)")!
+    }
 }

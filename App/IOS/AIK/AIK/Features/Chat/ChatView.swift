@@ -208,6 +208,11 @@ private struct AccountMenu: View {
 
     var body: some View {
         Menu {
+            Text(AppEnvironment.versionDisplayLabel)
+            Divider()
+            Link("privacy.policy", destination: AppEnvironment.privacyURL)
+            Link("terms.service", destination: AppEnvironment.termsURL)
+            Divider()
             Button("chat.switch_tenant", systemImage: "building.2", action: onSwitch)
             if canLogout {
                 Button(

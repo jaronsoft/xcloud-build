@@ -55,6 +55,12 @@
 "login.keep" = "保持登录";
 "login.password" = "密码";
 "privacy.policy" = "隐私政策";
+"terms.service" = "用户服务协议";
+"app.version_format" = "版本 %@";
+"common.delete" = "删除";
+"tenant.pin" = "置顶";
+"tenant.unpin" = "取消置顶";
+"tenant.pinned" = "已置顶";
 "login.required" = "请输入账号和密码。";
 "login.subtitle" = "SaaS 多租户企业知识库";
 "login.title" = "AIK 企业知识库";

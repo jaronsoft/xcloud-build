@@ -7,6 +7,10 @@ final class TenantStore {
     private(set) var tenants: [TenantSummary] = []
     private(set) var selectedTenant: TenantSummary?
     private(set) var recentTenants: [TenantSummary] = []
+    private(set) var pinnedTenantIDs: Set<String> = []
+    var orderedRecentTenants: [TenantSummary] {
+        recentTenants.filter { isPinned($0) } + recentTenants.filter { !isPinned($0) }
+    }
     var isLoading = false
     var errorMessage: String?
 
@@ -127,11 +131,36 @@ final class TenantStore {
         tenants = []
     }
 
+    func removeRecentTenant(_ tenant: TenantSummary) {
+        recentTenants.removeAll { $0.id == tenant.id }
+        pinnedTenantIDs.remove(tenant.id)
+        persist(Array(pinnedTenantIDs), key: Keys.pinnedTenantIDs)
+        persist(recentTenants, key: Keys.recentTenants)
+    }
+
+    func isPinned(_ tenant: TenantSummary) -> Bool {
+        pinnedTenantIDs.contains(tenant.id)
+    }
+
+    func togglePinned(_ tenant: TenantSummary) {
+        guard recentTenants.contains(where: { $0.id == tenant.id }) else { return }
+        if isPinned(tenant) {
+            pinnedTenantIDs.remove(tenant.id)
+        } else {
+            pinnedTenantIDs.insert(tenant.id)
+        }
+        trimRecentTenants()
+        persist(Array(pinnedTenantIDs), key: Keys.pinnedTenantIDs)
+        persist(recentTenants, key: Keys.recentTenants)
+    }
+
     func reset() {
         switchTenant()
         tenants = []
         recentTenants = []
+        pinnedTenantIDs = []
         defaults.removeObject(forKey: Keys.recentTenants)
+        defaults.removeObject(forKey: Keys.pinnedTenantIDs)
         for key in defaults.dictionaryRepresentation().keys
         where key.hasPrefix("aik.skipped-session.") {
             defaults.removeObject(forKey: key)
@@ -154,13 +183,21 @@ final class TenantStore {
         persist(tenant, key: Keys.selectedTenant)
         recentTenants.removeAll { $0.id == tenant.id }
         recentTenants.insert(tenant, at: 0)
-        recentTenants = Array(recentTenants.prefix(6))
-        if let data = try? JSONEncoder().encode(recentTenants) {
-            defaults.set(data, forKey: Keys.recentTenants)
-        }
+        trimRecentTenants()
+        persist(recentTenants, key: Keys.recentTenants)
+    }
+
+    private func trimRecentTenants() {
+        // 置顶记录不被新访问挤出，其余记录继续保留最近六条。
+        let recentIDs = Set(recentTenants.filter { !isPinned($0) }.prefix(6).map(\.id))
+        recentTenants.removeAll { !isPinned($0) && !recentIDs.contains($0.id) }
     }
 
     private func restoreRecentTenants() {
+        if let data = defaults.data(forKey: Keys.pinnedTenantIDs),
+           let decoded = try? JSONDecoder().decode([String].self, from: data) {
+            pinnedTenantIDs = Set(decoded)
+        }
         if let data = defaults.data(forKey: Keys.recentTenants),
            let decoded = try? JSONDecoder().decode(
                [TenantSummary].self,
@@ -186,5 +223,6 @@ final class TenantStore {
     private enum Keys {
         static let selectedTenant = "aik.selected-tenant"
         static let recentTenants = "aik.recent-tenants"
+        static let pinnedTenantIDs = "aik.pinned-tenant-ids"
     }
 }

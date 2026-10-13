@@ -68,6 +68,11 @@ struct InviteAccessView: View {
                     }
                 }
 
+                Section {
+                    Link("privacy.policy", destination: AppEnvironment.privacyURL)
+                    Link("terms.service", destination: AppEnvironment.termsURL)
+                }
+
                 if let error = model.errorMessage {
                     Section {
                         Label(error, systemImage: "exclamationmark.triangle.fill")

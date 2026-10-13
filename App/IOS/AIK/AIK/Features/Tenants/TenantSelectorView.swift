@@ -40,8 +40,24 @@ struct TenantSelectorView: View {
                     List {
                         if !store.recentTenants.isEmpty && searchText.isEmpty {
                             Section("tenant.recent") {
-                                ForEach(store.recentTenants) { tenant in
+                                ForEach(store.orderedRecentTenants) { tenant in
                                     tenantRow(tenant)
+                                        .swipeActions(edge: .trailing) {
+                                            Button(role: .destructive) {
+                                                store.removeRecentTenant(tenant)
+                                            } label: {
+                                                Label("common.delete", systemImage: "trash")
+                                            }
+                                            Button {
+                                                store.togglePinned(tenant)
+                                            } label: {
+                                                Label(
+                                                    store.isPinned(tenant) ? "tenant.unpin" : "tenant.pin",
+                                                    systemImage: store.isPinned(tenant) ? "pin.slash" : "pin"
+                                                )
+                                            }
+                                            .tint(.orange)
+                                        }
                                 }
                             }
                         }
@@ -59,6 +75,14 @@ struct TenantSelectorView: View {
                 }
             }
             .navigationTitle("tenant.title")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Text(AppEnvironment.versionDisplayLabel)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(.bar)
+            }
             .searchable(text: $searchText, prompt: "tenant.search")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -75,6 +99,7 @@ struct TenantSelectorView: View {
                             Label("privacy.policy", systemImage: "hand.raised")
                         }
                         .accessibilityLabel("privacy.policy")
+                        Link("terms.service", destination: AppEnvironment.termsURL)
                         Divider()
                         Button("account.logout", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                             store.reset()
@@ -127,6 +152,11 @@ struct TenantSelectorView: View {
                         .lineLimit(1)
                 }
                 Spacer()
+                if store.isPinned(tenant) {
+                    Image(systemName: "pin.fill")
+                        .foregroundStyle(.orange)
+                        .accessibilityLabel(Text("tenant.pinned"))
+                }
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.tertiary)

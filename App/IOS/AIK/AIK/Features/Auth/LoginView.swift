@@ -111,8 +111,10 @@ struct LoginView: View {
                             .font(.footnote)
                     }
                     .accessibilityLabel("privacy.policy")
+                    Link("terms.service", destination: AppEnvironment.termsURL)
+                        .font(.footnote)
 
-                    Text(AppEnvironment.releaseLabel)
+                    Text(AppEnvironment.versionDisplayLabel)
                         .font(.caption2.monospaced())
                         .foregroundStyle(.tertiary)
                     Spacer(minLength: 28)

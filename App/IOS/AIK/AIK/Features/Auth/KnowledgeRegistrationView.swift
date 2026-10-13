@@ -122,6 +122,7 @@ struct KnowledgeRegistrationView: View {
                 Toggle("registration.privacy_accept", isOn: $privacyAccepted)
                 Toggle("registration.terms_accept", isOn: $termsAccepted)
                 Link("privacy.policy", destination: AppEnvironment.privacyURL)
+                Link("terms.service", destination: AppEnvironment.termsURL)
             } footer: {
                 Text("registration.payment_notice")
             }

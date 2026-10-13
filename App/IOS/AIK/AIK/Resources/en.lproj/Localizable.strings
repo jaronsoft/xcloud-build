@@ -55,6 +55,12 @@
 "login.keep" = "Keep me signed in";
 "login.password" = "Password";
 "privacy.policy" = "Privacy Policy";
+"terms.service" = "Terms of Service";
+"app.version_format" = "Version %@";
+"common.delete" = "Delete";
+"tenant.pin" = "Pin";
+"tenant.unpin" = "Unpin";
+"tenant.pinned" = "Pinned";
 "login.required" = "Enter your account and password.";
 "login.subtitle" = "SaaS multi-tenant enterprise knowledge base";
 "login.title" = "AIK";
