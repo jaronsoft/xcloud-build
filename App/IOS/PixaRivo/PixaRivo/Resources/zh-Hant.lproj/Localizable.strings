@@ -284,6 +284,9 @@
 "submission.submitting" = "提交創作";
 "submission.failed" = "提交失敗";
 "submission.upload_failed" = "材料無法上傳。再試一次。";
+"submission.error.service" = "服務暫時無法使用，可能正在維護，請稍後再試。已為你保留所選圖片。";
+"submission.error.busy" = "伺服器忙碌，暫時無法處理此請求，請稍後再試。已為你保留所選圖片。";
+"submission.error.rejected" = "系統暫時無法受理此請求，請稍後再試。已為你保留所選圖片。";
 "submission.prepare_failed" = "無法準備創作。再次選擇材料。";
 "submission.confirmation_expired" = "這個創作已經超過 30 分鐘了。提交前確認一下。";
 "submission.review_template" = "再次回顧";

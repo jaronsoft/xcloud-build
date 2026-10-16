@@ -349,6 +349,10 @@ final class PixaBackgroundTransferManager: NSObject, @unchecked Sendable {
     func retry(id: String, accessToken: String) {
         stateQueue.async {
             guard var submission = self.submissions[id] else { return }
+            // 本地保留的上传文件是重试素材源；重新上传可恢复用户已从素材库删除的图片。
+            for index in submission.slots.indices where submission.slots[index].uploadBodyFilename != nil {
+                submission.slots[index].assetID = nil
+            }
             submission.phase = submission.slots.allSatisfy { $0.assetID != nil }
                 ? .submitting : .uploading
             submission.errorMessage = nil
@@ -512,7 +516,7 @@ final class PixaBackgroundTransferManager: NSObject, @unchecked Sendable {
         } catch {
             fail(
                 submissionID: submission.id,
-                message: error.localizedDescription,
+                message: AppLanguage.localized("submission.error.service"),
                 action: .retry
             )
         }
@@ -709,13 +713,19 @@ final class PixaBackgroundTransferManager: NSObject, @unchecked Sendable {
             refreshCredentialsAndRetry(key: key, rejectedToken: bearerToken(from: task))
             return
         }
-        if let error {
-            retryOrFail(key: key, message: error.localizedDescription, retryable: true)
+        if error != nil {
+            retryOrFail(
+                key: key,
+                message: AppLanguage.localized("submission.error.service"),
+                retryable: true
+            )
             return
         }
         guard let resolvedStatusCode, (200..<300).contains(resolvedStatusCode) else {
-            let message = responseMessage(data)
-                ?? HTTPURLResponse.localizedString(forStatusCode: resolvedStatusCode ?? 0)
+            let message = userFacingFailureMessage(
+                statusCode: resolvedStatusCode,
+                response: responseMessage(data)
+            )
             retryOrFail(
                 key: key,
                 message: message,
@@ -731,14 +741,19 @@ final class PixaBackgroundTransferManager: NSObject, @unchecked Sendable {
         case .upload:
             retryOrFail(
                 key: key,
-                message: responseMessage(data)
-                    ?? AppLanguage.localized("submission.upload_failed"),
+                message: userFacingFailureMessage(
+                    statusCode: resolvedStatusCode,
+                    response: responseMessage(data)
+                ),
                 retryable: false
             )
         case .submit:
             retryOrFail(
                 key: key,
-                message: responseMessage(data) ?? APIError.invalidResponse.localizedDescription,
+                message: userFacingFailureMessage(
+                    statusCode: resolvedStatusCode,
+                    response: responseMessage(data)
+                ),
                 retryable: false
             )
         }
@@ -755,10 +770,6 @@ final class PixaBackgroundTransferManager: NSObject, @unchecked Sendable {
             return
         }
         submission.slots[index].assetID = asset.id
-        if let filename = submission.slots[index].uploadBodyFilename {
-            try? fileManager.removeItem(at: rootDirectory.appending(path: filename))
-        }
-        submission.slots[index].uploadBodyFilename = nil
         submission.attempts[key.description] = nil
         submissions[key.submissionID] = submission
         persist()
@@ -828,7 +839,7 @@ final class PixaBackgroundTransferManager: NSObject, @unchecked Sendable {
         fail(
             submissionID: key.submissionID,
             message: message,
-            action: retryable ? .retry : classifyFailureAction(message)
+            action: retryable ? .retry : (classifyFailureAction(message) ?? .retry)
         )
     }
 
@@ -869,16 +880,38 @@ final class PixaBackgroundTransferManager: NSObject, @unchecked Sendable {
         notifyChanged()
     }
 
+    private func userFacingFailureMessage(statusCode: Int?, response: String?) -> String {
+        if let response, classifyFailureAction(response) == .reviewTemplate {
+            return AppLanguage.localized("editor.pricing.changed")
+        }
+        if let response, classifyFailureAction(response) == .buyPoints {
+            return AppLanguage.localized("api.INSUFFICIENT_POINTS")
+        }
+        if statusCode == 429 {
+            return AppLanguage.localized("submission.error.busy")
+        }
+        if let statusCode, statusCode >= 500 {
+            return AppLanguage.localized("submission.error.service")
+        }
+        if let statusCode, (400..<500).contains(statusCode) {
+            return AppLanguage.localized("submission.error.rejected")
+        }
+        return AppLanguage.localized("submission.error.service")
+    }
+
     private func classifyFailureAction(
         _ message: String
     ) -> PixaCreationSubmissionFailureAction? {
-        if message.hasPrefix("PRICE_CHANGED|") || message == "PRICE_CHANGED" {
+        if message.hasPrefix("PRICE_CHANGED|")
+            || message == "PRICE_CHANGED"
+            || message == AppLanguage.localized("editor.pricing.changed") {
             return .reviewTemplate
         }
         let normalized = message.lowercased()
         if normalized.contains("points_not_enough")
             || normalized.contains("insufficient")
-            || message.contains("积分不足") {
+            || message.contains("积分不足")
+            || message == AppLanguage.localized("api.INSUFFICIENT_POINTS") {
             return .buyPoints
         }
         if message.contains("参考图不存在或无权访问")
@@ -886,7 +919,7 @@ final class PixaBackgroundTransferManager: NSObject, @unchecked Sendable {
             || normalized.contains("reference image unavailable") {
             return .retry
         }
-        return nil
+        return .retry
     }
 
     private func inferredFailureAction(
@@ -958,7 +991,7 @@ final class PixaBackgroundTransferManager: NSObject, @unchecked Sendable {
             clientInstanceID: Self.currentClientInstanceID,
             clientAppVersion: Self.currentClientAppVersion,
             phase: .failed,
-            errorMessage: error.localizedDescription,
+            errorMessage: AppLanguage.localized("submission.error.service"),
             failureAction: nil,
             attempts: [:]
         )

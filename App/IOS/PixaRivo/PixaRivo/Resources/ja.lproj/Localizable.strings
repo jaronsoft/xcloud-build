@@ -273,6 +273,9 @@
 "submission.submitting" = "作品の提出";
 "submission.failed" = "送信に失敗しました";
 "submission.upload_failed" = "素材をアップロードできませんでした。もう一度やり直してください。";
+"submission.error.service" = "サービスを一時的に利用できません。メンテナンス中の可能性があります。時間をおいて再試行してください。選択した画像は保存されています。";
+"submission.error.busy" = "サーバーが混み合っているため、現在リクエストを処理できません。時間をおいて再試行してください。選択した画像は保存されています。";
+"submission.error.rejected" = "現在このリクエストを受け付けられません。時間をおいて再試行してください。選択した画像は保存されています。";
 "submission.prepare_failed" = "作成を準備できませんでした。再度素材を選択してください。";
 "submission.confirmation_expired" = "この作品は 30 分以上経過しています。送信する前に確認してください。";
 "submission.review_template" = "もう一度見直す";

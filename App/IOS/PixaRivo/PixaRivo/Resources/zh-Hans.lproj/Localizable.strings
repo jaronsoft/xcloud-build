@@ -180,6 +180,9 @@
 "submission.submitting" = "正在提交任务";
 "submission.failed" = "任务提交失败";
 "submission.upload_failed" = "素材上传失败，请重试。";
+"submission.error.service" = "服务暂时不可用，可能正在维护，请稍后重试。已选图片已为你保留。";
+"submission.error.busy" = "服务器繁忙，暂时无法处理请求，请稍后重试。已选图片已为你保留。";
+"submission.error.rejected" = "系统暂时无法受理这次请求，请稍后重试。已选图片已为你保留。";
 "submission.prepare_failed" = "暂时无法准备创作任务，请重新选择素材。";
 "submission.confirmation_expired" = "该创作已超过 30 分钟，请确认后再继续提交。";
 "submission.review_template" = "重新确认";

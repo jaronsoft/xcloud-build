@@ -19,7 +19,7 @@ PixaRivo 是 WeKare Partners LLC 推出的模板化视觉合成应用。用户�
 - 应用内语言只影响本地界面和本地化内容，不改变 API 基址、接口区域策略或静态图片 CDN；素材区域仍由独立的“素材区域”设置控制
 - 桌面名称按系统语言本地化：简体中文显示“图漾”，英文及默认语言显示“PixaRivo”
 - 版本采用 `主版本.次版本.修订版本`；当前工程营销版本为 `1.2.12`，本地
-  `CURRENT_PROJECT_VERSION = 58`。线上 Build 由发布流程自动生成；`1.2.11 (Build 133)` 和 `1.2.9 (Build 125)` 已发布，
+  `CURRENT_PROJECT_VERSION = 58`。`1.2.12` 已发布，线上 Build 与日期待确认；`1.2.11 (Build 133)` 和 `1.2.9 (Build 125)` 已发布，
   `1.2.6 (Build 112)` 已发布，不从本地值推算
 - 简体中文和 English (U.S.) 更新说明记录在 [`RELEASE_NOTES.md`](./RELEASE_NOTES.md)，日语、西班牙语、巴西葡萄牙语和繁体中文记录在 [其他语言发布说明](./RELEASE_NOTES_OTHER_LANGUAGES.md)；上传完成后补充实际构建与发布时间
 - `1.2.0` 以前的中英文版本记录按主版本和次版本归档，现有记录见 [1.1 时间线](./ReleaseNotes/1.1.md)

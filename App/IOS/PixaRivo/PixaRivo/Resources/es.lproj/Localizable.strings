@@ -294,6 +294,9 @@
 "submission.submitting" = "Enviar creación";
 "submission.failed" = "Envío fallido";
 "submission.upload_failed" = "No se pudieron cargar los materiales. Intentar otra vez.";
+"submission.error.service" = "El servicio no está disponible temporalmente y podría estar en mantenimiento. Inténtalo más tarde. Tus imágenes seleccionadas están guardadas.";
+"submission.error.busy" = "El servidor está ocupado y no puede procesar esta solicitud ahora. Inténtalo más tarde. Tus imágenes seleccionadas están guardadas.";
+"submission.error.rejected" = "El sistema no puede aceptar esta solicitud ahora. Inténtalo más tarde. Tus imágenes seleccionadas están guardadas.";
 "submission.prepare_failed" = "La creación no pudo prepararse. Seleccione los materiales nuevamente.";
 "submission.confirmation_expired" = "Esta creación tiene más de 30 minutos. Confírmalo antes de enviarlo.";
 "submission.review_template" = "Revisar de nuevo";

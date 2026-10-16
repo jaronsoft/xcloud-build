@@ -294,6 +294,9 @@
 "submission.submitting" = "Enviando criação";
 "submission.failed" = "Falha no envio";
 "submission.upload_failed" = "Não foi possível carregar os materiais. Tente novamente.";
+"submission.error.service" = "O serviço está temporariamente indisponível e pode estar em manutenção. Tente novamente mais tarde. Suas imagens selecionadas foram salvas.";
+"submission.error.busy" = "O servidor está ocupado e não pode processar esta solicitação agora. Tente novamente mais tarde. Suas imagens selecionadas foram salvas.";
+"submission.error.rejected" = "O sistema não pode aceitar esta solicitação agora. Tente novamente mais tarde. Suas imagens selecionadas foram salvas.";
 "submission.prepare_failed" = "A criação não pôde ser preparada. Selecione os materiais novamente.";
 "submission.confirmation_expired" = "Esta criação tem mais de 30 minutos. Confirme antes de enviar.";
 "submission.review_template" = "Revise novamente";

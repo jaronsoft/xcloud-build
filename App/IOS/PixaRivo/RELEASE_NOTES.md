@@ -9,20 +9,30 @@
 
 ### App Store 推广文本（简体中文）
 
-从精选视觉模板开始，替换自己的图片和可编辑文字，保留精心设计的风格与版式，制作海报、社交配图等作品。浏览精选案例寻找灵感，并在作品页查看创作进度、管理历史作品。
+复杂的提示词，我们替你记住。选好模板，换上图片和文字，轻松制作海报与社交配图。新用户注册可领积分，每日首次使用还有积分奖励。
 
 ### App Store Promotional Text (English, U.S.)
 
-Start with curated visual templates. Add photos and editable text to make posters and social graphics with ready-made layouts. Browse examples and track your creations.
+Complex prompts? We’ve got them covered. Choose a template, add photos and text, and create. Get signup points plus a daily reward on your first visit.
 
-## 1.2.12 — 2026-09-30 (Build 待自动生成) — 待发布
+## 1.2.13 — 2026-10-16 (Build 待自动生成) — 待发布
 
 ### 简体中文
 
+### English (U.S.)
+
+## 1.2.12 — 日期待确认 (Build 待确认) — 已发布
+
+### 简体中文
+
+- 修复创作时图片上传失败的问题。
+- 创作遇到暂时性问题时会显示更清晰的提示，并可重试；已选图片会保留，方便再次提交。
 - 优化应用稳定性与整体使用体验。
 
 ### English (U.S.)
 
+- Fixed an issue that prevented images from uploading during creation.
+- Added clearer guidance and a retry option for temporary creation issues. Selected images are kept available for another submission.
 - Improved app stability and the overall experience.
 
 ## 1.2.11 — 2026-09-28 (Build 133) — 已发布

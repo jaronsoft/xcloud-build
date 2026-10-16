@@ -8,36 +8,54 @@
 
 ### App Store Promotional Text (日本語)
 
-厳選されたビジュアルテンプレートで、写真と編集できる文字を差し替え、完成されたデザインを活かしたポスターやSNS画像を作成。作例からヒントを見つけ、作品の進行状況や履歴も確認できます。
+複雑なプロンプトはおまかせ。テンプレートを選び、写真や文字を入れるだけでポスターやSNS画像を作成。新規登録と毎日の初回利用でポイントを獲得。
 
 ### App Store Promotional Text (Español)
 
-Empieza con plantillas visuales. Añade tus fotos y textos editables para crear pósteres y gráficos para redes con diseños listos. Explora ejemplos y sigue tus obras.
+¿Prompts complejos? Nosotros nos encargamos. Elige una plantilla, añade fotos y crea. Recibe puntos al registrarte y una recompensa en tu primera visita diaria.
 
 ### App Store Promotional Text (Português, Brasil)
 
-Comece com modelos visuais. Adicione fotos e textos editáveis para criar pôsteres e artes para redes com layouts prontos. Explore exemplos e acompanhe suas criações.
+Prompts complexos? Deixe com a gente. Escolha um modelo, adicione fotos e crie. Ganhe pontos ao se cadastrar e uma recompensa na primeira visita do dia.
 
 ### App Store 推廣文字（繁體中文）
 
-從精選視覺範本開始，替換自己的圖片與可編輯文字，保留精心設計的風格與版面，製作海報、社群配圖等作品。瀏覽精選案例尋找靈感，並在作品頁查看創作進度、管理歷史作品。
+複雜的提示詞，我們替你記住。選好範本，換上圖片與文字，輕鬆製作海報與社群配圖。新用戶註冊可領點數，每日首次使用還有點數獎勵。
 
-## 1.2.12 — 2026-09-30 (Build 待自动生成) — 待发布
+## 1.2.13 — 2026-10-16 (Build 待自动生成) — 待发布
 
 ### 日本語
 
+### Español
+
+### Português (Brasil)
+
+### 繁體中文
+
+## 1.2.12 — 日期待确认 (Build 待确认) — 已发布
+
+### 日本語
+
+- 制作中に画像をアップロードできない問題を修正しました。
+- 一時的な問題が発生した際の案内を分かりやすくし、再試行できるようになりました。選択した画像は再送信できるよう保持されます。
 - アプリの安定性と全体的な使いやすさを改善しました。
 
 ### Español
 
+- Se corrigió un problema que impedía subir imágenes durante la creación.
+- Ahora se muestran mensajes más claros y puedes volver a intentarlo si ocurre un problema temporal. Las imágenes seleccionadas se conservan para reenviar la solicitud.
 - Mejoramos la estabilidad de la aplicación y la experiencia general.
 
 ### Português (Brasil)
 
+- Corrigimos um problema que impedia o envio de imagens durante a criação.
+- Agora mostramos orientações mais claras e você pode tentar novamente quando ocorrer um problema temporário. As imagens selecionadas ficam salvas para um novo envio.
 - Melhoramos a estabilidade do app e a experiência geral.
 
 ### 繁體中文
 
+- 修復創作時圖片無法上傳的問題。
+- 遇到暫時性問題時會顯示更清楚的提示，並可重新嘗試；所選圖片會保留，方便再次提交。
 - 優化應用程式穩定性與整體使用體驗。
 
 ## 1.2.11 — 2026-09-28 (Build 133) — 已发布

@@ -2,9 +2,9 @@
 
 <!-- markdownlint-disable MD013 -->
 
-> 更新时间：2026-09-30
+> 更新时间：2026-10-16
 >
-> 当前工程营销版本：`1.2.12`；`1.2.11 (Build 133)` 已发布
+> 当前工程营销版本：`1.2.12`；`1.2.12` 已发布，实际 Build 与日期待确认
 >
 > Bundle ID：`com.wekarepartners.pixarivo`
 >
@@ -19,26 +19,26 @@ PixaRivo 独立官网已上线，App Store Connect 的 Marketing URL 使用 `htt
 | 项目 | 记录 |
 | --- | --- |
 | 工程配置 | `MARKETING_VERSION = 1.2.12`，本地 `CURRENT_PROJECT_VERSION = 58` |
-| 最近已发布版本 | `1.2.11 (Build 133)` |
+| 最近已发布版本 | `1.2.12 (Build、日期待确认)` |
 | 审核中版本 | 无 |
-| 历史已发布版本 | `1.2.6 (Build 112)` |
-| 待发布版本 | `1.2.12 (Build 待自动生成)` |
+| 其他已发布版本 | `1.2.11 (Build 133)`、`1.2.9 (Build 125)`、`1.2.6 (Build 112)` |
+| 更新说明预留位 | `1.2.13`（尚未切换工程版本） |
 | 更新说明 | 见 [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md) |
 | 送审状态 | 见 [截图脚本与提交清单](./06-截图脚本与提交清单.md) |
 
-App Store Connect 中已记录的历史状态见 [版本时间核对](./08-版本时间核对.md)。1.2.11 (Build 133) 已发布。线上发布流程自动生成 Build；本地 `CURRENT_PROJECT_VERSION = 58` 仅为工程默认值，不代表下一次线上编号。
+App Store Connect 中已记录的历史状态见 [版本时间核对](./08-版本时间核对.md)。`1.2.12` 已发布，其线上 Build 和实际可分发时间待确认。线上发布流程自动生成 Build；本地 `CURRENT_PROJECT_VERSION = 58` 仅为工程默认值，不代表下一次线上编号。
 
-## 当前版本准备
+## 最近发布版本记录
 
 | 项目 | 记录 |
 | --- | --- |
-| 版本 | `1.2.12 (Build 待自动生成)` |
-| 状态 | 待发布 |
+| 版本 | `1.2.12 (Build 待确认)` |
+| 状态 | 已发布；发布日期待确认 |
 | 更新说明 | 见 [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md) |
 
-`1.2.11 (Build 133)` 已发布；`1.2.12` 已设为当前工程营销版本，线上 Build 由发布流程自动生成。
+工程营销版本目前仍为 `1.2.12`。`1.2.13` 仅在更新说明中预留，确定进入开发或送审后再调整工程版本。
 
-版本上传完成后，应将实际时间、构建环境和上传结果补充到本文件，并继续递增后续 Build。
+确认 App Store Connect 实际记录后，应补充 `1.2.12` 的 Build、可分发日期、构建环境和归档位置。
 
 ## 官网与合规页面状态
 
@@ -95,7 +95,7 @@ App Store Connect 中已记录的历史状态见 [版本时间核对](./08-版�
 - `[DEMO_EMAIL]`、`[DEMO_PASSWORD]`：长期有效的专用审核账号；
 - `[SUBMITTED_VERSION]`、`[SUBMITTED_BUILD]`：本次在 App Store Connect 实际选中的版本与构建；
 - App Store Connect Apple ID：`6800612526`；
-- 当前工程营销版本为 `1.2.12`；`1.2.11 (Build 133)` 已发布。正式送审以自动流程生成并由 App Store Connect 实际处理的 Build 为准同步版本记录。
+- 当前工程营销版本为 `1.2.12`，该版本已发布，实际 Build 与发布日期待确认；`1.2.13` 仅预留了更新说明，正式送审前再切换工程版本。送审以自动流程生成并由 App Store Connect 实际处理的 Build 为准同步版本记录。
 - `[DSA_ADDRESS]`、`[DSA_PHONE]`、`[DSA_EMAIL]`：欧盟 DSA trader 公示并由 Apple 验证的公司联系信息；
 - `[KOREA_CONTACT_*]`：如在韩国销售，由组织开发者提交的当地法规联系信息。
 

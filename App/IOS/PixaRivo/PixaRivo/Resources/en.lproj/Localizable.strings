@@ -180,6 +180,9 @@
 "submission.submitting" = "Submitting creation";
 "submission.failed" = "Submission failed";
 "submission.upload_failed" = "The materials could not be uploaded. Try again.";
+"submission.error.service" = "The service is temporarily unavailable and may be under maintenance. Please try again later. Your selected images are saved.";
+"submission.error.busy" = "The server is busy and can't process this request right now. Please try again later. Your selected images are saved.";
+"submission.error.rejected" = "The system couldn't accept this request right now. Please try again later. Your selected images are saved.";
 "submission.prepare_failed" = "The creation could not be prepared. Select the materials again.";
 "submission.confirmation_expired" = "This creation is over 30 minutes old. Confirm it before submitting.";
 "submission.review_template" = "Review Again";
