@@ -21,6 +21,23 @@ Turn ideas, product photos, and reference assets into visual work you can refine
 | App 名称 | AIS 产品智造 | AIS Visual Studio by WeKare |
 | 副标题 | AI视觉创作、模板与灵感工具 | AI Visual Creation & Templates |
 
+## 1.2.7 — 2026-10-18 (Build 待自动生成) — 待发布
+
+### 简体中文
+
+- 登录页面移除暂未开放的微信、支付宝和 Google 登录选项。
+
+### English (U.S.)
+
+- Removed the unavailable WeChat, Alipay, and Google sign-in options from the sign-in screen.
+
+### 发布信息
+
+- App 版本：`1.2.7`
+- 线上 Build：待 Xcode Cloud 自动生成
+- App Store Connect 上传时间：待确认
+- 发布状态：待确认
+
 ## 1.2.6 — 2026-09-17 (Build 待自动生成) — 待发布
 
 ### 简体中文
@@ -44,23 +61,6 @@ Turn ideas, product photos, and reference assets into visual work you can refine
 ### 发布信息
 
 - App 版本：`1.2.6`
-- 线上 Build：待 Xcode Cloud 自动生成
-- App Store Connect 上传时间：待确认
-- 发布状态：待确认
-
-## 1.2.7 — 2026-10-18 (Build 待自动生成) — 待发布
-
-### 简体中文
-
-- 登录页面移除暂未开放的微信、支付宝和 Google 登录选项。
-
-### English (U.S.)
-
-- Removed the unavailable WeChat, Alipay, and Google sign-in options from the sign-in screen.
-
-### 发布信息
-
-- App 版本：`1.2.7`
 - 线上 Build：待 Xcode Cloud 自动生成
 - App Store Connect 上传时间：待确认
 - 发布状态：待确认
