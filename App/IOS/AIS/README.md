@@ -11,13 +11,13 @@
 - Xcode 工程：已创建 `AIS.xcodeproj`
 - 开发工作名：`AIS`
 - App Store 名称：`AIS Visual Studio by WeKare`
-- App Store 版本：`1.2.6`
+- App Store 版本：`1.2.7`
 - Bundle ID：`com.wekarepartners.studio`
 - Apple Team ID：`R3622MSZJ7`
 - 海外发行主体：`WeKare Partners LLC`
 - 中国大陆运营主体：`扬州市佳融信息技术有限公司`
 - 首发区域：海外 TestFlight 与已准备完成的 App Store 国家和地区；中国大陆在备案、登记和区域部署验收完成后单独开放
-- 当前待发布构建：`1.2.6 (Build 18)`，尚未 Archive 或上传
+- 当前待发布构建：`1.2.7 (Build 18)`，尚未 Archive 或上传
 
 ## 文档入口
 

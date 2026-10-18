@@ -353,12 +353,6 @@ struct LoginView: View {
             Text("auth.apple.helper")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-            HStack(spacing: 10) {
-                unavailableProvider("auth.wechat", symbol: "message.fill")
-                unavailableProvider("auth.alipay", symbol: "a.circle.fill")
-                unavailableProvider("auth.google", symbol: "g.circle.fill")
-            }
         }
         .padding(14)
         .aisSurface(cornerRadius: 22, hasShadow: true)
@@ -391,25 +385,6 @@ struct LoginView: View {
                 .fixedSize()
             Divider()
         }
-        .accessibilityElement(children: .combine)
-    }
-
-    private func unavailableProvider(
-        _ title: LocalizedStringKey,
-        symbol: String
-    ) -> some View {
-        VStack(spacing: 5) {
-            Image(systemName: symbol)
-                .font(.title3)
-            Text(title)
-                .font(.caption2)
-        }
-        .foregroundStyle(.tertiary)
-        .frame(maxWidth: .infinity, minHeight: 64)
-        .background(
-            Color(uiColor: .tertiarySystemGroupedBackground),
-            in: RoundedRectangle(cornerRadius: 13)
-        )
         .accessibilityElement(children: .combine)
     }
 
