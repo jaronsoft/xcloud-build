@@ -21,6 +21,23 @@ Turn ideas, product photos, and reference assets into visual work you can refine
 | App 名称 | AIS 产品智造 | AIS Visual Studio by WeKare |
 | 副标题 | AI视觉创作、模板与灵感工具 | AI Visual Creation & Templates |
 
+## 1.2.8 — 2026-10-19 (Build 待自动生成) — 待发布
+
+### 简体中文
+
+- 本版本更新内容待整理。
+
+### English (U.S.)
+
+- Release notes for this version are pending.
+
+### 发布信息
+
+- App 版本：`1.2.8`
+- 线上 Build：待 Xcode Cloud 自动生成
+- App Store Connect 上传时间：待确认
+- 发布状态：待确认
+
 ## 1.2.7 — 2026-10-18 (Build 待自动生成) — 待发布
 
 ### 简体中文

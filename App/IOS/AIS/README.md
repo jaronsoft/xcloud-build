@@ -11,13 +11,13 @@
 - Xcode 工程：已创建 `AIS.xcodeproj`
 - 开发工作名：`AIS`
 - App Store 名称：`AIS Visual Studio by WeKare`
-- App Store 版本：`1.2.7`
+- App Store 版本：`1.2.8`
 - Bundle ID：`com.wekarepartners.studio`
 - Apple Team ID：`R3622MSZJ7`
 - 海外发行主体：`WeKare Partners LLC`
 - 中国大陆运营主体：`扬州市佳融信息技术有限公司`
 - 首发区域：海外 TestFlight 与已准备完成的 App Store 国家和地区；中国大陆在备案、登记和区域部署验收完成后单独开放
-- 当前待发布构建：`1.2.7 (Build 18)`，尚未 Archive 或上传
+- 当前待发布构建：`1.2.8 (Build 18)`，尚未 Archive 或上传
 
 ## 文档入口
 
@@ -50,7 +50,7 @@
 - `PrivacyInfo.xcprivacy`、Sign in with Apple 和 Associated Domains entitlement。
 - Debug 与 Release 均使用生产 API `https://ais.get-free.net`。
 - Debug、开发签名与 TestFlight 包在“我的”中提供内存级脱敏网络诊断；正式 App Store 包隐藏入口且不采集请求日志。
-- 版本采用 `主版本.次版本.修订版本 (Build 递增整数)`，当前工程版本为 `1.2.6 (Build 18)`；Build 全局递增且不随日期或营销版本重置，下一次发行构建至少使用 `19`。
+- 版本采用 `主版本.次版本.修订版本 (Build 递增整数)`，当前工程版本为 `1.2.8 (Build 18)`；Build 全局递增且不随日期或营销版本重置，下一次发行构建至少使用 `19`。
 - `1.2.5 (Build 16)` 优先使用当前 App Store storefront 请求服务端定价，按服务端确认的区域筛选积分包，并对 StoreKit 目录执行批量重试与逐项补查；商品展示不再依赖账户令牌接口，购买前仍强制取得 `appAccountToken`。
 - `1.2.5 (Build 12)` 将 capabilities、会员推荐套餐和验单请求固定为 AIS `appCode`，使用 `appAccountToken` 绑定账户，并在商品为空或不可用时显示可重试的明确状态；后端同时按 AIS/PixaRivo 的 Bundle ID 和 Product ID 独立映射及验单。
 - `1.2.5 (Build 4)` 已完成完整 `AISTests`、Release Archive、包体版本与签名能力核对，并于 `2026-08-13 22:53` 上传 App Store Connect 成功。
