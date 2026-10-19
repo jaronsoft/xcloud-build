@@ -7,14 +7,14 @@
 
 ## GitHub 仓库同步
 
-- `App/IOS/AIS/` 是 AIS iOS 工程的唯一修改源；`/Users/jaron/Projects/Github/ais` 是同步目标，不应直接在目标目录修改业务或工程文件。
+- `App/IOS/AIS/` 是 AIS iOS 工程的唯一修改源；`/Users/jaron/Projects/Github/xcloud-build/App/IOS/AIS` 是同步目标，不应直接在目标目录修改业务或工程文件。
 - 每次在本目录新增、修改、移动或删除文件后，必须在结束当前任务前执行：
 
   ```bash
-  App/IOS/AIS/scripts/sync-to-github.sh --delete
+  App/IOS/AIS/sync-to-github.sh --delete
   ```
 
-  该命令会将源目录镜像同步至目标仓库，并保护目标目录的 `.git` 元数据。
+  该命令会将源目录镜像同步至 `xcloud-build` 仓库内的 AIS 工程目录，不会影响仓库其他目录或 `.git` 元数据。
 - `AIS.xcodeproj` 及其中的共享配置属于必须同步的工程文件；不得为避免同步而排除它们。
 - `xcuserdata/`、`*.xcuserstate`、`DerivedData/`、`build/`、`.release/` 与签名文件属于本地状态或敏感产物，沿用同步脚本的排除规则，不得复制到目标仓库。
 - 同步命令失败时，必须先解决失败原因；不得声称目标目录已同步。
@@ -72,7 +72,7 @@
 
 ## 版本与构建号
 
-- `MARKETING_VERSION` 使用 `主版本.次版本.修订版本` 三段格式，当前为 `1.2.6`；只有用户明确决定新的营销版本时才允许修改。
+- `MARKETING_VERSION` 使用 `主版本.次版本.修订版本` 三段格式，当前为 `1.2.8`；只有用户明确决定新的营销版本时才允许修改。
 - `CURRENT_PROJECT_VERSION` 当前为本地工程默认值 `18`；线上发行使用 Xcode Cloud 自动生成并递增的 Build 号，不得为追赶线上编号手动修改工程默认值。
-- 待发布说明写作 `1.2.6 (Build 待自动生成)`；云构建完成后，以 App Store Connect 中实际 Build 号为准。
+- 待发布说明写作 `1.2.8 (Build 待自动生成)`；云构建完成后，以 App Store Connect 中实际 Build 号为准。
 - 已上传或已被 App Store Connect 接收的构建号不得复用；若 Xcode Cloud 报编号冲突，应检查云构建工作流与 Apple 提供的下一构建号设置，不应凭猜测改工程默认值。

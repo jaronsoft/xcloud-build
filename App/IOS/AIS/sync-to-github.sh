@@ -8,7 +8,7 @@ if [[ "$(basename "$SCRIPT_DIR")" == "scripts" ]]; then
 else
     SOURCE_DIR="$SCRIPT_DIR"
 fi
-DEFAULT_TARGET_DIR="/Users/jaron/Projects/Github/ais"
+DEFAULT_TARGET_DIR="/Users/jaron/Projects/Github/xcloud-build/App/IOS/AIS"
 TARGET_DIR="${AIS_GITHUB_DIR:-$DEFAULT_TARGET_DIR}"
 DRY_RUN=false
 DELETE_EXTRA_FILES=false
@@ -64,8 +64,20 @@ if ! command -v rsync >/dev/null 2>&1; then
     exit 1
 fi
 
-if [[ ! -d "$TARGET_DIR/.git" ]]; then
-    printf '❌ 目标目录不是 Git 仓库，已取消同步：%s\n' "$TARGET_DIR" >&2
+if [[ ! -d "$TARGET_DIR" ]]; then
+    printf '❌ 同步目标目录不存在，已取消同步：%s\n' "$TARGET_DIR" >&2
+    exit 1
+fi
+
+TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
+TARGET_REPO_ROOT="$(git -C "$TARGET_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "$TARGET_REPO_ROOT" ]]; then
+    printf '❌ 同步目标不在 Git 仓库内，已取消同步：%s\n' "$TARGET_DIR" >&2
+    exit 1
+fi
+TARGET_REPO_ROOT="$(cd "$TARGET_REPO_ROOT" && pwd)"
+if [[ "$TARGET_DIR" == "$TARGET_REPO_ROOT" ]]; then
+    printf '❌ 同步目标必须是仓库内的子目录，已取消同步：%s\n' "$TARGET_DIR" >&2
     exit 1
 fi
 
