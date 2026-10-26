@@ -1,0 +1,236 @@
+import CryptoKit
+import Foundation
+import Security
+
+struct BmbEnvelope<T: Decodable>: Decodable {
+    let success: Bool
+    let msg: String?
+    let response: T?
+}
+
+struct BmbAuth: Decodable {
+    let UserId: String
+    let AccessToken: String
+    let Email: String?
+    let Phone: String?
+    let DisplayName: String?
+}
+
+struct BmbNonce: Decodable { let Nonce: String }
+struct BmbAcknowledgement: Decodable { let Recorded: Bool?; let Sent: Bool?; let Set: Bool?; let Bound: Bool?; let Deleted: Bool?; let PendingReview: Bool?; let Reported: Bool? }
+
+struct BmbProduct: Codable, Identifiable {
+    var Id: String? = nil
+    var Title: String = ""
+    var Model: String? = nil
+    var Url: String? = nil
+    var ImageUrl: String? = nil
+    var Price: Double? = nil
+    var Currency: String? = nil
+    var Source: String? = "user"
+    var CapturedAt: String? = nil
+    var id: String { Id ?? Url ?? Title }
+}
+
+struct BmbComment: Decodable, Identifiable {
+    let Id: String
+    let Body: String
+    let SuggestedUrl: String?
+    let Status: String
+    let CreateTime: String?
+    var id: String { Id }
+}
+
+struct BmbDecision: Decodable, Identifiable {
+    let Id: String
+    let ShareToken: String
+    let ShareUrl: String
+    let Mode: String
+    let Question: String
+    let Status: String
+    let FinalChoice: String?
+    let IsOwner: Bool
+    let Products: [BmbProduct]
+    let Votes: [String: Int]
+    let VoteCount: Int
+    let Comments: [BmbComment]
+    var id: String { Id }
+}
+
+struct BmbDecisionSummary: Decodable, Identifiable {
+    let Id: String
+    let ShareToken: String
+    let Question: String
+    let Mode: String
+    let Status: String
+    let FinalChoice: String?
+    var id: String { Id }
+}
+
+struct BmbPublicDecision: Decodable, Identifiable {
+    let Id: String
+    let ShareToken: String
+    let Mode: String
+    let Question: String
+    let Status: String
+    let Products: [BmbProduct]
+    var id: String { Id }
+}
+
+struct BmbPublicPage: Decodable {
+    let Items: [BmbPublicDecision]
+    let Total: Int
+    let Page: Int
+    let HasMore: Bool
+}
+
+struct BmbProfile: Decodable {
+    let UserId: String
+    let Email: String?
+    let Phone: String?
+    let DisplayName: String?
+}
+
+struct BmbError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
+enum BmbKeychain {
+    private static let service = "com.wekarepartners.byemybuy"
+    static func read(_ account: String) -> String? {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                    kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+    static func write(_ account: String, value: String?) {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+        SecItemDelete(query as CFDictionary)
+        guard let value, let data = value.data(using: .utf8) else { return }
+        var attributes = query
+        attributes[kSecValueData as String] = data
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        SecItemAdd(attributes as CFDictionary, nil)
+    }
+}
+
+struct BmbAPI {
+    static let baseURL = URL(string: "https://byemybuy.get-free.net")!
+
+    func call<T: Decodable>(_ path: String, method: String = "GET", body: [String: Any]? = nil, token: String? = nil) async throws -> T {
+        guard let url = URL(string: "/api/byemybuy\(path)", relativeTo: Self.baseURL)?.absoluteURL else {
+            throw BmbError(message: "Invalid request URL")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let visitor = BmbKeychain.read("visitor") { request.setValue(visitor, forHTTPHeaderField: "X-BMB-Visitor") }
+        if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body) }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw BmbError(message: "No server response") }
+        guard let envelope = try? JSONDecoder().decode(BmbEnvelope<T>.self, from: data) else {
+            throw BmbError(message: "Unexpected server response (\(http.statusCode))")
+        }
+        guard http.statusCode < 400, envelope.success, let value = envelope.response else {
+            throw BmbError(message: envelope.msg ?? "Request failed")
+        }
+        return value
+    }
+
+    func resolve(_ url: String) async throws -> BmbProduct {
+        try await call("/products/resolve", method: "POST", body: ["Url": url])
+    }
+
+    func uploadProductImage(_ data: Data, token: String) async throws -> String {
+        let boundary = UUID().uuidString
+        var body = Data()
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"product.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".utf8))
+        body.append(data)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+        var request = URLRequest(url: URL(string: "/api/byemybuy/products/image", relativeTo: Self.baseURL)!.absoluteURL)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.httpBody = body
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (responseData, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse,
+              let envelope = try? JSONDecoder().decode(BmbEnvelope<BmbImageUpload>.self, from: responseData),
+              http.statusCode < 400, envelope.success, let value = envelope.response else {
+            throw BmbError(message: "Could not upload this photo.")
+        }
+        return value.ImageUrl
+    }
+    func detail(_ shareToken: String, token: String?) async throws -> BmbDecision {
+        try await call("/d/\(shareToken)", token: token)
+    }
+    func vote(_ shareToken: String, choice: String) async throws {
+        let _: BmbAcknowledgement = try await call("/d/\(shareToken)/votes", method: "POST", body: ["Choice": choice])
+    }
+}
+
+struct BmbImageUpload: Decodable { let ImageUrl: String }
+
+@MainActor
+final class BmbSession: ObservableObject {
+    @Published private(set) var token: String? = BmbKeychain.read("access")
+    @Published var profile: BmbProfile?
+    @Published var message: String?
+    @Published var showLogin = false
+    let api = BmbAPI()
+    var isLoggedIn: Bool { token != nil }
+
+    init() {
+        if BmbKeychain.read("visitor") == nil {
+            BmbKeychain.write("visitor", value: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())
+        }
+    }
+
+    func adopt(_ result: BmbAuth) {
+        token = result.AccessToken
+        BmbKeychain.write("access", value: result.AccessToken)
+        profile = BmbProfile(UserId: result.UserId, Email: result.Email, Phone: result.Phone, DisplayName: result.DisplayName)
+    }
+
+    func sendCode(_ email: String) async throws {
+        let _: BmbAcknowledgement = try await api.call("/auth/email/send-code", method: "POST", body: ["Email": email])
+    }
+
+    func login(email: String, code: String) async throws {
+        let result: BmbAuth = try await api.call("/auth/email", method: "POST", body: ["Email": email, "Code": code])
+        adopt(result)
+    }
+
+    func login(email: String, password: String) async throws {
+        let result: BmbAuth = try await api.call("/auth/password", method: "POST", body: ["Email": email, "Password": password])
+        adopt(result)
+    }
+
+    func appleNonce() async throws -> String {
+        let result: BmbNonce = try await api.call("/auth/apple/nonce")
+        return result.Nonce
+    }
+
+    func loginApple(identityToken: String, nonce: String, name: String?) async throws {
+        let result: BmbAuth = try await api.call("/auth/apple", method: "POST", body: ["IdentityToken": identityToken, "Nonce": nonce, "DisplayName": name ?? ""])
+        adopt(result)
+    }
+
+    func loadProfile() async {
+        guard let token else { return }
+        do { profile = try await api.call("/auth/me", token: token) }
+        catch { message = error.localizedDescription }
+    }
+
+    func logout() { token = nil; profile = nil; BmbKeychain.write("access", value: nil) }
+
+    func deleteAccount() async throws {
+        guard let token else { return }
+        let _: BmbAcknowledgement = try await api.call("/auth/me", method: "DELETE", token: token)
+        logout()
+    }
+}

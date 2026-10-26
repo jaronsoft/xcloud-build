@@ -1,0 +1,48 @@
+import SwiftUI
+
+struct HomeView: View {
+    @State private var showCreate = false
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 30) {
+                HStack(spacing: 11) {
+                    Image("LaunchMark").resizable().frame(width: 46, height: 46)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("ByeMyBuy").font(.system(size: 20, weight: .black, design: .rounded))
+                        Text("THINK. ASK. DECIDE.").font(.system(size: 9, weight: .bold)).tracking(2).foregroundStyle(BmbTheme.muted)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("A BETTER PAUSE BEFORE CHECKOUT").font(.system(size: 11, weight: .heavy)).tracking(2).foregroundStyle(.green)
+                    Text("Love it? Ask your people first.").font(.system(size: 49, weight: .black, design: .rounded)).tracking(-3).fixedSize(horizontal: false, vertical: true)
+                    Text("Add a product. Let friends vote, share honest advice, and help you decide what deserves a place in your life.")
+                        .font(.system(size: 16)).foregroundStyle(BmbTheme.muted).lineSpacing(5)
+                    BmbPrimaryButton(title: "Ask before you buy") { showCreate = true }
+                }
+                .padding(27).frame(maxWidth: .infinity, alignment: .leading)
+                .background(BmbTheme.hero, in: RoundedRectangle(cornerRadius: 29))
+                NavigationLink(destination: ExploreView()) {
+                    HStack { Text("Explore decisions").font(.headline); Spacer(); Image(systemName: "arrow.right") }
+                        .padding(18).background(BmbTheme.card, in: RoundedRectangle(cornerRadius: 17))
+                }.foregroundStyle(BmbTheme.ink)
+                VStack(alignment: .leading, spacing: 17) {
+                    Text("Shopping decisions feel lighter together.").font(.system(size: 26, weight: .bold, design: .rounded))
+                    ForEach(Array(["Find something you want", "Ask your circle", "Decide with confidence"].enumerated()), id: \.offset) { index, item in
+                        BmbCard {
+                            HStack(spacing: 17) {
+                                Text("0\(index + 1)").font(.caption.bold()).foregroundStyle(.green)
+                                Text(LocalizedStringKey(item)).font(.subheadline.bold())
+                                Spacer()
+                                Image(systemName: ["link", "bubble.left.and.bubble.right", "heart"][index]).foregroundStyle(BmbTheme.muted)
+                            }
+                        }
+                    }
+                }
+            }.padding(20)
+        }
+        .background(BmbTheme.paper)
+        .navigationBarHidden(true)
+        .sheet(isPresented: $showCreate) { NavigationStack { CreateView() } }
+    }
+}
