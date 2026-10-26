@@ -17,7 +17,7 @@ final class PixaAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
         _ application: UIApplication,
         supportedInterfaceOrientationsFor window: UIWindow?
     ) -> UIInterfaceOrientationMask {
-        .portrait
+        .allButUpsideDown
     }
 
     func application(
@@ -649,11 +649,21 @@ struct RootView: View {
     @Environment(PixaWorkActivityStore.self) private var workActivity
     @Environment(PixaAppUpdateStore.self) private var appUpdate
 
+    private var usesSystemTabBar: Bool {
+        // iOS 27.1 会按折叠姿态摆放系统标签栏，旧版自绘底栏只在此前系统保留。
+        if #available(iOS 27.1, *) { return true }
+        return false
+    }
+
     var body: some View {
         @Bindable var navigation = navigation
         TabView(selection: $navigation.selectedTab) {
-            HomeView().tag(PixaRootTab.home)
-            GalleryView().tag(PixaRootTab.gallery)
+            HomeView()
+                .tabItem { Label("tab.home", systemImage: "house.fill") }
+                .tag(PixaRootTab.home)
+            GalleryView()
+                .tabItem { Label("tab.gallery", systemImage: "rectangle.stack.fill") }
+                .tag(PixaRootTab.gallery)
             NavigationStack {
                 TemplatesView()
                     .background(
@@ -662,18 +672,27 @@ struct RootView: View {
                         )
                     )
             }
+            .tabItem { Label("tab.templates", systemImage: "wand.and.sparkles") }
             .tag(PixaRootTab.templates)
-            WorksView().tag(PixaRootTab.works)
-            AccountView().tag(PixaRootTab.account)
+            WorksView()
+                .tabItem { Label("tab.works", systemImage: "folder.fill") }
+                .badge(workActivity.activeCount)
+                .tag(PixaRootTab.works)
+            AccountView()
+                .tabItem { Label("tab.account", systemImage: "person.fill") }
+                .badge(appUpdate.hasUnseenUpdate ? Text("•") : nil)
+                .tag(PixaRootTab.account)
         }
-        .toolbar(.hidden, for: .tabBar)
+        .toolbar(usesSystemTabBar ? .visible : .hidden, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            PixaRootTabBar(
-                selection: $navigation.selectedTab,
-                onSelect: navigation.selectFromTabBar,
-                activeWorksCount: workActivity.activeCount,
-                showsAccountUpdateDot: appUpdate.hasUnseenUpdate
-            )
+            if !usesSystemTabBar {
+                PixaRootTabBar(
+                    selection: $navigation.selectedTab,
+                    onSelect: navigation.selectFromTabBar,
+                    activeWorksCount: workActivity.activeCount,
+                    showsAccountUpdateDot: appUpdate.hasUnseenUpdate
+                )
+            }
         }
         .background(PixaTheme.paper)
     }

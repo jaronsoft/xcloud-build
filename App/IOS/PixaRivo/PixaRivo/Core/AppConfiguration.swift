@@ -200,6 +200,29 @@ enum AppLanguage {
         return englishBundle.localizedString(forKey: key, value: key, table: nil)
     }
 
+    static func templateReplaceSummary(images: Int, texts: Int) -> String {
+        guard apiValue == "en-US" else {
+            return String.localizedStringWithFormat(localized("template.replace.summary"), images, texts)
+        }
+        let imageLabel = images == 1 ? "image" : "images"
+        let textLabel = texts == 1 ? "text field" : "text fields"
+        return "\(images) \(imageLabel) · \(texts) \(textLabel)"
+    }
+
+    static func templateImageCount(_ count: Int) -> String {
+        guard apiValue == "en-US" else {
+            return String.localizedStringWithFormat(localized("template.images.count"), count)
+        }
+        return "\(count) \(count == 1 ? "image" : "images")"
+    }
+
+    static func templateTextCount(_ count: Int) -> String {
+        guard apiValue == "en-US" else {
+            return String.localizedStringWithFormat(localized("template.text.count"), count)
+        }
+        return "\(count) \(count == 1 ? "text field" : "text fields")"
+    }
+
     static func value(zh: String?, en: String?) -> String {
         let primary = isChinese ? zh : en
         let fallback = isChinese ? en : zh

@@ -9,17 +9,25 @@
 
 ### App Store 推广文本（简体中文）
 
-复杂的提示词，我们替你记住。选好模板，换上图片和文字，轻松制作海报与社交配图。新用户注册可领积分，每日首次使用还有积分奖励。
+万圣节模板来啦！选好模板，换上图片和文字，轻松制作海报与社交配图。PixaRivo 现已支持 iPhone Duo，展开或折叠都能自在创作。新用户注册及每日首次使用可领积分。
 
 ### App Store Promotional Text (English, U.S.)
 
-Complex prompts? We’ve got them covered. Choose a template, add photos and text, and create. Get signup points plus a daily reward on your first visit.
+Halloween templates are here! Add photos and text to create posters and social graphics. PixaRivo now supports iPhone Duo, open or closed. Earn signup and daily points.
 
-## 1.2.13 — 2026-10-16 (Build 待自动生成) — 待发布
+## 1.3.0 — 2026-10-25 (Build 待自动生成) — 待发布
 
 ### 简体中文
 
+- iPhone Duo 展开或折叠时，浏览与创作界面会适应屏幕，横屏使用也更方便。
+- 新版 iOS 上的页面导航会随屏幕布局调整。
+- 修正英文界面中模板图片与文字数量的显示。
+
 ### English (U.S.)
+
+- Browsing and creation adapt as iPhone Duo opens or closes, with improved landscape support.
+- Navigation adapts to the screen layout on newer iOS versions.
+- Fixed image and text counts in English template listings and details.
 
 ## 1.2.12 — 日期待确认 (Build 待确认) — 已发布
 

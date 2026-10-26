@@ -4,7 +4,7 @@
 
 > 更新时间：2026-10-16
 >
-> 当前工程营销版本：`1.2.13`；`1.2.12` 已发布，实际 Build 与日期待确认
+> 当前工程营销版本：`1.3.0`；`1.2.12` 已发布，实际 Build 与日期待确认
 >
 > Bundle ID：`com.wekarepartners.pixarivo`
 >
@@ -18,11 +18,11 @@ PixaRivo 独立官网已上线，App Store Connect 的 Marketing URL 使用 `htt
 
 | 项目 | 记录 |
 | --- | --- |
-| 工程配置 | `MARKETING_VERSION = 1.2.13`，本地 `CURRENT_PROJECT_VERSION = 58` |
+| 工程配置 | `MARKETING_VERSION = 1.3.0`，本地 `CURRENT_PROJECT_VERSION = 58` |
 | 最近已发布版本 | `1.2.12 (Build、日期待确认)` |
 | 审核中版本 | 无 |
 | 其他已发布版本 | `1.2.11 (Build 133)`、`1.2.9 (Build 125)`、`1.2.6 (Build 112)` |
-| 当前待发布版本 | `1.2.13 (Build 待自动生成)` |
+| 当前待发布版本 | `1.3.0 (Build 待自动生成)` |
 | 更新说明 | 见 [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md) |
 | 送审状态 | 见 [截图脚本与提交清单](./06-截图脚本与提交清单.md) |
 
@@ -36,7 +36,7 @@ App Store Connect 中已记录的历史状态见 [版本时间核对](./08-版�
 | 状态 | 已发布；发布日期待确认 |
 | 更新说明 | 见 [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md) |
 
-`1.2.13` 已设为当前工程营销版本，线上 Build 由发布流程自动生成；本地 `CURRENT_PROJECT_VERSION = 58` 仍只是工程默认值。
+`1.3.0` 已设为当前工程营销版本，线上 Build 由发布流程自动生成；本地 `CURRENT_PROJECT_VERSION = 58` 仍只是工程默认值。
 
 确认 App Store Connect 实际记录后，应补充 `1.2.12` 的 Build、可分发日期、构建环境和归档位置。
 
@@ -95,7 +95,7 @@ App Store Connect 中已记录的历史状态见 [版本时间核对](./08-版�
 - `[DEMO_EMAIL]`、`[DEMO_PASSWORD]`：长期有效的专用审核账号；
 - `[SUBMITTED_VERSION]`、`[SUBMITTED_BUILD]`：本次在 App Store Connect 实际选中的版本与构建；
 - App Store Connect Apple ID：`6800612526`；
-- 当前工程营销版本为 `1.2.13`；`1.2.12` 已发布，实际 Build 与发布日期待确认。送审以自动流程生成并由 App Store Connect 实际处理的 Build 为准同步版本记录。
+- 当前工程营销版本为 `1.3.0`；`1.2.12` 已发布，实际 Build 与发布日期待确认。送审以自动流程生成并由 App Store Connect 实际处理的 Build 为准同步版本记录。
 - `[DSA_ADDRESS]`、`[DSA_PHONE]`、`[DSA_EMAIL]`：欧盟 DSA trader 公示并由 Apple 验证的公司联系信息；
 - `[KOREA_CONTACT_*]`：如在韩国销售，由组织开发者提交的当地法规联系信息。
 

@@ -8,21 +8,21 @@
 
 ### App Store Promotional Text (日本語)
 
-複雑なプロンプトはおまかせ。テンプレートを選び、写真や文字を入れるだけでポスターやSNS画像を作成。新規登録と毎日の初回利用でポイントを獲得。
+ハロウィンのテンプレートが登場！写真や文字を入れてポスターやSNS画像を作成。PixaRivoはiPhone Duoに対応し、開閉どちらでも快適に創作。新規登録と毎日の初回利用でポイントを獲得。
 
 ### App Store Promotional Text (Español)
 
-¿Prompts complejos? Nosotros nos encargamos. Elige una plantilla, añade fotos y crea. Recibe puntos al registrarte y una recompensa en tu primera visita diaria.
+¡Llegaron las plantillas de Halloween! Crea pósteres con tus fotos y texto. PixaRivo ya funciona en iPhone Duo, abierto o cerrado. Gana puntos al registrarte y cada día.
 
 ### App Store Promotional Text (Português, Brasil)
 
-Prompts complexos? Deixe com a gente. Escolha um modelo, adicione fotos e crie. Ganhe pontos ao se cadastrar e uma recompensa na primeira visita do dia.
+Modelos de Halloween chegaram! Crie pôsteres com fotos e texto. PixaRivo agora funciona no iPhone Duo, aberto ou fechado. Ganhe pontos ao se cadastrar e a cada dia.
 
 ### App Store 推廣文字（繁體中文）
 
-複雜的提示詞，我們替你記住。選好範本，換上圖片與文字，輕鬆製作海報與社群配圖。新用戶註冊可領點數，每日首次使用還有點數獎勵。
+萬聖節範本來了！選好範本，換上圖片與文字，輕鬆製作海報與社群配圖。PixaRivo 現已支援 iPhone Duo，展開或摺疊都能自在創作。新用戶註冊及每日首次使用可領點數。
 
-## 1.2.13 — 2026-10-16 (Build 待自动生成) — 待发布
+## 1.3.0 — 2026-10-25 (Build 待自动生成) — 待发布
 
 ### 日本語
 

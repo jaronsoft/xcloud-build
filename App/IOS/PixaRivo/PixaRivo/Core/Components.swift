@@ -515,8 +515,10 @@ struct MasonryLayout: Layout {
 
     private func layout(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, points: [CGPoint], columnWidth: CGFloat) {
         let width = proposal.width ?? 320
-        let columnWidth = (width - CGFloat(columns - 1) * spacing) / CGFloat(columns)
-        var heights = Array(repeating: CGFloat.zero, count: columns)
+        // 宽窗口使用四列，折叠屏中线落在列间；窄窗口沿用双列布局。
+        let resolvedColumns = columns == 2 && width >= 4 * 180 + 3 * spacing ? 4 : columns
+        let columnWidth = (width - CGFloat(resolvedColumns - 1) * spacing) / CGFloat(resolvedColumns)
+        var heights = Array(repeating: CGFloat.zero, count: resolvedColumns)
         var points: [CGPoint] = []
         for view in subviews {
             let column = heights.enumerated().min(by: { $0.element < $1.element })?.offset ?? 0
@@ -772,7 +774,7 @@ struct TemplateCard: View {
                 HStack(spacing: 5) {
                     Text(template.aspectRatioText)
                     Text("·")
-                    Text(String.localizedStringWithFormat(AppLanguage.localized("template.replace.summary"), template.imageSlots.count, template.textFields.filter(\.enabled).count))
+                    Text(AppLanguage.templateReplaceSummary(images: template.imageSlots.count, texts: template.textFields.filter(\.enabled).count))
                 }
                 .font(.caption2).foregroundStyle(.secondary)
                 HStack(spacing: 8) {

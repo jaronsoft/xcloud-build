@@ -292,10 +292,9 @@ struct HomeView: View {
                         HStack(spacing: 6) {
                             Text(template.aspectRatioText)
                                 .foregroundStyle(PixaTheme.accent)
-                            Text(String.localizedStringWithFormat(
-                                AppLanguage.localized("template.replace.summary"),
-                                template.imageSlots.count,
-                                template.textFields.filter(\.enabled).count
+                            Text(AppLanguage.templateReplaceSummary(
+                                images: template.imageSlots.count,
+                                texts: template.textFields.filter(\.enabled).count
                             ))
                             .foregroundStyle(.secondary)
                         }

@@ -72,8 +72,8 @@ struct TemplateDetailView: View {
                     .lineSpacing(4)
                 Text("template.replace_content").font(.title3.bold())
                 HStack(spacing: 12) {
-                    infoBox(icon: "photo", title: String.localizedStringWithFormat(AppLanguage.localized("template.images.count"), active.imageSlots.count))
-                    infoBox(icon: "textformat", title: String.localizedStringWithFormat(AppLanguage.localized("template.text.count"), active.textFields.filter(\.enabled).count))
+                    infoBox(icon: "photo", title: AppLanguage.templateImageCount(active.imageSlots.count))
+                    infoBox(icon: "textformat", title: AppLanguage.templateTextCount(active.textFields.filter(\.enabled).count))
                 }
                 if !cases.isEmpty {
                     Text("template.same_cases").font(.title3.bold())

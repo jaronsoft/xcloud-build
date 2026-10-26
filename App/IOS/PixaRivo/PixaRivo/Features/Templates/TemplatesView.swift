@@ -352,7 +352,12 @@ struct PixaTemplateImpressionModifier: ViewModifier {
             .background {
                 GeometryReader { proxy in
                     let frame = proxy.frame(in: .global)
-                    let visible = frame.intersection(UIScreen.main.bounds)
+                    // 以当前窗口计算曝光区域，折叠或分屏后不再沿用整块屏幕的尺寸。
+                    let windowBounds = UIApplication.shared.connectedScenes
+                        .compactMap { $0 as? UIWindowScene }
+                        .flatMap(\.windows)
+                        .first(where: \.isKeyWindow)?.bounds ?? .zero
+                    let visible = frame.intersection(windowBounds)
                     let area = max(1, frame.width * frame.height)
                     Color.clear.preference(
                         key: PixaTemplateVisibilityPreferenceKey.self,
