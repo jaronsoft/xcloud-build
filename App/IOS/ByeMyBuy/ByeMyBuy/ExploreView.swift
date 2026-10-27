@@ -11,10 +11,10 @@ struct ExploreView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("THE COMMUNITY").font(.caption.bold()).tracking(2).foregroundStyle(BmbTheme.muted)
-                    Text("Explore decisions").font(.system(size: 35, weight: .black, design: .rounded))
-                    Text("See what people are thinking of buying.").font(.subheadline).foregroundStyle(BmbTheme.muted)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("THE COMMUNITY").font(.caption.bold()).tracking(2).foregroundStyle(.green)
+                    Text("Explore decisions").font(.system(size: 31, weight: .black, design: .rounded))
+                    Text("See what people are thinking of buying.").font(.system(size: 14)).foregroundStyle(BmbTheme.muted)
                 }
                 if let error {
                     BmbCard { VStack(alignment: .leading, spacing: 10) {

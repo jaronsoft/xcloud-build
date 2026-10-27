@@ -3,6 +3,9 @@
 "Account" = "账号";
 "A BETTER PAUSE BEFORE CHECKOUT" = "付款之前，先停一停";
 "Love it? Hear what others think." = "想买？先听听大家怎么说。";
+"Default currency" = "新商品默认币种";
+"Save currency" = "保存默认币种";
+"Default currency saved" = "默认币种已保存";
 "Share a product with friends, the community, and people who have bought it. Hear their votes and experiences before you decide." = "分享心动商品，邀请朋友、网友和买过的人投票、交流经验，再决定它是否值得买。";
 "Ask before you buy" = "问问大家";
 "Shopping decisions feel lighter together." = "买不买，多听听看法更踏实。";
@@ -60,6 +63,12 @@
 "Password" = "密码";
 "Use an email code" = "使用邮箱验证码";
 "Sign in with password" = "密码登录";
+"Email code sign-in or registration" = "邮箱验证码登录 / 注册";
+"Sign in with your email and password." = "使用邮箱和密码登录。";
+"A verified new email creates an account automatically. Set a password in Account later." = "未注册的邮箱验证成功后会自动创建账号。之后可在账号设置中设置密码。";
+"Verify and continue" = "验证并继续";
+"No account or forgot password? Use an email code" = "没有账号或忘记密码？使用邮箱验证码";
+"Back to password sign-in" = "返回密码登录";
 "Continue with Apple" = "使用 Apple 登录";
 "Verify and bind email" = "验证并绑定邮箱";
 "Bind email" = "绑定邮箱";
@@ -85,6 +94,8 @@
 "Product URL (optional)" = "商品链接（可选）";
 "Hear what others think?" = "先听听大家的看法？";
 "Tap to skip" = "轻触跳过";
+"Skip animation" = "跳过动画";
+"Whoa! Ask first." = "哎哟！先问问大家。";
 "Appearance" = "外观";
 "System" = "跟随系统";
 "Light" = "浅色";

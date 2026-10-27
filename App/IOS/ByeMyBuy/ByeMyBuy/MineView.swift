@@ -6,10 +6,12 @@ struct MineView: View {
     @State private var error: String?
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("YOUR SPACE").font(.caption.bold()).tracking(2).foregroundStyle(.green)
-                Text("My decisions").font(.system(size: 35, weight: .black, design: .rounded))
-                Text("Every pause tells a story.").foregroundStyle(BmbTheme.muted)
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("YOUR SPACE").font(.caption.bold()).tracking(2).foregroundStyle(.green)
+                    Text("My decisions").font(.system(size: 31, weight: .black, design: .rounded))
+                    Text("Every pause tells a story.").font(.system(size: 14)).foregroundStyle(BmbTheme.muted)
+                }
                 if !session.isLoggedIn {
                     BmbCard { VStack(alignment: .leading, spacing: 16) {
                         Text("Sign in to keep your decisions together.")

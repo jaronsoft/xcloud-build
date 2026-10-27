@@ -21,7 +21,7 @@ struct LoginView: View {
     @State private var email = ""
     @State private var code = ""
     @State private var password = ""
-    @State private var usePassword = false
+    @State private var usePassword = true
     @State private var busy = false
     @State private var codeSending = false
     @State private var error: String?
@@ -45,8 +45,10 @@ struct LoginView: View {
                 .padding(28).background(Color(red: 0.141, green: 0.22, blue: 0.176), in: RoundedRectangle(cornerRadius: 25))
                 BmbCard {
                     VStack(alignment: .leading, spacing: 15) {
-                        Text("Sign in").font(.title.bold())
-                        Text("Keep every decision in one place.").font(.subheadline).foregroundStyle(BmbTheme.muted)
+                        Text(usePassword ? String(localized: "Sign in") : String(localized: "Email code sign-in or registration"))
+                            .font(.title.bold())
+                        Text(usePassword ? String(localized: "Sign in with your email and password.") : String(localized: "A verified new email creates an account automatically. Set a password in Account later."))
+                            .font(.subheadline).foregroundStyle(BmbTheme.muted)
                         TextField("Email", text: $email).textContentType(.emailAddress).keyboardType(.emailAddress)
                             .textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
                         if usePassword {
@@ -71,8 +73,11 @@ struct LoginView: View {
                             }
                         }
                         if let error { Text(error).font(.caption).foregroundStyle(.red) }
-                        BmbPrimaryButton(title: "Continue") { Task { await login() } }.disabled(busy)
-                        Button(usePassword ? "Use an email code" : "Sign in with password") { usePassword.toggle() }
+                        BmbPrimaryButton(title: usePassword ? "Sign in" : "Verify and continue") { Task { await login() } }
+                            .disabled(busy || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (usePassword ? password.isEmpty : code.isEmpty))
+                        Button(usePassword ? "No account or forgot password? Use an email code" : "Back to password sign-in") {
+                            usePassword.toggle(); error = nil
+                        }
                             .font(.caption.bold()).foregroundStyle(.green)
                         Divider()
                         Button { Task { await signInWithApple() } } label: {

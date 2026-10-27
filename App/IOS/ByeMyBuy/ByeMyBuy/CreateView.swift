@@ -4,6 +4,8 @@ import UIKit
 
 enum BmbCurrency {
     static let codes = ["USD", "CNY", "EUR", "GBP", "JPY", "CAD", "AUD", "HKD", "SGD", "KRW", "TWD", "INR"]
+    static let emoji = ["USD": "🇺🇸", "CNY": "🇨🇳", "EUR": "🇪🇺", "GBP": "🇬🇧", "JPY": "🇯🇵", "CAD": "🇨🇦", "AUD": "🇦🇺", "HKD": "🇭🇰", "SGD": "🇸🇬", "KRW": "🇰🇷", "TWD": "🇹🇼", "INR": "🇮🇳"]
+    static func label(_ code: String) -> String { "\(emoji[code] ?? "💱") \(code)" }
     static var defaultCode: String {
         let local = Locale.current.currency?.identifier.uppercased() ?? "USD"
         return codes.contains(local) ? local : "USD"
@@ -21,7 +23,6 @@ struct ProductDraft: Identifiable {
     var price = ""
     var currency = BmbCurrency.defaultCode
     var targetPrice = ""
-    var targetCurrency = BmbCurrency.defaultCode
 
     var product: BmbProduct {
         BmbProduct(Title: title, Model: model.isEmpty ? nil : model, Url: url.isEmpty ? nil : url, ImageUrl: imageURL.isEmpty ? nil : imageURL,
@@ -58,15 +59,10 @@ struct CreateView: View {
                             HStack {
                                 TextField("Price", text: $products[index].price).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
                                 Picker("Currency", selection: $products[index].currency) {
-                                    ForEach(BmbCurrency.codes, id: \.self) { code in Text(code).tag(code) }
+                                    ForEach(BmbCurrency.codes, id: \.self) { code in Text(BmbCurrency.label(code)).tag(code) }
                                 }.frame(width: 110)
                             }
-                            HStack {
-                                TextField("Price I would accept (optional)", text: $products[index].targetPrice).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
-                                Picker("Target currency", selection: $products[index].targetCurrency) {
-                                    ForEach(BmbCurrency.codes, id: \.self) { code in Text(code).tag(code) }
-                                }.frame(width: 110)
-                            }
+                            TextField("Price I would accept (optional)", text: $products[index].targetPrice).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
                             PhotosPicker(selection: $products[index].photoItem, matching: .images) {
                                 Label("Choose a photo", systemImage: "photo.on.rectangle").font(.subheadline.bold())
                             }
@@ -125,6 +121,13 @@ struct CreateView: View {
         .navigationTitle("New decision")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } } }
+        .task {
+            if session.profile == nil { await session.loadProfile() }
+            guard let code = session.profile?.DefaultCurrency, BmbCurrency.codes.contains(code) else { return }
+            for index in products.indices where products[index].title.isEmpty && products[index].price.isEmpty {
+                products[index].currency = code
+            }
+        }
         .sheet(item: $publishedToken) { token in
             NavigationStack { DecisionView(shareToken: token.value) }.environmentObject(session)
         }
@@ -146,7 +149,7 @@ struct CreateView: View {
                 if let data = item.imageData { value["ImageUrl"] = try await session.api.uploadProductImage(data, token: token) }
                 else if !item.imageURL.isEmpty { value["ImageUrl"] = item.imageURL }
                 if let price = Double(item.price) { value["Price"] = price }
-                if let target = Double(item.targetPrice) { value["TargetPrice"] = target; value["TargetCurrency"] = item.targetCurrency }
+                if let target = Double(item.targetPrice) { value["TargetPrice"] = target }
                 fields.append(value)
             }
             let result: BmbDecision = try await session.api.call("/decisions", method: "POST",

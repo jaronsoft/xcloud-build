@@ -15,6 +15,7 @@ struct BmbAuth: Decodable {
     let Phone: String?
     let DisplayName: String?
     let AvatarUrl: String?
+    let DefaultCurrency: String?
 }
 
 struct BmbNonce: Decodable { let Nonce: String }
@@ -29,7 +30,6 @@ struct BmbProduct: Codable, Identifiable {
     var Price: Double? = nil
     var Currency: String? = nil
     var TargetPrice: Double? = nil
-    var TargetCurrency: String? = nil
     var Source: String? = "user"
     var CapturedAt: String? = nil
     var id: String { Id ?? Url ?? Title }
@@ -114,6 +114,7 @@ struct BmbProfile: Decodable {
     let Phone: String?
     let DisplayName: String?
     let AvatarUrl: String?
+    let DefaultCurrency: String?
 }
 
 struct BmbError: LocalizedError {
@@ -226,7 +227,7 @@ final class BmbSession: ObservableObject {
     func adopt(_ result: BmbAuth) {
         token = result.AccessToken
         BmbKeychain.write("access", value: result.AccessToken)
-        profile = BmbProfile(UserId: result.UserId, Email: result.Email, Phone: result.Phone, DisplayName: result.DisplayName, AvatarUrl: result.AvatarUrl)
+        profile = BmbProfile(UserId: result.UserId, Email: result.Email, Phone: result.Phone, DisplayName: result.DisplayName, AvatarUrl: result.AvatarUrl, DefaultCurrency: result.DefaultCurrency)
     }
 
     func sendCode(_ email: String) async throws {

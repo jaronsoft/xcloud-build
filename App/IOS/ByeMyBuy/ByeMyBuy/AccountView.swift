@@ -15,19 +15,38 @@ struct AccountView: View {
     @State private var confirmDelete = false
     @State private var appleDelegate: BmbAppleDelegate?
     @State private var displayName = ""
+    @State private var preferredCurrency = BmbCurrency.defaultCode
     @State private var selectedAvatar: PhotosPickerItem?
     @State private var profileSaving = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("YOUR PROFILE").font(.caption.bold()).tracking(2).foregroundStyle(.green)
-                Text("Account").font(.system(size: 35, weight: .black, design: .rounded))
-                Picker("Appearance", selection: $themePreference) {
-                    Text("System").tag("system")
-                    Text("Light").tag("light")
-                    Text("Dark").tag("dark")
-                }.pickerStyle(.segmented)
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("YOUR PROFILE").font(.caption.bold()).tracking(2).foregroundStyle(.green)
+                        Text("Account").font(.system(size: 31, weight: .black, design: .rounded))
+                    }
+                    Spacer()
+                    Menu {
+                        Button { themePreference = "system" } label: {
+                            Label("System", systemImage: themePreference == "system" ? "checkmark.circle.fill" : "circle.lefthalf.filled")
+                        }
+                        Button { themePreference = "light" } label: {
+                            Label("Light", systemImage: themePreference == "light" ? "checkmark.circle.fill" : "sun.max")
+                        }
+                        Button { themePreference = "dark" } label: {
+                            Label("Dark", systemImage: themePreference == "dark" ? "checkmark.circle.fill" : "moon")
+                        }
+                    } label: {
+                        Image(systemName: "paintpalette")
+                            .font(.system(size: 19, weight: .medium))
+                            .foregroundStyle(BmbTheme.ink)
+                            .frame(width: 44, height: 44)
+                            .background(BmbTheme.card, in: Circle())
+                    }
+                    .accessibilityLabel("Appearance")
+                }
                 if session.isLoggedIn {
                     BmbCard {
                         VStack(alignment: .leading, spacing: 15) {
@@ -47,6 +66,11 @@ struct AccountView: View {
                             TextField("Nickname", text: $displayName).textContentType(.nickname).textFieldStyle(.roundedBorder)
                             Button("Save nickname") { Task { await saveName() } }
                                 .disabled(profileSaving || displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || displayName == session.profile?.DisplayName)
+                            Picker("Default currency", selection: $preferredCurrency) {
+                                ForEach(BmbCurrency.codes, id: \.self) { code in Text(BmbCurrency.label(code)).tag(code) }
+                            }
+                            Button("Save currency") { Task { await saveCurrency() } }
+                                .disabled(profileSaving || preferredCurrency == (session.profile?.DefaultCurrency ?? "USD"))
                             Text(session.profile?.Email ?? session.profile?.Phone ?? "—").font(.caption).foregroundStyle(BmbTheme.muted)
                             Divider()
                             Text("Verify and bind email").font(.headline)
@@ -91,8 +115,12 @@ struct AccountView: View {
         }
         .background(BmbTheme.paper)
         .navigationBarHidden(true)
-        .task(id: session.token) { await session.loadProfile() }
+        .task(id: session.token) {
+            await session.loadProfile()
+            preferredCurrency = session.profile?.DefaultCurrency ?? "USD"
+        }
         .onChange(of: session.profile?.DisplayName) { _, value in displayName = value ?? "" }
+        .onChange(of: session.profile?.DefaultCurrency) { _, value in preferredCurrency = value ?? "USD" }
         .onChange(of: selectedAvatar) { _, item in
             guard let item else { return }
             Task { await changeAvatar(item) }
@@ -109,6 +137,14 @@ struct AccountView: View {
             guard !name.isEmpty, name.count <= 80 else { message = "Nickname must contain 1 to 80 characters."; return }
             let _: BmbAcknowledgement = try await session.api.call("/auth/me", method: "PUT", body: ["DisplayName": name], token: token)
             await session.loadProfile(); message = String(localized: "Nickname saved")
+        } catch { message = error.localizedDescription }
+    }
+    private func saveCurrency() async {
+        guard let token = session.token else { return }
+        profileSaving = true; defer { profileSaving = false }
+        do {
+            let _: BmbAcknowledgement = try await session.api.call("/auth/me", method: "PUT", body: ["DefaultCurrency": preferredCurrency], token: token)
+            await session.loadProfile(); message = String(localized: "Default currency saved")
         } catch { message = error.localizedDescription }
     }
     private func changeAvatar(_ item: PhotosPickerItem) async {

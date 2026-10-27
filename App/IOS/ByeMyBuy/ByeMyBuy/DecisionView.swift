@@ -161,7 +161,6 @@ private struct PriceOfferSection: View {
     let reload: () async -> Void
     @EnvironmentObject private var session: BmbSession
     @State private var target: String
-    @State private var targetCurrency: String
     @State private var site = ""
     @State private var country = ""
     @State private var price = ""
@@ -174,7 +173,6 @@ private struct PriceOfferSection: View {
         self.shareToken = shareToken; self.product = product; self.offers = offers
         self.isOwner = isOwner; self.isOpen = isOpen; self.reload = reload
         _target = State(initialValue: product.TargetPrice.map { String($0) } ?? "")
-        _targetCurrency = State(initialValue: product.TargetCurrency ?? product.Currency ?? BmbCurrency.defaultCode)
         _currency = State(initialValue: product.Currency ?? BmbCurrency.defaultCode)
     }
 
@@ -186,13 +184,11 @@ private struct PriceOfferSection: View {
                 Text(product.Price.map { "\(product.Currency ?? "") \($0)" } ?? "—").font(.subheadline)
                 if let captured = product.CapturedAt { Text(captured).font(.caption).foregroundStyle(BmbTheme.muted) }
                 Text("Price I would accept").font(.subheadline.bold())
-                Text(product.TargetPrice.map { "\(product.TargetCurrency ?? "") \($0)" } ?? "—").font(.subheadline)
+                Text(product.TargetPrice.map { "\(product.Currency ?? "") \($0)" } ?? "—").font(.subheadline)
                 if isOwner && isOpen {
                     TextField("Edit target price; clear to remove", text: $target).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
-                    Picker("Target currency", selection: $targetCurrency) {
-                        ForEach(BmbCurrency.codes, id: \.self) { code in Text(code).tag(code) }
-                    }
                     Button("Save target") { Task { await saveTarget() } }
+                        .disabled(product.Currency == nil)
                 }
                 ForEach(offers) { offer in
                     Divider()
@@ -215,7 +211,7 @@ private struct PriceOfferSection: View {
                     TextField("Country or region code (US)", text: $country).textInputAutocapitalization(.characters).textFieldStyle(.roundedBorder)
                     TextField("Price", text: $price).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
                     Picker("Currency", selection: $currency) {
-                        ForEach(BmbCurrency.codes, id: \.self) { code in Text(code).tag(code) }
+                        ForEach(BmbCurrency.codes, id: \.self) { code in Text(BmbCurrency.label(code)).tag(code) }
                     }
                     TextField("Product URL (optional)", text: $url).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
                     TextField("Shipping, tax, or conditions (optional)", text: $note, axis: .vertical).lineLimit(2...4).textFieldStyle(.roundedBorder)
@@ -226,14 +222,13 @@ private struct PriceOfferSection: View {
             }
         }
         .onChange(of: product.TargetPrice) { _, value in target = value.map { String($0) } ?? "" }
-        .onChange(of: product.TargetCurrency) { _, value in targetCurrency = value ?? product.Currency ?? BmbCurrency.defaultCode }
     }
 
     private func saveTarget() async {
         guard let token = session.token else { session.showLogin = true; return }
         guard let id = product.Id else { return }
         do {
-            let body: [String: Any] = ["TargetPrice": Double(target) as Any? ?? NSNull(), "TargetCurrency": targetCurrency]
+            let body: [String: Any] = ["TargetPrice": Double(target) as Any? ?? NSNull()]
             let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/products/\(id)/target-price", method: "PUT", body: body, token: token)
             message = String(localized: "Target price updated")
             await reload()
