@@ -31,11 +31,9 @@ struct DecisionView: View {
                             .font(.caption.bold()).foregroundStyle(BmbTheme.muted)
                     }
                     Text(decision.Question).font(.system(size: 33, weight: .black, design: .rounded)).tracking(-1.6)
+                        .fixedSize(horizontal: false, vertical: true)
                     ForEach(Array(decision.Products.enumerated()), id: \.offset) { index, product in
                         BmbProductCard(product: product, label: decision.Mode == "pick_one" ? (index == 0 ? "A" : "B") : nil)
-                        PriceOfferSection(shareToken: shareToken, product: product,
-                            offers: decision.PriceOffers.filter { $0.ProductId == product.Id },
-                            isOwner: decision.IsOwner, isOpen: decision.Status == "open", reload: load)
                     }
                     BmbCard {
                         VStack(alignment: .leading, spacing: 15) {
@@ -57,6 +55,11 @@ struct DecisionView: View {
                             Text("\(decision.VoteCount) votes").font(.caption).foregroundStyle(BmbTheme.muted)
                                 .frame(maxWidth: .infinity)
                         }
+                    }
+                    ForEach(Array(decision.Products.enumerated()), id: \.offset) { _, product in
+                        PriceOfferSection(shareToken: shareToken, product: product,
+                            offers: decision.PriceOffers.filter { $0.ProductId == product.Id },
+                            isOwner: decision.IsOwner, isOpen: decision.Status == "open", reload: load)
                     }
                     if decision.IsOwner && decision.Status == "open" {
                         BmbCard {
@@ -178,7 +181,7 @@ private struct PriceOfferSection: View {
     init(shareToken: String, product: BmbProduct, offers: [BmbPriceOffer], isOwner: Bool, isOpen: Bool, reload: @escaping () async -> Void) {
         self.shareToken = shareToken; self.product = product; self.offers = offers
         self.isOwner = isOwner; self.isOpen = isOpen; self.reload = reload
-        _target = State(initialValue: product.TargetPrice.map { String($0) } ?? "")
+        _target = State(initialValue: product.TargetPrice.map { BmbMoney.number($0) } ?? "")
         _currency = State(initialValue: product.Currency ?? BmbCurrency.defaultCode)
     }
 
@@ -187,10 +190,10 @@ private struct PriceOfferSection: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Price tips for this product").font(.headline)
                 Text("Price when posted").font(.subheadline.bold())
-                Text(product.Price.map { "\(product.Currency ?? "") \($0)" } ?? "—").font(.subheadline)
+                Text(product.Price.map { BmbMoney.display($0, currency: product.Currency) } ?? "—").font(.subheadline)
                 if let captured = product.CapturedAt { Text(captured).font(.caption).foregroundStyle(BmbTheme.muted) }
                 Text("Price I would accept").font(.subheadline.bold())
-                Text(product.TargetPrice.map { "\(product.Currency ?? "") \($0)" } ?? "—").font(.subheadline)
+                Text(product.TargetPrice.map { BmbMoney.display($0, currency: product.Currency) } ?? "—").font(.subheadline)
                 if isOwner && isOpen {
                     TextField("Edit target price; clear to remove", text: $target).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
                     Button("Save target") { Task { await saveTarget() } }
@@ -198,7 +201,7 @@ private struct PriceOfferSection: View {
                 }
                 ForEach(offers) { offer in
                     Divider()
-                    Text("\(offer.SiteName) · \(offer.CountryCode) · \(offer.Currency) \(offer.Price)").font(.subheadline.bold())
+                    Text("\(offer.SiteName) · \(offer.CountryCode) · \(BmbMoney.display(offer.Price, currency: offer.Currency))").font(.subheadline.bold())
                     if offer.MeetsTarget {
                         Text("Meets target").font(.caption.bold()).foregroundStyle(.green)
                     }
@@ -227,7 +230,7 @@ private struct PriceOfferSection: View {
                 if let message { Text(message).font(.caption).foregroundStyle(.orange) }
             }
         }
-        .onChange(of: product.TargetPrice) { _, value in target = value.map { String($0) } ?? "" }
+        .onChange(of: product.TargetPrice) { _, value in target = value.map { BmbMoney.number($0) } ?? "" }
     }
 
     private func saveTarget() async {

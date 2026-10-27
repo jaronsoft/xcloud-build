@@ -61,6 +61,17 @@ enum BmbTheme {
     static let hero = adaptive(light: UIColor(red: 0.91, green: 0.95, blue: 0.82, alpha: 1), dark: UIColor(red: 0.153, green: 0.224, blue: 0.173, alpha: 1))
 }
 
+enum BmbMoney {
+    static func number(_ amount: Double) -> String {
+        amount.formatted(.number.precision(.fractionLength(0...2)).grouping(.never)
+            .locale(Locale(identifier: "en_US_POSIX")))
+    }
+
+    static func display(_ amount: Double, currency: String?) -> String {
+        [currency, number(amount)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+    }
+}
+
 struct BmbCard<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
@@ -90,27 +101,32 @@ struct BmbProductCard: View {
     var body: some View {
         BmbCard {
             VStack(alignment: .leading, spacing: 12) {
-                ZStack(alignment: .topLeading) {
-                    RoundedRectangle(cornerRadius: 17).fill(BmbTheme.hero)
-                    if let image = product.ImageUrl, let url = URL(string: image) {
-                        BmbCachedImage(url: url) {
-                            Image(systemName: "sparkles").font(.largeTitle).foregroundStyle(.brown.opacity(0.4))
+                GeometryReader { geometry in
+                    ZStack(alignment: .topLeading) {
+                        RoundedRectangle(cornerRadius: 17).fill(BmbTheme.hero)
+                        if let image = product.ImageUrl, let url = URL(string: image) {
+                            BmbCachedImage(url: url) {
+                                Image(systemName: "sparkles").font(.largeTitle).foregroundStyle(.brown.opacity(0.4))
+                            }
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .clipped()
+                        } else {
+                            Image(systemName: "sparkles").font(.system(size: 52)).foregroundStyle(.brown.opacity(0.4))
+                                .frame(width: geometry.size.width, height: geometry.size.height)
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
-                    } else {
-                        Image(systemName: "sparkles").font(.system(size: 52)).foregroundStyle(.brown.opacity(0.4))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if let label { Text(label).font(.caption.bold()).padding(9).background(.white, in: RoundedRectangle(cornerRadius: 8)).padding(10) }
                     }
-                    if let label { Text(label).font(.caption.bold()).padding(9).background(.white, in: RoundedRectangle(cornerRadius: 8)).padding(10) }
+                    .frame(width: geometry.size.width, height: geometry.size.height)
                 }
                 .frame(height: 210)
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading) {
-                        Text(product.Title.isEmpty ? "Your next find" : product.Title).font(.headline).lineLimit(2)
-                        if let model = product.Model, !model.isEmpty { Text(model).font(.caption).foregroundStyle(BmbTheme.muted) }
+                .clipShape(RoundedRectangle(cornerRadius: 17))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(product.Title.isEmpty ? "Your next find" : product.Title).font(.headline).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let model = product.Model, !model.isEmpty { Text(model).font(.caption).foregroundStyle(BmbTheme.muted) }
+                    if let price = product.Price {
+                        Text(BmbMoney.display(price, currency: product.Currency)).font(.subheadline.bold())
                     }
-                    Spacer()
-                    if let price = product.Price { Text("\(product.Currency ?? "") \(price, specifier: "%.2f")").font(.subheadline.bold()) }
                 }
                 if let tags = product.Tags, !tags.isEmpty {
                     Text(tags.map { "#\($0)" }.joined(separator: "  ")).font(.caption).foregroundStyle(BmbTheme.muted)

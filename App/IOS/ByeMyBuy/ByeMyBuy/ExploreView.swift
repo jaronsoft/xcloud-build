@@ -92,7 +92,7 @@ struct ExploreView: View {
                     Text(model).font(.caption2).foregroundStyle(BmbTheme.muted).lineLimit(1)
                 }
                 if let price = product?.Price {
-                    Text("\(product?.Currency ?? "") \(price, specifier: "%.2f")")
+                    Text(BmbMoney.display(price, currency: product?.Currency))
                         .font(.caption.bold()).foregroundStyle(BmbTheme.muted)
                 }
                 Text(item.Question).font(.caption).foregroundStyle(BmbTheme.muted).lineLimit(2)
