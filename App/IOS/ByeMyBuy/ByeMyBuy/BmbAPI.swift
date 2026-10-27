@@ -14,6 +14,7 @@ struct BmbAuth: Decodable {
     let Email: String?
     let Phone: String?
     let DisplayName: String?
+    let AvatarUrl: String?
 }
 
 struct BmbNonce: Decodable { let Nonce: String }
@@ -27,6 +28,8 @@ struct BmbProduct: Codable, Identifiable {
     var ImageUrl: String? = nil
     var Price: Double? = nil
     var Currency: String? = nil
+    var TargetPrice: Double? = nil
+    var TargetCurrency: String? = nil
     var Source: String? = "user"
     var CapturedAt: String? = nil
     var id: String { Id ?? Url ?? Title }
@@ -41,6 +44,21 @@ struct BmbComment: Decodable, Identifiable {
     var id: String { Id }
 }
 
+struct BmbPriceOffer: Decodable, Identifiable {
+    let Id: String
+    let ProductId: String
+    let SiteName: String
+    let CountryCode: String
+    let Price: Double
+    let Currency: String
+    let MeetsTarget: Bool
+    let Url: String?
+    let Note: String?
+    let Status: String
+    let CreateTime: String
+    var id: String { Id }
+}
+
 struct BmbDecision: Decodable, Identifiable {
     let Id: String
     let ShareToken: String
@@ -48,12 +66,15 @@ struct BmbDecision: Decodable, Identifiable {
     let Mode: String
     let Question: String
     let Status: String
+    let Visibility: String?
+    let PublicReviewStatus: String?
     let FinalChoice: String?
     let IsOwner: Bool
     let Products: [BmbProduct]
     let Votes: [String: Int]
     let VoteCount: Int
     let Comments: [BmbComment]
+    let PriceOffers: [BmbPriceOffer]
     var id: String { Id }
 }
 
@@ -63,6 +84,8 @@ struct BmbDecisionSummary: Decodable, Identifiable {
     let Question: String
     let Mode: String
     let Status: String
+    let Visibility: String?
+    let PublicReviewStatus: String?
     let FinalChoice: String?
     var id: String { Id }
 }
@@ -80,6 +103,7 @@ struct BmbPublicDecision: Decodable, Identifiable {
 struct BmbPublicPage: Decodable {
     let Items: [BmbPublicDecision]
     let Total: Int
+    let Snapshot: Int64?
     let Page: Int
     let HasMore: Bool
 }
@@ -89,6 +113,7 @@ struct BmbProfile: Decodable {
     let Email: String?
     let Phone: String?
     let DisplayName: String?
+    let AvatarUrl: String?
 }
 
 struct BmbError: LocalizedError {
@@ -146,12 +171,20 @@ struct BmbAPI {
     }
 
     func uploadProductImage(_ data: Data, token: String) async throws -> String {
+        try await uploadImage(data, token: token, path: "/products/image")
+    }
+
+    func uploadAvatarImage(_ data: Data, token: String) async throws -> String {
+        try await uploadImage(data, token: token, path: "/auth/me/avatar")
+    }
+
+    private func uploadImage(_ data: Data, token: String, path: String) async throws -> String {
         let boundary = UUID().uuidString
         var body = Data()
         body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"product.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".utf8))
         body.append(data)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
-        var request = URLRequest(url: URL(string: "/api/byemybuy/products/image", relativeTo: Self.baseURL)!.absoluteURL)
+        var request = URLRequest(url: URL(string: "/api/byemybuy\(path)", relativeTo: Self.baseURL)!.absoluteURL)
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.httpBody = body
@@ -193,7 +226,7 @@ final class BmbSession: ObservableObject {
     func adopt(_ result: BmbAuth) {
         token = result.AccessToken
         BmbKeychain.write("access", value: result.AccessToken)
-        profile = BmbProfile(UserId: result.UserId, Email: result.Email, Phone: result.Phone, DisplayName: result.DisplayName)
+        profile = BmbProfile(UserId: result.UserId, Email: result.Email, Phone: result.Phone, DisplayName: result.DisplayName, AvatarUrl: result.AvatarUrl)
     }
 
     func sendCode(_ email: String) async throws {

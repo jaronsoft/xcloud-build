@@ -26,6 +26,11 @@ struct MineView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.Question).font(.subheadline.bold())
                                     Text(item.Status == "open" ? "Open" : "Closed").font(.caption).foregroundStyle(BmbTheme.muted)
+                                    if item.Visibility == "public" {
+                                        Text(LocalizedStringKey(item.PublicReviewStatus == "approved" ? "Visible in Explore" :
+                                            item.PublicReviewStatus == "rejected" ? "Explore submission declined" : "Awaiting Explore review"))
+                                            .font(.caption).foregroundStyle(BmbTheme.muted)
+                                    }
                                 }
                                 Spacer()
                                 Image(systemName: "chevron.right")

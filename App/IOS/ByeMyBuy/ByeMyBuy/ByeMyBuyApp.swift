@@ -143,7 +143,7 @@ struct BmbSplashView: View {
                         .opacity(running ? 1 : 0)
                 }.frame(height: 180)
                 Text("ByeMyBuy").font(.system(size: 29, weight: .black, design: .rounded))
-                Text("Ask a friend first?").font(.subheadline).foregroundStyle(BmbTheme.muted)
+                Text("Hear what others think?").font(.subheadline).foregroundStyle(BmbTheme.muted)
             }
             VStack { Spacer(); Text("Tap to skip").font(.caption).foregroundStyle(BmbTheme.muted).padding(.bottom, 26) }
         }

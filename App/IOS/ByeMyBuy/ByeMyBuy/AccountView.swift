@@ -1,6 +1,8 @@
 import SwiftUI
 import AuthenticationServices
 import CryptoKit
+import PhotosUI
+import UIKit
 
 struct AccountView: View {
     @EnvironmentObject private var session: BmbSession
@@ -8,9 +10,13 @@ struct AccountView: View {
     @State private var email = ""
     @State private var code = ""
     @State private var password = ""
+    @State private var codeSending = false
     @State private var message: String?
     @State private var confirmDelete = false
     @State private var appleDelegate: BmbAppleDelegate?
+    @State private var displayName = ""
+    @State private var selectedAvatar: PhotosPickerItem?
+    @State private var profileSaving = false
 
     var body: some View {
         ScrollView {
@@ -25,15 +31,43 @@ struct AccountView: View {
                 if session.isLoggedIn {
                     BmbCard {
                         VStack(alignment: .leading, spacing: 15) {
-                            Text(session.profile?.DisplayName ?? "Friend").font(.headline)
+                            HStack(spacing: 14) {
+                                Group {
+                                    if let avatarUrl = session.profile?.AvatarUrl, let url = URL(string: avatarUrl) {
+                                        AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { Circle().fill(.green.opacity(0.15)) }
+                                    } else {
+                                        Text(String((session.profile?.DisplayName ?? "F").prefix(1))).font(.title.bold()).frame(maxWidth: .infinity, maxHeight: .infinity).background(.green.opacity(0.15))
+                                    }
+                                }.frame(width: 68, height: 68).clipShape(Circle())
+                                VStack(alignment: .leading) {
+                                    PhotosPicker("Change photo", selection: $selectedAvatar, matching: .images).disabled(profileSaving)
+                                    if session.profile?.AvatarUrl != nil { Button("Remove photo") { Task { await removeAvatar() } }.disabled(profileSaving) }
+                                }.font(.subheadline)
+                            }
+                            TextField("Nickname", text: $displayName).textContentType(.nickname).textFieldStyle(.roundedBorder)
+                            Button("Save nickname") { Task { await saveName() } }
+                                .disabled(profileSaving || displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || displayName == session.profile?.DisplayName)
                             Text(session.profile?.Email ?? session.profile?.Phone ?? "—").font(.caption).foregroundStyle(BmbTheme.muted)
                             Divider()
                             Text("Verify and bind email").font(.headline)
                             TextField("Email", text: $email).textContentType(.emailAddress).keyboardType(.emailAddress)
                                 .textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
-                            HStack {
-                                TextField("Code", text: $code).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-                                Button("Send code") { Task { await sendCode() } }.font(.caption.bold())
+                            TimelineView(.periodic(from: .now, by: 1)) { context in
+                                let remaining = BmbEmailCodeCooldown.remaining(at: context.date)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        TextField("Code", text: $code).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+                                        Button(codeSending ? String(localized: "Sending…") : remaining > 0 ? String(format: NSLocalizedString("Resend in %ds", comment: ""), remaining) : String(localized: "Send code")) {
+                                            Task { await sendCode() }
+                                        }
+                                        .font(.caption.bold())
+                                        .disabled(email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || codeSending || remaining > 0)
+                                    }
+                                    if remaining > 0 {
+                                        Text("Code sent. Check your inbox and enter it here.")
+                                            .font(.caption).foregroundStyle(BmbTheme.muted)
+                                    }
+                                }
                             }
                             Button("Bind email") { Task { await bindEmail() } }.font(.subheadline.bold())
                             Divider()
@@ -58,12 +92,50 @@ struct AccountView: View {
         .background(BmbTheme.paper)
         .navigationBarHidden(true)
         .task(id: session.token) { await session.loadProfile() }
+        .onChange(of: session.profile?.DisplayName) { _, value in displayName = value ?? "" }
+        .onChange(of: selectedAvatar) { _, item in
+            guard let item else { return }
+            Task { await changeAvatar(item) }
+        }
         .confirmationDialog("Delete your account and its content?", isPresented: $confirmDelete) {
             Button("Delete account", role: .destructive) { Task { await delete() } }
         }
     }
+    private func saveName() async {
+        guard let token = session.token else { return }
+        profileSaving = true; defer { profileSaving = false }
+        do {
+            let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, name.count <= 80 else { message = "Nickname must contain 1 to 80 characters."; return }
+            let _: BmbAcknowledgement = try await session.api.call("/auth/me", method: "PUT", body: ["DisplayName": name], token: token)
+            await session.loadProfile(); message = String(localized: "Nickname saved")
+        } catch { message = error.localizedDescription }
+    }
+    private func changeAvatar(_ item: PhotosPickerItem) async {
+        guard let token = session.token else { return }
+        profileSaving = true; defer { profileSaving = false; selectedAvatar = nil }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { throw BmbError(message: "Could not read this photo.") }
+            let scale = min(1, 1024 / max(image.size.width, image.size.height))
+            let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+            let jpeg = UIGraphicsImageRenderer(size: size).jpegData(withCompressionQuality: 0.82) { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+            _ = try await session.api.uploadAvatarImage(jpeg, token: token)
+            await session.loadProfile(); message = String(localized: "Photo updated")
+        } catch { message = error.localizedDescription }
+    }
+    private func removeAvatar() async {
+        guard let token = session.token else { return }
+        profileSaving = true; defer { profileSaving = false }
+        do {
+            let _: BmbAcknowledgement = try await session.api.call("/auth/me/avatar", method: "DELETE", token: token)
+            await session.loadProfile(); message = String(localized: "Photo removed")
+        } catch { message = error.localizedDescription }
+    }
     private func sendCode() async {
-        do { try await session.sendCode(email); message = String(localized: "Code sent") }
+        guard !codeSending, BmbEmailCodeCooldown.remaining(at: .now) == 0 else { return }
+        codeSending = true
+        defer { codeSending = false }
+        do { try await session.sendCode(email); BmbEmailCodeCooldown.recordSend(); message = nil }
         catch { message = error.localizedDescription }
     }
     private func bindEmail() async {

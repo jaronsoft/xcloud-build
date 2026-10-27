@@ -23,9 +23,17 @@ struct DecisionView: View {
                             Label("Share", systemImage: "square.and.arrow.up").font(.caption.bold())
                         }
                     }
+                    if decision.IsOwner && decision.Visibility == "public" {
+                        Text(LocalizedStringKey(decision.PublicReviewStatus == "approved" ? "Visible in Explore" :
+                            decision.PublicReviewStatus == "rejected" ? "Explore submission declined" : "Awaiting Explore review"))
+                            .font(.caption.bold()).foregroundStyle(BmbTheme.muted)
+                    }
                     Text(decision.Question).font(.system(size: 33, weight: .black, design: .rounded)).tracking(-1.6)
                     ForEach(Array(decision.Products.enumerated()), id: \.offset) { index, product in
                         BmbProductCard(product: product, label: decision.Mode == "pick_one" ? (index == 0 ? "A" : "B") : nil)
+                        PriceOfferSection(shareToken: shareToken, product: product,
+                            offers: decision.PriceOffers.filter { $0.ProductId == product.Id },
+                            isOwner: decision.IsOwner, isOpen: decision.Status == "open", reload: load)
                     }
                     BmbCard {
                         VStack(alignment: .leading, spacing: 15) {
@@ -68,7 +76,7 @@ struct DecisionView: View {
                     }
                     BmbCard {
                         VStack(alignment: .leading, spacing: 13) {
-                            Text("Advice from friends").font(.headline)
+                            Text("Advice from others").font(.headline)
                             ForEach(decision.Comments) { item in
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(item.Body).font(.subheadline)
@@ -77,7 +85,7 @@ struct DecisionView: View {
                                 Divider()
                             }
                             if decision.Status == "open" {
-                                TextField("What would you tell a friend?", text: $comment, axis: .vertical)
+                                TextField("What would you suggest?", text: $comment, axis: .vertical)
                                     .lineLimit(2...5).textFieldStyle(.roundedBorder)
                                 TextField("Alternative product URL (optional)", text: $suggestedURL)
                                     .textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
@@ -140,6 +148,109 @@ struct DecisionView: View {
         do {
             let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/reports", method: "POST", body: ["Reason": reportReason], token: token)
             message = String(localized: "Report sent")
+        } catch { message = error.localizedDescription }
+    }
+}
+
+private struct PriceOfferSection: View {
+    let shareToken: String
+    let product: BmbProduct
+    let offers: [BmbPriceOffer]
+    let isOwner: Bool
+    let isOpen: Bool
+    let reload: () async -> Void
+    @EnvironmentObject private var session: BmbSession
+    @State private var target: String
+    @State private var targetCurrency: String
+    @State private var site = ""
+    @State private var country = ""
+    @State private var price = ""
+    @State private var currency: String
+    @State private var url = ""
+    @State private var note = ""
+    @State private var message: String?
+
+    init(shareToken: String, product: BmbProduct, offers: [BmbPriceOffer], isOwner: Bool, isOpen: Bool, reload: @escaping () async -> Void) {
+        self.shareToken = shareToken; self.product = product; self.offers = offers
+        self.isOwner = isOwner; self.isOpen = isOpen; self.reload = reload
+        _target = State(initialValue: product.TargetPrice.map { String($0) } ?? "")
+        _targetCurrency = State(initialValue: product.TargetCurrency ?? product.Currency ?? BmbCurrency.defaultCode)
+        _currency = State(initialValue: product.Currency ?? BmbCurrency.defaultCode)
+    }
+
+    var body: some View {
+        BmbCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Price tips for this product").font(.headline)
+                Text("Price when posted").font(.subheadline.bold())
+                Text(product.Price.map { "\(product.Currency ?? "") \($0)" } ?? "—").font(.subheadline)
+                if let captured = product.CapturedAt { Text(captured).font(.caption).foregroundStyle(BmbTheme.muted) }
+                Text("Price I would accept").font(.subheadline.bold())
+                Text(product.TargetPrice.map { "\(product.TargetCurrency ?? "") \($0)" } ?? "—").font(.subheadline)
+                if isOwner && isOpen {
+                    TextField("Edit target price; clear to remove", text: $target).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
+                    Picker("Target currency", selection: $targetCurrency) {
+                        ForEach(BmbCurrency.codes, id: \.self) { code in Text(code).tag(code) }
+                    }
+                    Button("Save target") { Task { await saveTarget() } }
+                }
+                ForEach(offers) { offer in
+                    Divider()
+                    Text("\(offer.SiteName) · \(offer.CountryCode) · \(offer.Currency) \(offer.Price)").font(.subheadline.bold())
+                    if offer.MeetsTarget {
+                        Text("Meets target").font(.caption.bold()).foregroundStyle(.green)
+                    }
+                    HStack {
+                        Text("User reported")
+                        Text("· \(offer.CreateTime)")
+                        if offer.Status == "pending" { Text("· Awaiting review") }
+                    }.font(.caption).foregroundStyle(BmbTheme.muted)
+                    if let note = offer.Note { Text(note).font(.caption) }
+                    if let url = offer.Url, let link = URL(string: url) { Link("View product", destination: link) }
+                }
+                if isOpen {
+                    Divider()
+                    Text("Share a price you found").font(.subheadline.bold())
+                    TextField("Website", text: $site).textFieldStyle(.roundedBorder)
+                    TextField("Country or region code (US)", text: $country).textInputAutocapitalization(.characters).textFieldStyle(.roundedBorder)
+                    TextField("Price", text: $price).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
+                    Picker("Currency", selection: $currency) {
+                        ForEach(BmbCurrency.codes, id: \.self) { code in Text(code).tag(code) }
+                    }
+                    TextField("Product URL (optional)", text: $url).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
+                    TextField("Shipping, tax, or conditions (optional)", text: $note, axis: .vertical).lineLimit(2...4).textFieldStyle(.roundedBorder)
+                    Button(session.isLoggedIn ? "Send price for review" : "Sign in to share") { Task { await submit() } }
+                        .disabled(site.trimmingCharacters(in: .whitespaces).isEmpty || country.count != 2 || Double(price) == nil)
+                }
+                if let message { Text(message).font(.caption).foregroundStyle(.orange) }
+            }
+        }
+        .onChange(of: product.TargetPrice) { _, value in target = value.map { String($0) } ?? "" }
+        .onChange(of: product.TargetCurrency) { _, value in targetCurrency = value ?? product.Currency ?? BmbCurrency.defaultCode }
+    }
+
+    private func saveTarget() async {
+        guard let token = session.token else { session.showLogin = true; return }
+        guard let id = product.Id else { return }
+        do {
+            let body: [String: Any] = ["TargetPrice": Double(target) as Any? ?? NSNull(), "TargetCurrency": targetCurrency]
+            let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/products/\(id)/target-price", method: "PUT", body: body, token: token)
+            message = String(localized: "Target price updated")
+            await reload()
+        } catch { message = error.localizedDescription }
+    }
+
+    private func submit() async {
+        guard let token = session.token else { session.showLogin = true; return }
+        guard let id = product.Id, let amount = Double(price) else { return }
+        do {
+            let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/price-offers", method: "POST", body: [
+                "ProductId": id, "SiteName": site, "CountryCode": country.uppercased(), "Price": amount,
+                "Currency": currency, "Url": url, "Note": note
+            ], token: token)
+            site = ""; country = ""; price = ""; url = ""; note = ""
+            message = String(localized: "Price submitted for review")
+            await reload()
         } catch { message = error.localizedDescription }
     }
 }

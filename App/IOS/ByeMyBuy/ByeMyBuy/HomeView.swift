@@ -15,8 +15,8 @@ struct HomeView: View {
                 }
                 VStack(alignment: .leading, spacing: 18) {
                     Text("A BETTER PAUSE BEFORE CHECKOUT").font(.system(size: 11, weight: .heavy)).tracking(2).foregroundStyle(.green)
-                    Text("Love it? Ask your people first.").font(.system(size: 49, weight: .black, design: .rounded)).tracking(-3).fixedSize(horizontal: false, vertical: true)
-                    Text("Add a product. Let friends vote, share honest advice, and help you decide what deserves a place in your life.")
+                    Text("Love it? Hear what others think.").font(.system(size: 38, weight: .black, design: .rounded)).tracking(-1).fixedSize(horizontal: false, vertical: true)
+                    Text("Share a product with friends, the community, and people who have bought it. Hear their votes and experiences before you decide.")
                         .font(.system(size: 16)).foregroundStyle(BmbTheme.muted).lineSpacing(5)
                     BmbPrimaryButton(title: "Ask before you buy") { showCreate = true }
                 }
@@ -28,7 +28,7 @@ struct HomeView: View {
                 }.foregroundStyle(BmbTheme.ink)
                 VStack(alignment: .leading, spacing: 17) {
                     Text("Shopping decisions feel lighter together.").font(.system(size: 26, weight: .bold, design: .rounded))
-                    ForEach(Array(["Find something you want", "Ask your circle", "Decide with confidence"].enumerated()), id: \.offset) { index, item in
+                    ForEach(Array(["Find something you want", "Hear what others think", "Decide with confidence"].enumerated()), id: \.offset) { index, item in
                         BmbCard {
                             HStack(spacing: 17) {
                                 Text("0\(index + 1)").font(.caption.bold()).foregroundStyle(.green)

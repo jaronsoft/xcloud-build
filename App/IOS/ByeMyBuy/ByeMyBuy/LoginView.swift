@@ -23,6 +23,7 @@ struct LoginView: View {
     @State private var password = ""
     @State private var usePassword = false
     @State private var busy = false
+    @State private var codeSending = false
     @State private var error: String?
     @State private var appleNonce = ""
     @State private var appleDelegate: BmbAppleDelegate?
@@ -51,9 +52,22 @@ struct LoginView: View {
                         if usePassword {
                             SecureField("Password", text: $password).textFieldStyle(.roundedBorder)
                         } else {
-                            HStack {
-                                TextField("Verification code", text: $code).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-                                Button("Send code") { Task { await sendCode() } }.font(.caption.bold())
+                            TimelineView(.periodic(from: .now, by: 1)) { context in
+                                let remaining = BmbEmailCodeCooldown.remaining(at: context.date)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        TextField("Verification code", text: $code).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+                                        Button(codeSending ? String(localized: "Sending…") : remaining > 0 ? String(format: NSLocalizedString("Resend in %ds", comment: ""), remaining) : String(localized: "Send code")) {
+                                            Task { await sendCode() }
+                                        }
+                                        .font(.caption.bold())
+                                        .disabled(email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || codeSending || remaining > 0)
+                                    }
+                                    if remaining > 0 {
+                                        Text("Code sent. Check your inbox and enter it here.")
+                                            .font(.caption).foregroundStyle(BmbTheme.muted)
+                                    }
+                                }
                             }
                         }
                         if let error { Text(error).font(.caption).foregroundStyle(.red) }
@@ -77,7 +91,10 @@ struct LoginView: View {
     }
 
     private func sendCode() async {
-        do { try await session.sendCode(email); error = String(localized: "Code sent") }
+        guard !codeSending, BmbEmailCodeCooldown.remaining(at: .now) == 0 else { return }
+        codeSending = true
+        defer { codeSending = false }
+        do { try await session.sendCode(email); BmbEmailCodeCooldown.recordSend(); error = nil }
         catch { self.error = error.localizedDescription }
     }
     private func login() async {

@@ -3,6 +3,7 @@ import SwiftUI
 struct ExploreView: View {
     @State private var items: [BmbPublicDecision] = []
     @State private var page = 0
+    @State private var snapshot: Int64?
     @State private var hasMore = false
     @State private var loading = false
     @State private var error: String?
@@ -93,9 +94,11 @@ struct ExploreView: View {
         loading = true; error = nil
         do {
             let nextPage = reset ? 1 : page + 1
-            let response: BmbPublicPage = try await BmbAPI().call("/decisions/public?page=\(nextPage)&size=20")
+            let snapshotQuery = reset ? "" : snapshot.map { "&snapshot=\($0)" } ?? ""
+            let response: BmbPublicPage = try await BmbAPI().call("/decisions/public?page=\(nextPage)&size=20\(snapshotQuery)")
             items = reset ? response.Items : items + response.Items
             page = response.Page
+            snapshot = response.Snapshot
             hasMore = response.HasMore
         } catch { self.error = error.localizedDescription }
         loading = false

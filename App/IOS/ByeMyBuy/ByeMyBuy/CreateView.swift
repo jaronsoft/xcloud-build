@@ -20,6 +20,8 @@ struct ProductDraft: Identifiable {
     var photoItem: PhotosPickerItem?
     var price = ""
     var currency = BmbCurrency.defaultCode
+    var targetPrice = ""
+    var targetCurrency = BmbCurrency.defaultCode
 
     var product: BmbProduct {
         BmbProduct(Title: title, Model: model.isEmpty ? nil : model, Url: url.isEmpty ? nil : url, ImageUrl: imageURL.isEmpty ? nil : imageURL,
@@ -31,7 +33,7 @@ struct CreateView: View {
     @EnvironmentObject private var session: BmbSession
     @Environment(\.dismiss) private var dismiss
     @State private var mode = "buy_pass"
-    @State private var visibility = "private"
+    @State private var visibility = "public"
     @State private var question = ""
     @State private var products = [ProductDraft(), ProductDraft()]
     @State private var isBusy = false
@@ -59,6 +61,12 @@ struct CreateView: View {
                                     ForEach(BmbCurrency.codes, id: \.self) { code in Text(code).tag(code) }
                                 }.frame(width: 110)
                             }
+                            HStack {
+                                TextField("Price I would accept (optional)", text: $products[index].targetPrice).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
+                                Picker("Target currency", selection: $products[index].targetCurrency) {
+                                    ForEach(BmbCurrency.codes, id: \.self) { code in Text(code).tag(code) }
+                                }.frame(width: 110)
+                            }
                             PhotosPicker(selection: $products[index].photoItem, matching: .images) {
                                 Label("Choose a photo", systemImage: "photo.on.rectangle").font(.subheadline.bold())
                             }
@@ -81,15 +89,18 @@ struct CreateView: View {
                             TextField("Image URL (optional)", text: $products[index].imageURL).textInputAutocapitalization(.never).keyboardType(.URL).textFieldStyle(.roundedBorder)
                             DisclosureGroup("Product URL (optional)") {
                                 TextField("https://…", text: $products[index].url).textInputAutocapitalization(.never).keyboardType(.URL).textFieldStyle(.roundedBorder)
-                                Button(isBusy ? "Reading…" : "Get details") { Task { await resolve(index) } }
-                                    .disabled(products[index].url.isEmpty || isBusy)
                             }
                         }
                     }
                 }
                 BmbCard {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("What should your friends know?").font(.headline)
+                        Text("What should others know?").font(.headline)
+                        HStack {
+                            ForEach(mode == "pick_one" ? ["Do I need this?", "Which one suits me?"] : ["Do I need this?", "I already own something similar."], id: \.self) { preset in
+                                Button(preset) { question = preset }.buttonStyle(.bordered)
+                            }
+                        }
                         TextField("I love this, but I already own something similar…", text: $question, axis: .vertical)
                             .lineLimit(3...6).textFieldStyle(.roundedBorder)
                     }
@@ -99,9 +110,9 @@ struct CreateView: View {
                         Text("Who can see this?").font(.headline)
                         Picker("Visibility", selection: $visibility) {
                             Text("Link only").tag("private")
-                            Text("Explore").tag("public")
+                            Text("Submit to Explore (after review)").tag("public")
                         }.pickerStyle(.segmented)
-                        Text(visibility == "public" ? "Anyone can find and vote on this decision." : "Only people with the link can open this decision.")
+                        Text(LocalizedStringKey(visibility == "public" ? "Explore can find this after review. Your share link works now." : "Only people with the link can open this decision."))
                             .font(.caption).foregroundStyle(BmbTheme.muted)
                     }
                 }
@@ -117,20 +128,6 @@ struct CreateView: View {
         .sheet(item: $publishedToken) { token in
             NavigationStack { DecisionView(shareToken: token.value) }.environmentObject(session)
         }
-    }
-
-    private func resolve(_ index: Int) async {
-        isBusy = true; defer { isBusy = false }
-        do {
-            let product = try await session.api.resolve(products[index].url)
-            products[index].title = product.Title
-            products[index].model = product.Model ?? ""
-            products[index].url = product.Url ?? ""
-            products[index].imageURL = product.ImageUrl ?? ""
-            products[index].price = product.Price.map { String($0) } ?? ""
-            products[index].currency = product.Currency ?? "USD"
-            error = nil
-        } catch { self.error = String(localized: "We couldn’t read that page. Fill in the details yourself.") }
     }
 
     private func publish() async {
@@ -149,6 +146,7 @@ struct CreateView: View {
                 if let data = item.imageData { value["ImageUrl"] = try await session.api.uploadProductImage(data, token: token) }
                 else if !item.imageURL.isEmpty { value["ImageUrl"] = item.imageURL }
                 if let price = Double(item.price) { value["Price"] = price }
+                if let target = Double(item.targetPrice) { value["TargetPrice"] = target; value["TargetCurrency"] = item.targetCurrency }
                 fields.append(value)
             }
             let result: BmbDecision = try await session.api.call("/decisions", method: "POST",
