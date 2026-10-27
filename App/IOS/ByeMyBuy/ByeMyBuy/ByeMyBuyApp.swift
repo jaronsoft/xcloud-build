@@ -93,9 +93,9 @@ struct BmbProductCard: View {
                 ZStack(alignment: .topLeading) {
                     RoundedRectangle(cornerRadius: 17).fill(BmbTheme.hero)
                     if let image = product.ImageUrl, let url = URL(string: image) {
-                        AsyncImage(url: url) { result in
-                            result.resizable().scaledToFit()
-                        } placeholder: { Image(systemName: "sparkles").font(.largeTitle).foregroundStyle(.brown.opacity(0.4)) }
+                        BmbCachedImage(url: url) {
+                            Image(systemName: "sparkles").font(.largeTitle).foregroundStyle(.brown.opacity(0.4))
+                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
                     } else {
                         Image(systemName: "sparkles").font(.system(size: 52)).foregroundStyle(.brown.opacity(0.4))
@@ -111,6 +111,9 @@ struct BmbProductCard: View {
                     }
                     Spacer()
                     if let price = product.Price { Text("\(product.Currency ?? "") \(price, specifier: "%.2f")").font(.subheadline.bold()) }
+                }
+                if let tags = product.Tags, !tags.isEmpty {
+                    Text(tags.map { "#\($0)" }.joined(separator: "  ")).font(.caption).foregroundStyle(BmbTheme.muted)
                 }
                 if let link = product.Url, let url = URL(string: link) {
                     Link(destination: url) { Label("View at store", systemImage: "arrow.up.right").font(.caption.bold()).foregroundStyle(.green) }

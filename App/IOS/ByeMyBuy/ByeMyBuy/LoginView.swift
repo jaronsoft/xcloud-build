@@ -31,18 +31,18 @@ struct LoginView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
                     Text("BYEMYBUY").font(.caption.bold()).tracking(2)
                         .foregroundStyle(BmbTheme.lime)
                     Text("Good choices begin with a conversation.")
-                        .font(.system(size: 36, weight: .black, design: .rounded)).tracking(-1.5)
+                        .font(.system(size: 27, weight: .black, design: .rounded)).tracking(-0.8)
                         .foregroundStyle(.white)
-                    Text("“I would wait until next month.”").font(.subheadline.bold()).padding(13)
+                    Text("“I would wait until next month.”").font(.caption.bold()).padding(10)
                         .foregroundStyle(.white)
                         .background(Color(red: 1, green: 0.447, blue: 0.353), in: RoundedRectangle(cornerRadius: 13))
                 }
-                .frame(maxWidth: .infinity, minHeight: 250, alignment: .leading)
-                .padding(28).background(Color(red: 0.141, green: 0.22, blue: 0.176), in: RoundedRectangle(cornerRadius: 25))
+                .frame(maxWidth: .infinity, minHeight: 140, alignment: .leading)
+                .padding(20).background(Color(red: 0.141, green: 0.22, blue: 0.176), in: RoundedRectangle(cornerRadius: 22))
                 BmbCard {
                     VStack(alignment: .leading, spacing: 15) {
                         Text(usePassword ? String(localized: "Sign in") : String(localized: "Email code sign-in or registration"))

@@ -23,20 +23,45 @@ struct MineView: View {
                 } else {
                     ForEach(items) { item in
                         NavigationLink(destination: DecisionView(shareToken: item.ShareToken)) {
-                            BmbCard { HStack {
-                                Text("✦").frame(width: 40, height: 40).background(BmbTheme.lime, in: RoundedRectangle(cornerRadius: 12))
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.Question).font(.subheadline.bold())
-                                    Text(item.Status == "open" ? "Open" : "Closed").font(.caption).foregroundStyle(BmbTheme.muted)
+                            BmbCard {
+                                VStack(alignment: .leading, spacing: 14) {
+                                    HStack(alignment: .top, spacing: 13) {
+                                        BmbCachedImage(url: item.ImageUrl.flatMap(URL.init(string:))) {
+                                            Image("LaunchMark").resizable().scaledToFit().padding(16)
+                                        }
+                                        .frame(width: 78, height: 78)
+                                        .background(BmbTheme.hero, in: RoundedRectangle(cornerRadius: 14))
+                                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Text(item.Question).font(.subheadline.bold()).lineLimit(2)
+                                            Label(item.Status == "open" ? "Open" : "Closed", systemImage: "circle.fill")
+                                                .font(.caption2).foregroundStyle(item.Status == "open" ? .green : BmbTheme.muted)
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "clock")
+                                                Text("Published")
+                                                Text(item.publishedAt)
+                                            }.font(.caption2).foregroundStyle(BmbTheme.muted)
+                                        }
+                                        Spacer(minLength: 0)
+                                        Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(BmbTheme.muted)
+                                    }
+                                    HStack(spacing: 15) {
+                                        countLabel(item.Mode == "pick_one" ? "Option A" : "Buy it",
+                                                   count: item.Votes[item.Mode == "pick_one" ? "a" : "buy"] ?? 0,
+                                                   symbol: "hand.thumbsup")
+                                        countLabel(item.Mode == "pick_one" ? "Option B" : "Pass",
+                                                   count: item.Votes[item.Mode == "pick_one" ? "b" : "pass"] ?? 0,
+                                                   symbol: "hand.thumbsdown")
+                                        countLabel("Comments", count: item.CommentCount, symbol: "bubble.left")
+                                    }
+                                    .font(.caption).foregroundStyle(BmbTheme.muted)
                                     if item.Visibility == "public" {
                                         Text(LocalizedStringKey(item.PublicReviewStatus == "approved" ? "Visible in Explore" :
                                             item.PublicReviewStatus == "rejected" ? "Explore submission declined" : "Awaiting Explore review"))
-                                            .font(.caption).foregroundStyle(BmbTheme.muted)
+                                            .font(.caption2).foregroundStyle(BmbTheme.muted)
                                     }
                                 }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                            } }.foregroundStyle(BmbTheme.ink)
+                            }.foregroundStyle(BmbTheme.ink)
                         }
                     }
                 }
@@ -44,11 +69,30 @@ struct MineView: View {
         }
         .background(BmbTheme.paper)
         .navigationBarHidden(true)
-        .task(id: session.token) { await load() }
+        .task(id: session.token) {
+            items = []
+            if let token = session.token,
+               let cached: [BmbDecisionSummary] = await session.api.cached("/decisions/mine", token: token) { items = cached }
+            await load()
+        }
+        .refreshable { await load() }
     }
+
+    private func countLabel(_ title: LocalizedStringKey, count: Int, symbol: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol)
+            Text(title)
+            Text("\(count)")
+        }
+    }
+
     private func load() async {
         guard let token = session.token else { items = []; return }
         do { items = try await session.api.call("/decisions/mine", token: token); error = nil }
         catch { self.error = error.localizedDescription }
     }
+}
+
+private extension BmbDecisionSummary {
+    var publishedAt: String { String(CreateTime.replacingOccurrences(of: "T", with: " ").prefix(16)) }
 }

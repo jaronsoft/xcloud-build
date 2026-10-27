@@ -25,6 +25,7 @@ struct BmbProduct: Codable, Identifiable {
     var Id: String? = nil
     var Title: String = ""
     var Model: String? = nil
+    var Tags: [String]? = nil
     var Url: String? = nil
     var ImageUrl: String? = nil
     var Price: Double? = nil
@@ -87,6 +88,10 @@ struct BmbDecisionSummary: Decodable, Identifiable {
     let Visibility: String?
     let PublicReviewStatus: String?
     let FinalChoice: String?
+    let CreateTime: String
+    let ImageUrl: String?
+    let Votes: [String: Int]
+    let CommentCount: Int
     var id: String { Id }
 }
 
@@ -145,6 +150,14 @@ enum BmbKeychain {
 struct BmbAPI {
     static let baseURL = URL(string: "https://byemybuy.get-free.net")!
 
+    private func cacheKey(_ path: String, token: String?) -> String { "GET:/api/byemybuy\(path):\(token ?? "public")" }
+
+    func cached<T: Decodable>(_ path: String, token: String? = nil) async -> T? {
+        guard let data = await BmbCache.shared.data(for: cacheKey(path, token: token)),
+              let envelope = try? JSONDecoder().decode(BmbEnvelope<T>.self, from: data), envelope.success else { return nil }
+        return envelope.response
+    }
+
     func call<T: Decodable>(_ path: String, method: String = "GET", body: [String: Any]? = nil, token: String? = nil) async throws -> T {
         guard let url = URL(string: "/api/byemybuy\(path)", relativeTo: Self.baseURL)?.absoluteURL else {
             throw BmbError(message: "Invalid request URL")
@@ -164,6 +177,9 @@ struct BmbAPI {
         guard http.statusCode < 400, envelope.success, let value = envelope.response else {
             throw BmbError(message: envelope.msg ?? "Request failed")
         }
+        if method == "GET" && path != "/auth/apple/nonce" {
+            await BmbCache.shared.storeData(data, for: cacheKey(path, token: token))
+        }
         return value
     }
 
@@ -173,6 +189,10 @@ struct BmbAPI {
 
     func uploadProductImage(_ data: Data, token: String) async throws -> String {
         try await uploadImage(data, token: token, path: "/products/image")
+    }
+
+    func deleteProductImage(_ imageURL: String, token: String) async throws {
+        let _: BmbAcknowledgement = try await call("/products/image", method: "DELETE", body: ["ImageUrl": imageURL], token: token)
     }
 
     func uploadAvatarImage(_ data: Data, token: String) async throws -> String {
@@ -256,11 +276,15 @@ final class BmbSession: ObservableObject {
 
     func loadProfile() async {
         guard let token else { return }
+        if profile == nil { profile = await api.cached("/auth/me", token: token) }
         do { profile = try await api.call("/auth/me", token: token) }
         catch { message = error.localizedDescription }
     }
 
-    func logout() { token = nil; profile = nil; BmbKeychain.write("access", value: nil) }
+    func logout() {
+        token = nil; profile = nil; BmbKeychain.write("access", value: nil)
+        Task { await BmbCache.shared.clearData() }
+    }
 
     func deleteAccount() async throws {
         guard let token else { return }

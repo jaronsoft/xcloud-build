@@ -16,6 +16,7 @@ struct ProductDraft: Identifiable {
     let id = UUID()
     var title = ""
     var model = ""
+    var tagsText = ""
     var url = ""
     var imageURL = ""
     var imageData: Data?
@@ -23,6 +24,7 @@ struct ProductDraft: Identifiable {
     var price = ""
     var currency = BmbCurrency.defaultCode
     var targetPrice = ""
+    var discountPercent: Double?
 
     var product: BmbProduct {
         BmbProduct(Title: title, Model: model.isEmpty ? nil : model, Url: url.isEmpty ? nil : url, ImageUrl: imageURL.isEmpty ? nil : imageURL,
@@ -38,8 +40,9 @@ struct CreateView: View {
     @State private var question = ""
     @State private var products = [ProductDraft(), ProductDraft()]
     @State private var isBusy = false
+    @State private var photoBusy = Set<Int>()
     @State private var error: String?
-    @State private var publishedToken: BmbTokenItem?
+    @State private var publishedDecision: BmbDecision?
 
     var body: some View {
         ScrollView {
@@ -56,33 +59,100 @@ struct CreateView: View {
                             Text(mode == "pick_one" ? "Option \(index == 0 ? "A" : "B")" : "Product card").font(.headline)
                             TextField("Product name", text: $products[index].title).textFieldStyle(.roundedBorder)
                             TextField("Model (optional)", text: $products[index].model).textFieldStyle(.roundedBorder)
+                            TextField("Tags (optional, comma separated)", text: $products[index].tagsText).textFieldStyle(.roundedBorder)
                             HStack {
                                 TextField("Price", text: $products[index].price).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
+                                    .onChange(of: products[index].price) { _, _ in
+                                        if let percentage = products[index].discountPercent {
+                                            setDiscount(at: index, percentage: percentage)
+                                        }
+                                    }
                                 Picker("Currency", selection: $products[index].currency) {
                                     ForEach(BmbCurrency.codes, id: \.self) { code in Text(BmbCurrency.label(code)).tag(code) }
                                 }.frame(width: 110)
                             }
-                            TextField("Price I would accept (optional)", text: $products[index].targetPrice).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
-                            PhotosPicker(selection: $products[index].photoItem, matching: .images) {
-                                Label("Choose a photo", systemImage: "photo.on.rectangle").font(.subheadline.bold())
+                            HStack {
+                                TextField("Price I would accept (optional)", text: Binding(
+                                    get: { products[index].targetPrice },
+                                    set: { value in
+                                        products[index].targetPrice = moneyInput(value)
+                                        products[index].discountPercent = nil
+                                    }
+                                )).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
+                                VStack(spacing: 0) {
+                                    Slider(value: Binding(
+                                        get: { products[index].discountPercent ?? 0 },
+                                        set: { setDiscount(at: index, percentage: $0) }
+                                    ), in: 0...100, step: 10)
+                                    .accessibilityLabel(Text("Discount"))
+                                    .accessibilityValue("\(Int(products[index].discountPercent ?? 0))%")
+                                    Text(products[index].discountPercent.map { "−\(Int($0))%" } ?? String(localized: "10% steps"))
+                                        .font(.caption2).foregroundStyle(BmbTheme.muted)
+                                }
+                                .frame(width: 110)
+                                .disabled((Decimal(string: products[index].price.replacingOccurrences(of: ",", with: ".")) ?? 0) <= 0)
                             }
+                            let previewData = products[index].imageData
+                            let hasPhoto = previewData != nil || !products[index].imageURL.isEmpty
+                            PhotosPicker(selection: $products[index].photoItem, matching: .images) {
+                                HStack(spacing: 16) {
+                                    if let data = previewData, let image = UIImage(data: data) {
+                                        Image(uiImage: image).resizable().scaledToFill()
+                                            .frame(width: 82, height: 82).clipShape(RoundedRectangle(cornerRadius: 12))
+                                    } else {
+                                        Image(systemName: "photo.on.rectangle.angled")
+                                            .font(.system(size: 34)).foregroundStyle(BmbTheme.muted)
+                                            .frame(width: 82, height: 82)
+                                    }
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        if !hasPhoto {
+                                            Text("Choose a photo").font(.headline).foregroundStyle(BmbTheme.ink)
+                                            Text("Tap anywhere to add a photo").font(.caption).foregroundStyle(BmbTheme.muted)
+                                        } else {
+                                            Text("Replace photo").font(.headline).foregroundStyle(BmbTheme.ink)
+                                            Text("Tap anywhere to replace the photo").font(.caption).foregroundStyle(BmbTheme.muted)
+                                        }
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
+                                .padding(16)
+                                .background(BmbTheme.hero.opacity(0.5), in: RoundedRectangle(cornerRadius: 16))
+                                .overlay(RoundedRectangle(cornerRadius: 16)
+                                    .strokeBorder(BmbTheme.muted.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [7, 5])))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(photoBusy.contains(index) || isBusy)
                             .onChange(of: products[index].photoItem) { _, selected in
                                 Task {
+                                    guard selected != nil, !photoBusy.contains(index) else { return }
+                                    photoBusy.insert(index)
+                                    defer { photoBusy.remove(index) }
                                     guard let bytes = try? await selected?.loadTransferable(type: Data.self),
                                           let image = UIImage(data: bytes),
-                                          let jpeg = image.jpegData(compressionQuality: 0.85) else { return }
+                                          let jpeg = image.jpegData(compressionQuality: 0.85) else {
+                                        products[index].photoItem = nil
+                                        return
+                                    }
                                     if jpeg.count > 5 * 1024 * 1024 {
                                         error = String(localized: "Choose a photo under 5 MB.")
+                                        products[index].photoItem = nil
                                     } else {
+                                        do { try await discardRemotePhoto(at: index) }
+                                        catch { self.error = error.localizedDescription; products[index].photoItem = nil; return }
                                         products[index].imageData = jpeg
                                         error = nil
                                     }
                                 }
                             }
-                            if let data = products[index].imageData, let image = UIImage(data: data) {
-                                Image(uiImage: image).resizable().scaledToFit().frame(height: 180)
+                            if products[index].imageData != nil || !products[index].imageURL.isEmpty {
+                                Button("Remove photo", role: .destructive) { Task { await removePhoto(at: index) } }
+                                    .disabled(photoBusy.contains(index) || isBusy)
                             }
-                            TextField("Image URL (optional)", text: $products[index].imageURL).textInputAutocapitalization(.never).keyboardType(.URL).textFieldStyle(.roundedBorder)
+                            if products[index].imageData == nil {
+                                TextField("Image URL (optional)", text: $products[index].imageURL).textInputAutocapitalization(.never).keyboardType(.URL).textFieldStyle(.roundedBorder)
+                                    .disabled(photoBusy.contains(index) || isBusy)
+                            }
                             DisclosureGroup("Product URL (optional)") {
                                 TextField("https://…", text: $products[index].url).textInputAutocapitalization(.never).keyboardType(.URL).textFieldStyle(.roundedBorder)
                             }
@@ -92,9 +162,12 @@ struct CreateView: View {
                 BmbCard {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("What should others know?").font(.headline)
-                        HStack {
-                            ForEach(mode == "pick_one" ? ["Do I need this?", "Which one suits me?"] : ["Do I need this?", "I already own something similar."], id: \.self) { preset in
-                                Button(preset) { question = preset }.buttonStyle(.bordered)
+                        VStack(spacing: 8) {
+                            questionPreset(String(localized: "Do I need this?"))
+                            if mode == "pick_one" {
+                                questionPreset(String(localized: "Which one suits me?"))
+                            } else {
+                                questionPreset(String(localized: "I already own something similar."))
                             }
                         }
                         TextField("I love this, but I already own something similar…", text: $question, axis: .vertical)
@@ -104,10 +177,10 @@ struct CreateView: View {
                 BmbCard {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Who can see this?").font(.headline)
-                        Picker("Visibility", selection: $visibility) {
-                            Text("Link only").tag("private")
-                            Text("Submit to Explore (after review)").tag("public")
-                        }.pickerStyle(.segmented)
+                        VStack(spacing: 8) {
+                            visibilityChoice("private", title: "Link only")
+                            visibilityChoice("public", title: "Submit to Explore (after review)")
+                        }
                         Text(LocalizedStringKey(visibility == "public" ? "Explore can find this after review. Your share link works now." : "Only people with the link can open this decision."))
                             .font(.caption).foregroundStyle(BmbTheme.muted)
                     }
@@ -128,34 +201,140 @@ struct CreateView: View {
                 products[index].currency = code
             }
         }
-        .sheet(item: $publishedToken) { token in
-            NavigationStack { DecisionView(shareToken: token.value) }.environmentObject(session)
+        .sheet(item: $publishedDecision, onDismiss: { dismiss() }) { decision in
+            NavigationStack { BmbDecisionShareView(decision: decision, isPublished: true) }
+                .environmentObject(session)
         }
     }
 
+    private func questionPreset(_ value: String) -> some View {
+        let selected = question == value
+        return Button { question = value } label: {
+            HStack(spacing: 12) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "text.bubble")
+                    .foregroundStyle(selected ? BmbTheme.ink : BmbTheme.muted)
+                Text(value).font(.subheadline.weight(.medium)).multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .padding(.horizontal, 14)
+            .foregroundStyle(BmbTheme.ink)
+            .background(selected ? BmbTheme.hero : BmbTheme.paper, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(selected ? BmbTheme.lime : BmbTheme.muted.opacity(0.25), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func visibilityChoice(_ value: String, title: LocalizedStringKey) -> some View {
+        let selected = visibility == value
+        return Button { visibility = value } label: {
+            HStack(spacing: 12) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(selected ? BmbTheme.ink : BmbTheme.muted)
+                Text(title).font(.subheadline.weight(.semibold)).multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+            .padding(.horizontal, 14)
+            .foregroundStyle(BmbTheme.ink)
+            .background(selected ? BmbTheme.hero : BmbTheme.paper, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(selected ? BmbTheme.lime : BmbTheme.muted.opacity(0.25), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func moneyInput(_ value: String) -> String {
+        var result = ""
+        var hasDecimalPoint = false
+        var fractionDigits = 0
+        for character in value.replacingOccurrences(of: ",", with: ".") {
+            if character == "." && !hasDecimalPoint {
+                result += result.isEmpty ? "0." : "."
+                hasDecimalPoint = true
+            } else if let digit = character.wholeNumberValue, (0...9).contains(digit),
+                      !hasDecimalPoint || fractionDigits < 2 {
+                result += String(digit)
+                if hasDecimalPoint { fractionDigits += 1 }
+            }
+        }
+        return result
+    }
+
+    private func setDiscount(at index: Int, percentage: Double) {
+        products[index].discountPercent = percentage
+        guard let price = Decimal(string: products[index].price.replacingOccurrences(of: ",", with: ".")), price > 0 else {
+            products[index].targetPrice = ""
+            return
+        }
+        var amount = price * Decimal(100 - Int(percentage)) / Decimal(100)
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &amount, 2, .plain)
+        products[index].targetPrice = NSDecimalNumber(decimal: rounded).stringValue
+    }
+
+    private func discardRemotePhoto(at index: Int) async throws {
+        let imageURL = products[index].imageURL
+        guard !imageURL.isEmpty else { return }
+        if imageURL.hasPrefix("https://") {
+            guard let token = session.token else { throw BmbError(message: String(localized: "Sign in to remove this photo.")) }
+            try await session.api.deleteProductImage(imageURL, token: token)
+        }
+        products[index].imageURL = ""
+    }
+
+    private func removePhoto(at index: Int) async {
+        guard !photoBusy.contains(index), !isBusy else { return }
+        photoBusy.insert(index)
+        defer { photoBusy.remove(index) }
+        do {
+            try await discardRemotePhoto(at: index)
+            products[index].imageData = nil
+            products[index].photoItem = nil
+            error = nil
+        } catch { self.error = error.localizedDescription }
+    }
+
     private func publish() async {
+        guard photoBusy.isEmpty else { error = String(localized: "Please wait for the photo to finish processing."); return }
         guard products.prefix(mode == "pick_one" ? 2 : 1).allSatisfy({ !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
             error = String(localized: "Enter a product name first.")
             return
         }
         guard let token = session.token else { session.showLogin = true; return }
         isBusy = true; defer { isBusy = false }
+        var uploadedURLs: [String] = []
         do {
             var fields: [[String: Any]] = []
             for item in products.prefix(mode == "pick_one" ? 2 : 1) {
                 var value: [String: Any] = ["Title": item.title, "Currency": item.currency, "Source": "user"]
                 if !item.model.isEmpty { value["Model"] = item.model }
+                let tags = item.tagsText.split(whereSeparator: { $0 == "," || $0 == "，" }).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+                if !tags.isEmpty { value["Tags"] = tags }
                 if !item.url.isEmpty { value["Url"] = item.url }
-                if let data = item.imageData { value["ImageUrl"] = try await session.api.uploadProductImage(data, token: token) }
+                if let data = item.imageData {
+                    let imageURL = try await session.api.uploadProductImage(data, token: token)
+                    uploadedURLs.append(imageURL)
+                    value["ImageUrl"] = imageURL
+                }
                 else if !item.imageURL.isEmpty { value["ImageUrl"] = item.imageURL }
                 if let price = Double(item.price) { value["Price"] = price }
-                if let target = Double(item.targetPrice) { value["TargetPrice"] = target }
+                if let target = Double(item.targetPrice) {
+                    value["TargetPrice"] = target
+                    value["TargetCurrency"] = item.currency
+                }
                 fields.append(value)
             }
             let result: BmbDecision = try await session.api.call("/decisions", method: "POST",
                 body: ["Mode": mode, "Visibility": visibility, "Question": question, "Products": fields], token: token)
-            publishedToken = BmbTokenItem(value: result.ShareToken)
+            publishedDecision = result
             error = nil
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            for imageURL in uploadedURLs { try? await session.api.deleteProductImage(imageURL, token: token) }
+            self.error = error.localizedDescription
+        }
     }
 }

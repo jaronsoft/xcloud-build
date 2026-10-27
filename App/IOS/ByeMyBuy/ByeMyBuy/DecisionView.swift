@@ -19,7 +19,9 @@ struct DecisionView: View {
                         Text(decision.Status == "open" ? "OPEN DECISION" : "CLOSED DECISION")
                             .font(.caption.bold()).tracking(2).foregroundStyle(.green)
                         Spacer()
-                        ShareLink(item: URL(string: decision.ShareUrl)!) {
+                        NavigationLink {
+                            BmbDecisionShareView(decision: decision)
+                        } label: {
                             Label("Share", systemImage: "square.and.arrow.up").font(.caption.bold())
                         }
                     }
@@ -105,7 +107,11 @@ struct DecisionView: View {
         .navigationTitle("Decision")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
-        .task(id: shareToken) { await load() }
+        .task(id: shareToken) {
+            decision = await session.api.cached("/d/\(shareToken)", token: session.token)
+            await load()
+        }
+        .refreshable { await load() }
         .alert("Report this decision", isPresented: $showingReport) {
             TextField("Reason", text: $reportReason)
             Button("Send") { Task { await report() } }
@@ -228,7 +234,7 @@ private struct PriceOfferSection: View {
         guard let token = session.token else { session.showLogin = true; return }
         guard let id = product.Id else { return }
         do {
-            let body: [String: Any] = ["TargetPrice": Double(target) as Any? ?? NSNull()]
+            let body: [String: Any] = ["TargetPrice": Double(target) as Any? ?? NSNull(), "TargetCurrency": product.Currency ?? ""]
             let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/products/\(id)/target-price", method: "PUT", body: body, token: token)
             message = String(localized: "Target price updated")
             await reload()

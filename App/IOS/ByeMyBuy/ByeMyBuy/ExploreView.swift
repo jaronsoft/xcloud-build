@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ExploreView: View {
+    @State private var showCreate = false
     @State private var items: [BmbPublicDecision] = []
     @State private var page = 0
     @State private var snapshot: Int64?
@@ -11,10 +12,20 @@ struct ExploreView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("THE COMMUNITY").font(.caption.bold()).tracking(2).foregroundStyle(.green)
-                    Text("Explore decisions").font(.system(size: 31, weight: .black, design: .rounded))
-                    Text("See what people are thinking of buying.").font(.system(size: 14)).foregroundStyle(BmbTheme.muted)
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("THE COMMUNITY").font(.caption.bold()).tracking(2).foregroundStyle(.green)
+                        Text("Explore decisions").font(.system(size: 31, weight: .black, design: .rounded))
+                        Text("See what people are thinking of buying.").font(.system(size: 14)).foregroundStyle(BmbTheme.muted)
+                    }
+                    Spacer(minLength: 0)
+                    Button { showCreate = true } label: {
+                        Label("Post", systemImage: "plus")
+                            .font(.subheadline.bold()).foregroundStyle(BmbTheme.ink)
+                            .padding(.horizontal, 15).frame(height: 44)
+                            .background(BmbTheme.lime, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
                 if let error {
                     BmbCard { VStack(alignment: .leading, spacing: 10) {
@@ -37,7 +48,13 @@ struct ExploreView: View {
         }
         .background(BmbTheme.paper)
         .navigationBarHidden(true)
-        .task { await load(reset: true) }
+        .sheet(isPresented: $showCreate) { NavigationStack { CreateView() } }
+        .task {
+            if let cached: BmbPublicPage = await BmbAPI().cached("/decisions/public?page=1&size=20") {
+                items = cached.Items; page = cached.Page; snapshot = cached.Snapshot; hasMore = cached.HasMore
+            }
+            await load(reset: true)
+        }
         .refreshable { await load(reset: true) }
     }
 
@@ -57,9 +74,7 @@ struct ExploreView: View {
             ZStack(alignment: .topLeading) {
                 BmbTheme.hero
                 if let image = product?.ImageUrl, let url = URL(string: image) {
-                    AsyncImage(url: url) { result in
-                        result.resizable().scaledToFill()
-                    } placeholder: {
+                    BmbCachedImage(url: url) {
                         Image("LaunchMark").resizable().scaledToFit().padding(40)
                     }
                 } else {
