@@ -64,6 +64,7 @@ product comparison,purchase decision,target price,buy or pass,shopping advice,vo
 - 用快捷理由表达看法，暂缓决定并设置复看提醒。
 - 在消息中心查看动态，关注最终结果，并按需订阅邮件。
 - 优化发现页卡片排版，将筛选收进弹出面板，浏览更清爽。
+- 长问题可展开阅读全文，改善详情页长文字的显示。
 
 ### English (U.S.)
 
@@ -73,3 +74,4 @@ product comparison,purchase decision,target price,buy or pass,shopping advice,vo
 - Add a quick reason to your vote, pause a decision, and set a reminder to revisit it.
 - View updates in Messages, follow final results, and opt in to email notifications.
 - Enjoy a tidier Explore layout with improved cards and filters in a separate panel.
+- Expand long questions to read more, with clearer text layouts on decision pages.

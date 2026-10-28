@@ -137,13 +137,17 @@ struct BmbProductCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(product.Title.isEmpty ? "Your next find" : product.Title).font(.headline).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let model = product.Model, !model.isEmpty { Text(model).font(.caption).foregroundStyle(BmbTheme.muted) }
+                    if let model = product.Model, !model.isEmpty {
+                        Text(model).font(.caption).foregroundStyle(BmbTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if let price = product.Price {
                         Text(BmbMoney.display(price, currency: product.Currency)).font(.subheadline.bold())
                     }
                 }
                 if let tags = product.Tags, !tags.isEmpty {
                     Text(tags.map { "#\($0)" }.joined(separator: "  ")).font(.caption).foregroundStyle(BmbTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if let link = product.Url, let url = URL(string: link) {
                     Link(destination: url) { Label("View at store", systemImage: "arrow.up.right").font(.caption.bold()).foregroundStyle(.green) }

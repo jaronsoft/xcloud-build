@@ -13,6 +13,7 @@ struct DecisionView: View {
     @State private var message: String?
 
     var body: some View {
+        GeometryReader { geometry in
         ScrollView {
             if let decision {
                 VStack(alignment: .leading, spacing: 20) {
@@ -31,8 +32,8 @@ struct DecisionView: View {
                             decision.PublicReviewStatus == "rejected" ? "Explore submission declined" : "Awaiting Explore review"))
                             .font(.caption.bold()).foregroundStyle(BmbTheme.muted)
                     }
-                    Text(decision.Question).font(.system(size: 33, weight: .black, design: .rounded)).tracking(-1.6)
-                        .fixedSize(horizontal: false, vertical: true)
+                    BmbDecisionQuestion(question: decision.Question)
+                        .id(decision.Id)
                     ForEach(Array(decision.Products.enumerated()), id: \.offset) { index, product in
                         BmbProductCard(product: product, label: decision.Mode == "pick_one" ? (index == 0 ? "A" : "B") : nil)
                     }
@@ -81,7 +82,7 @@ struct DecisionView: View {
                             Text("Advice from others").font(.headline)
                             ForEach(decision.Comments) { item in
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(item.Body).font(.subheadline)
+                                    Text(item.Body).font(.subheadline).fixedSize(horizontal: false, vertical: true)
                                     if item.Status == "pending" { Text("Awaiting review").font(.caption).foregroundStyle(BmbTheme.muted) }
                                 }.padding(.vertical, 7)
                                 Divider()
@@ -100,8 +101,9 @@ struct DecisionView: View {
                     Button("Report this decision") {
                         if session.isLoggedIn { showingReport = true } else { session.showLogin = true }
                     }.font(.caption).foregroundStyle(BmbTheme.muted)
-                }.padding(20)
+                }.frame(width: max(0, geometry.size.width - 40), alignment: .leading).padding(20)
             } else { ProgressView().frame(maxWidth: .infinity, minHeight: 300) }
+        }
         }
         .background(BmbTheme.paper)
         .navigationTitle("Decision")
@@ -162,6 +164,44 @@ struct DecisionView: View {
     }
 }
 
+private struct BmbDecisionQuestion: View {
+    let question: String
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if expanded {
+                Text(question).font(.body).fixedSize(horizontal: false, vertical: true)
+                toggle
+            } else {
+                // 用完整单行的实际宽度选择布局，短问题不显示多余的展开入口。
+                ViewThatFits(in: .horizontal) {
+                    Text(question.split(whereSeparator: \.isWhitespace).joined(separator: " "))
+                        .font(.title3.bold()).lineLimit(1).fixedSize()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(question).font(.title3.bold()).lineLimit(1).truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        toggle
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: question) { _, _ in expanded = false }
+    }
+
+    private var toggle: some View {
+        Button {
+            expanded.toggle()
+        } label: {
+            Text(BmbEngagementCopy.text(expanded ? "Show less" : "Read more", expanded ? "收起全文" : "展开全文"))
+                .font(.subheadline.bold()).underline().frame(minHeight: 44, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(expanded ? BmbEngagementCopy.text("Expanded", "已展开") : BmbEngagementCopy.text("Collapsed", "已收起"))
+    }
+}
+
 private struct PriceOfferSection: View {
     let shareToken: String
     let product: BmbProduct
@@ -207,13 +247,13 @@ private struct PriceOfferSection: View {
                     if offer.MeetsTarget {
                         Text("Meets target").font(.caption.bold()).foregroundStyle(.green)
                     }
-                    HStack {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("User reported")
                         Text("· \(offer.CreateTime)")
                         if offer.Status == "pending" { Text("· Awaiting review") }
                     }.font(.caption).foregroundStyle(BmbTheme.muted)
-                    if let note = offer.Note { Text(note).font(.caption) }
-                    if let model = offer.Model { Text(model).font(.caption) }
+                    if let note = offer.Note { Text(note).font(.caption).fixedSize(horizontal: false, vertical: true) }
+                    if let model = offer.Model { Text(model).font(.caption).fixedSize(horizontal: false, vertical: true) }
                     if offer.NeedsReconfirmation == true { Text(BmbEngagementCopy.text("Please reconfirm this price", "请重新确认价格")).font(.caption) }
                     if offer.Status == "approved" {
                         HStack {
