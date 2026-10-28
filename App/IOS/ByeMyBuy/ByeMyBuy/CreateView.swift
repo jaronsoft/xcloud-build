@@ -12,7 +12,8 @@ enum BmbCurrency {
     }
 }
 
-struct ProductDraft: Identifiable {
+struct ProductDraft: Identifiable, Codable {
+    enum CodingKeys: String, CodingKey { case title, model, tagsText, url, imageURL, imageData, price, currency, targetPrice, discountPercent }
     let id = UUID()
     var title = ""
     var model = ""
@@ -38,11 +39,38 @@ struct CreateView: View {
     @State private var mode = "buy_pass"
     @State private var visibility = "public"
     @State private var question = ""
+    @State private var hesitation = ""
     @State private var products = [ProductDraft(), ProductDraft()]
     @State private var isBusy = false
     @State private var photoBusy = Set<Int>()
     @State private var error: String?
     @State private var publishedDecision: BmbDecision?
+
+    private struct StoredDraft: Codable {
+        var mode: String
+        var visibility: String
+        var question: String
+        var hesitation: String
+        var products: [ProductDraft]
+    }
+    private static var draftURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("byemybuy-create-draft.json")
+    }
+    private var draftData: Data? {
+        try? JSONEncoder().encode(StoredDraft(mode: mode, visibility: visibility, question: question, hesitation: hesitation, products: products))
+    }
+    init() {
+        if let data = try? Data(contentsOf: Self.draftURL), let draft = try? JSONDecoder().decode(StoredDraft.self, from: data), draft.products.count == 2 {
+            _mode = State(initialValue: draft.mode); _visibility = State(initialValue: draft.visibility)
+            _question = State(initialValue: draft.question); _hesitation = State(initialValue: draft.hesitation)
+            _products = State(initialValue: draft.products)
+        }
+    }
+    private func saveDraft() {
+        guard publishedDecision == nil, let data = draftData else { return }
+        try? FileManager.default.createDirectory(at: Self.draftURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: Self.draftURL, options: [.atomic, .completeFileProtection])
+    }
 
     var body: some View {
         ScrollView {
@@ -58,6 +86,7 @@ struct CreateView: View {
                         VStack(alignment: .leading, spacing: 14) {
                             Text(mode == "pick_one" ? "Option \(index == 0 ? "A" : "B")" : "Product card").font(.headline)
                             TextField("Product name", text: $products[index].title).textFieldStyle(.roundedBorder)
+                            DisclosureGroup(BmbEngagementCopy.text("More product details (optional)", "补充商品信息（可选）")) {
                             TextField("Model (optional)", text: $products[index].model).textFieldStyle(.roundedBorder)
                             TextField("Tags (optional, comma separated)", text: $products[index].tagsText).textFieldStyle(.roundedBorder)
                             HStack {
@@ -91,6 +120,7 @@ struct CreateView: View {
                                 }
                                 .frame(width: 110)
                                 .disabled((Decimal(string: products[index].price.replacingOccurrences(of: ",", with: ".")) ?? 0) <= 0)
+                            }
                             }
                             let previewData = products[index].imageData
                             let hasPhoto = previewData != nil || !products[index].imageURL.isEmpty
@@ -162,8 +192,16 @@ struct CreateView: View {
                 BmbCard {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("What should others know?").font(.headline)
+                        Picker(BmbEngagementCopy.text("What gives you pause?", "你在犹豫什么？"), selection: $hesitation) {
+                            Text("—").tag("")
+                            Text(BmbEngagementCopy.text("Might not use it", "担心用不上")).tag("need")
+                            Text(BmbEngagementCopy.text("Price is high", "价格偏高")).tag("price")
+                            Text(BmbEngagementCopy.text("Have something similar", "已有类似商品")).tag("duplicate")
+                            Text(BmbEngagementCopy.text("Unsure which one", "不知道选哪个")).tag("choice")
+                        }
                         VStack(spacing: 8) {
                             questionPreset(String(localized: "Do I need this?"))
+                            questionPreset(BmbEngagementCopy.text("Should I buy now or wait?", "现在买还是等等？"))
                             if mode == "pick_one" {
                                 questionPreset(String(localized: "Which one suits me?"))
                             } else {
@@ -193,6 +231,11 @@ struct CreateView: View {
         .background(BmbTheme.paper)
         .navigationTitle("New decision")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: draftData) {
+            do { try await Task.sleep(for: .milliseconds(400)); saveDraft() } catch { }
+        }
+        .onDisappear { saveDraft() }
+        .task { await session.api.track("create_started", token: session.token) }
         .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } } }
         .task {
             if session.profile == nil { await session.loadProfile() }
@@ -329,7 +372,8 @@ struct CreateView: View {
                 fields.append(value)
             }
             let result: BmbDecision = try await session.api.call("/decisions", method: "POST",
-                body: ["Mode": mode, "Visibility": visibility, "Question": question, "Products": fields], token: token)
+                body: ["Mode": mode, "Visibility": visibility, "Question": question, "Hesitation": hesitation, "Products": fields], token: token)
+            try? FileManager.default.removeItem(at: Self.draftURL)
             publishedDecision = result
             error = nil
         } catch {

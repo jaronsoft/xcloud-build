@@ -6,6 +6,8 @@ struct ByeMyBuyApp: App {
     @StateObject private var session = BmbSession()
     @State private var incomingToken: BmbTokenItem?
     @State private var showSplash = true
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var unread = 0
     @AppStorage("bmb.theme") private var themePreference = "system"
 
     var body: some Scene {
@@ -17,6 +19,8 @@ struct ByeMyBuyApp: App {
                     .tabItem { Label("Explore", systemImage: "square.grid.2x2") }
                 NavigationStack { MineView() }
                     .tabItem { Label("My decisions", systemImage: "square.stack") }
+                NavigationStack { BmbNotificationsView() }
+                    .tabItem { Label(BmbEngagementCopy.text("Messages", "消息"), systemImage: "bell") }.badge(unread)
                 NavigationStack { AccountView() }
                     .tabItem { Label("Account", systemImage: "person.crop.circle") }
             }
@@ -29,6 +33,16 @@ struct ByeMyBuyApp: App {
                 }
             }
             .environmentObject(session)
+            .task(id: "\(scenePhase)-\(session.token ?? "")") {
+                guard scenePhase == .active, let token = session.token else { unread = 0; return }
+                while !Task.isCancelled {
+                    do {
+                        let result: BmbUnread = try await session.api.call("/notifications/unread", token: token)
+                        unread = result.Count
+                    } catch { }
+                    do { try await Task.sleep(for: .seconds(60)) } catch { break }
+                }
+            }
             .sheet(isPresented: $session.showLogin) {
                 NavigationStack { LoginView() }.environmentObject(session)
             }

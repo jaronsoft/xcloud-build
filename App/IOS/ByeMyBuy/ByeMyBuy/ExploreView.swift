@@ -8,10 +8,22 @@ struct ExploreView: View {
     @State private var hasMore = false
     @State private var loading = false
     @State private var error: String?
+    @State private var filter = "recommended"
+    @State private var tag = ""
+    @State private var feedRequest = UUID()
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+                Picker(BmbEngagementCopy.text("Filter", "筛选"), selection: $filter) {
+                    Text(BmbEngagementCopy.text("Recommended", "推荐")).tag("recommended")
+                    Text(BmbEngagementCopy.text("No votes yet", "还没人投票")).tag("unanswered")
+                    Text(BmbEngagementCopy.text("With results", "已有结果")).tag("results")
+                }.pickerStyle(.segmented)
+                HStack {
+                    TextField(BmbEngagementCopy.text("Filter by tag", "按标签筛选"), text: $tag).textFieldStyle(.roundedBorder)
+                    Button(BmbEngagementCopy.text("Search", "筛选")) { Task { await load(reset: true) } }
+                }
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("THE COMMUNITY").font(.caption.bold()).tracking(2).foregroundStyle(.green)
@@ -56,6 +68,7 @@ struct ExploreView: View {
             await load(reset: true)
         }
         .refreshable { await load(reset: true) }
+        .onChange(of: filter) { _, _ in Task { await load(reset: true) } }
     }
 
     private func pinColumn(_ column: Int) -> some View {
@@ -96,6 +109,9 @@ struct ExploreView: View {
                         .font(.caption.bold()).foregroundStyle(BmbTheme.muted)
                 }
                 Text(item.Question).font(.caption).foregroundStyle(BmbTheme.muted).lineLimit(2)
+                if item.IsWaiting == true { Text(BmbEngagementCopy.text("Taking a pause", "暂缓中")).font(.caption.bold()) }
+                if let result = item.FinalChoice { Text(BmbEngagementCopy.text("Result: \(result)", "最终选择：\(result)")).font(.caption) }
+                Text("\(item.VoteCount ?? 0) \(BmbEngagementCopy.text("votes", "票"))").font(.caption)
             }.padding(12)
         }
         .background(BmbTheme.card, in: RoundedRectangle(cornerRadius: 16))
@@ -105,17 +121,23 @@ struct ExploreView: View {
     }
 
     private func load(reset: Bool) async {
-        guard !loading else { return }
+        guard !loading || reset else { return }
+        let current = UUID()
+        feedRequest = current
         loading = true; error = nil
         do {
             let nextPage = reset ? 1 : page + 1
             let snapshotQuery = reset ? "" : snapshot.map { "&snapshot=\($0)" } ?? ""
-            let response: BmbPublicPage = try await BmbAPI().call("/decisions/public?page=\(nextPage)&size=20\(snapshotQuery)")
+            var components = URLComponents()
+            components.queryItems = [URLQueryItem(name: "filter", value: filter), URLQueryItem(name: "tag", value: tag)]
+            let query = components.percentEncodedQuery ?? ""
+            let response: BmbPublicPage = try await BmbAPI().call("/decisions/public?page=\(nextPage)&size=20&\(query)\(snapshotQuery)")
+            guard current == feedRequest else { return }
             items = reset ? response.Items : items + response.Items
             page = response.Page
             snapshot = response.Snapshot
             hasMore = response.HasMore
-        } catch { self.error = error.localizedDescription }
-        loading = false
+        } catch { if current == feedRequest { self.error = error.localizedDescription } }
+        if current == feedRequest { loading = false }
     }
 }

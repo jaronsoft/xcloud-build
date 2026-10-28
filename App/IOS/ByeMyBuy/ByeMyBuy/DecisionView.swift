@@ -6,6 +6,7 @@ struct DecisionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var decision: BmbDecision?
     @State private var comment = ""
+    @State private var voteReasons: [String: String] = [:]
     @State private var suggestedURL = ""
     @State private var reportReason = ""
     @State private var showingReport = false
@@ -42,15 +43,24 @@ struct DecisionView: View {
                             Text("Voting is open to everyone. Sign in to add a reason.")
                                 .font(.caption).foregroundStyle(BmbTheme.muted)
                             ForEach(voteChoices, id: \.0) { key, label in
+                                let reasons = key == "buy" ? ["useful","value","quality"] : key == "pass" ? ["expensive","duplicate","wait"] : ["value","fit","quality"]
+                                Picker(BmbEngagementCopy.text("Reason (optional)", "理由（可选）"), selection: Binding(get: { voteReasons[key] ?? "" }, set: { voteReasons[key] = $0 })) {
+                                    Text("—").tag("")
+                                    ForEach(reasons, id: \.self) { reason in Text(BmbEngagementCopy.reason(reason)).tag(reason) }
+                                }
                                 Button { Task { await vote(key) } } label: {
                                     HStack {
                                         Text(label).fontWeight(.bold)
                                         Spacer()
                                         Text("\(decision.Votes[key] ?? 0)").fontWeight(.bold)
+                                        Text("\(decision.VoteCount == 0 ? 0 : Int(Double(decision.Votes[key] ?? 0) / Double(decision.VoteCount) * 100))%")
                                     }.padding(15)
                                         .background(key == "pass" || key == "b" ? Color.orange.opacity(0.12) : Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 13))
                                 }
                                 .buttonStyle(.plain).disabled(decision.Status != "open")
+                                ForEach((decision.VoteReasons?[key] ?? [:]).keys.sorted(), id: \.self) { reason in
+                                    Text("\(BmbEngagementCopy.reason(reason)): \(decision.VoteReasons?[key]?[reason] ?? 0)").font(.caption)
+                                }
                             }
                             Text("\(decision.VoteCount) votes").font(.caption).foregroundStyle(BmbTheme.muted)
                                 .frame(maxWidth: .infinity)
@@ -61,20 +71,7 @@ struct DecisionView: View {
                             offers: decision.PriceOffers.filter { $0.ProductId == product.Id },
                             isOwner: decision.IsOwner, isOpen: decision.Status == "open", reload: load)
                     }
-                    if decision.IsOwner && decision.Status == "open" {
-                        BmbCard {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("My final choice").font(.headline)
-                                HStack {
-                                    ForEach(finalChoices, id: \.0) { key, label in
-                                        Button(label) { Task { await finalize(key) } }
-                                            .font(.caption.bold()).padding(8)
-                                            .background(BmbTheme.paper, in: RoundedRectangle(cornerRadius: 9))
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    BmbDecisionTools(item: decision, reload: load)
                     if let choice = decision.FinalChoice {
                         Label("Final choice: \(choice)", systemImage: "checkmark.seal")
                             .font(.subheadline.bold()).foregroundStyle(.green)
@@ -111,6 +108,7 @@ struct DecisionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         .task(id: shareToken) {
+            await session.api.track("decision_viewed", shareToken: shareToken, token: session.token)
             decision = await session.api.cached("/d/\(shareToken)", token: session.token)
             await load()
         }
@@ -133,7 +131,10 @@ struct DecisionView: View {
         catch { message = error.localizedDescription }
     }
     private func vote(_ choice: String) async {
-        do { try await session.api.vote(shareToken, choice: choice); await load() }
+        do {
+            let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/votes", method: "POST", body: ["Choice": choice, "Reason": voteReasons[choice] as Any? ?? NSNull()], token: session.token)
+            await load()
+        }
         catch { message = error.localizedDescription }
     }
     private func finalize(_ choice: String) async {
@@ -171,6 +172,7 @@ private struct PriceOfferSection: View {
     @EnvironmentObject private var session: BmbSession
     @State private var target: String
     @State private var site = ""
+    @State private var model = ""
     @State private var country = ""
     @State private var price = ""
     @State private var currency: String
@@ -211,12 +213,30 @@ private struct PriceOfferSection: View {
                         if offer.Status == "pending" { Text("· Awaiting review") }
                     }.font(.caption).foregroundStyle(BmbTheme.muted)
                     if let note = offer.Note { Text(note).font(.caption) }
+                    if let model = offer.Model { Text(model).font(.caption) }
+                    if offer.NeedsReconfirmation == true { Text(BmbEngagementCopy.text("Please reconfirm this price", "请重新确认价格")).font(.caption) }
+                    if offer.Status == "approved" {
+                        HStack {
+                            ForEach(["expired", "mismatch"], id: \.self) { reason in
+                                Button(BmbEngagementCopy.text(reason == "expired" ? "Expired" : "Different product", reason == "expired" ? "已失效" : "不是同款")) {
+                                    Task {
+                                        guard let token = session.token else { session.showLogin = true; return }
+                                        do {
+                                            let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/price-offers/\(offer.Id)/issues", method: "POST", body: ["Body": reason], token: token)
+                                            message = BmbEngagementCopy.text("Feedback sent", "已提交反馈")
+                                        } catch { message = error.localizedDescription }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if let url = offer.Url, let link = URL(string: url) { Link("View product", destination: link) }
                 }
                 if isOpen {
                     Divider()
                     Text("Share a price you found").font(.subheadline.bold())
                     TextField("Website", text: $site).textFieldStyle(.roundedBorder)
+                    TextField("Model (optional)", text: $model).textFieldStyle(.roundedBorder)
                     TextField("Country or region code (US)", text: $country).textInputAutocapitalization(.characters).textFieldStyle(.roundedBorder)
                     TextField("Price", text: $price).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
                     Picker("Currency", selection: $currency) {
@@ -249,7 +269,7 @@ private struct PriceOfferSection: View {
         guard let id = product.Id, let amount = Double(price) else { return }
         do {
             let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/price-offers", method: "POST", body: [
-                "ProductId": id, "SiteName": site, "CountryCode": country.uppercased(), "Price": amount,
+                "ProductId": id, "SiteName": site, "Model": model, "CountryCode": country.uppercased(), "Price": amount,
                 "Currency": currency, "Url": url, "Note": note
             ], token: token)
             site = ""; country = ""; price = ""; url = ""; note = ""

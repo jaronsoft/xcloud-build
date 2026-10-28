@@ -7,6 +7,7 @@ struct BmbDecisionShareView: View {
     var isPublished = false
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var session: BmbSession
     @State private var copied = false
     @State private var shareImage: BmbShareImage?
     @State private var error: String?
@@ -42,6 +43,7 @@ struct BmbDecisionShareView: View {
                 Button {
                     UIPasteboard.general.string = decision.ShareUrl
                     copied = true
+                    Task { await session.api.track("share_action", shareToken: decision.ShareToken, token: session.token) }
                 } label: {
                     Label(copied ? "Link copied" : "Copy link", systemImage: copied ? "checkmark" : "link")
                         .frame(maxWidth: .infinity, minHeight: 48)
@@ -55,6 +57,7 @@ struct BmbDecisionShareView: View {
                             .frame(maxWidth: .infinity, minHeight: 48)
                     }
                     .buttonStyle(.bordered)
+                    .simultaneousGesture(TapGesture().onEnded { Task { await session.api.track("share_action", shareToken: decision.ShareToken, token: session.token) } })
                 }
 
                 Button {
@@ -64,6 +67,7 @@ struct BmbDecisionShareView: View {
                         URLQueryItem(name: "url", value: decision.ShareUrl)
                     ]
                     if let url = components?.url { UIApplication.shared.open(url) }
+                    Task { await session.api.track("share_action", shareToken: decision.ShareToken, token: session.token) }
                 } label: {
                     Label("Share to X", systemImage: "arrow.up.right")
                         .frame(maxWidth: .infinity, minHeight: 48)
@@ -75,6 +79,7 @@ struct BmbDecisionShareView: View {
                     renderer.scale = 2
                     if let image = renderer.uiImage {
                         shareImage = BmbShareImage(image: image)
+                        Task { await session.api.track("share_action", shareToken: decision.ShareToken, token: session.token) }
                     } else {
                         error = String(localized: "Could not create the share image.")
                     }

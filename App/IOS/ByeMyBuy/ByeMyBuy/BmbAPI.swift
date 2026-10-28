@@ -46,6 +46,8 @@ struct BmbComment: Decodable, Identifiable {
 }
 
 struct BmbPriceOffer: Decodable, Identifiable {
+    let Model: String?
+    let NeedsReconfirmation: Bool?
     let Id: String
     let ProductId: String
     let SiteName: String
@@ -61,6 +63,13 @@ struct BmbPriceOffer: Decodable, Identifiable {
 }
 
 struct BmbDecision: Decodable, Identifiable {
+    let IsWaiting: Bool?
+    let ReviewAt: String?
+    let Hesitation: String?
+    let SelectedOption: String?
+    let IsFollowing: Bool?
+    let VoteReasons: [String: [String: Int]]?
+    let Feedback: [BmbFeedback]?
     let Id: String
     let ShareToken: String
     let ShareUrl: String
@@ -96,6 +105,10 @@ struct BmbDecisionSummary: Decodable, Identifiable {
 }
 
 struct BmbPublicDecision: Decodable, Identifiable {
+    let IsWaiting: Bool?
+    let FinalChoice: String?
+    let VoteCount: Int?
+    let Hesitation: String?
     let Id: String
     let ShareToken: String
     let Mode: String
@@ -177,6 +190,15 @@ struct BmbAPI {
         guard http.statusCode < 400, envelope.success, let value = envelope.response else {
             throw BmbError(message: envelope.msg ?? "Request failed")
         }
+        if method == "POST", path == "/decisions", let decision = value as? BmbDecision {
+            Task { await track("create_completed", shareToken: decision.ShareToken, token: token) }
+        }
+        let segments = path.split(separator: "/")
+        if method == "POST", segments.count == 3, segments[0] == "d", segments[2] == "votes" || (segments[2] == "final-choice" && body?["Choice"] as? String != "waiting") {
+            let code = segments[2] == "votes" ? "vote_recorded" : "final_choice_recorded"
+            let shareToken = String(segments[1])
+            Task { await track(code, shareToken: shareToken, token: token) }
+        }
         if method == "GET" && path != "/auth/apple/nonce" {
             await BmbCache.shared.storeData(data, for: cacheKey(path, token: token))
         }
@@ -185,6 +207,11 @@ struct BmbAPI {
 
     func resolve(_ url: String) async throws -> BmbProduct {
         try await call("/products/resolve", method: "POST", body: ["Url": url])
+    }
+
+    func track(_ code: String, shareToken: String? = nil, token: String? = nil) async {
+        let body: [String: Any] = ["EventId": UUID().uuidString, "EventCode": code, "ShareToken": shareToken as Any? ?? NSNull(), "Client": "ios"]
+        let _: BmbAcknowledgement? = try? await call("/events", method: "POST", body: body, token: token)
     }
 
     func uploadProductImage(_ data: Data, token: String) async throws -> String {
