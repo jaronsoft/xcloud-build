@@ -33,6 +33,8 @@ struct ByeMyBuyApp: App {
                 }
             }
             .environmentObject(session)
+            .task { await session.restoreSession() }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BmbAuthChanged"))) { _ in session.syncAuth() }
             .task(id: "\(scenePhase)-\(session.token ?? "")") {
                 guard scenePhase == .active, let token = session.token else { unread = 0; return }
                 while !Task.isCancelled {
@@ -115,11 +117,11 @@ struct BmbProductCard: View {
     var body: some View {
         BmbCard {
             VStack(alignment: .leading, spacing: 12) {
-                GeometryReader { geometry in
+                if product.ImageUrl != nil { GeometryReader { geometry in
                     ZStack(alignment: .topLeading) {
                         RoundedRectangle(cornerRadius: 17).fill(BmbTheme.hero)
                         if let image = product.ImageUrl, let url = URL(string: image) {
-                            BmbCachedImage(url: url) {
+                            BmbCachedImage(url: url, loadingLabel: "Loading image…") {
                                 Image(systemName: "sparkles").font(.largeTitle).foregroundStyle(.brown.opacity(0.4))
                             }
                             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -133,8 +135,9 @@ struct BmbProductCard: View {
                     .frame(width: geometry.size.width, height: geometry.size.height)
                 }
                 .frame(height: 210)
-                .clipShape(RoundedRectangle(cornerRadius: 17))
+                .clipShape(RoundedRectangle(cornerRadius: 17)) }
                 VStack(alignment: .leading, spacing: 4) {
+                    if product.ImageUrl == nil, let label { Text(label).font(.caption.bold()).padding(6).background(BmbTheme.hero, in: RoundedRectangle(cornerRadius: 7)) }
                     Text(product.Title.isEmpty ? "Your next find" : product.Title).font(.headline).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     if let model = product.Model, !model.isEmpty {
@@ -142,7 +145,7 @@ struct BmbProductCard: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if let price = product.Price {
-                        Text(BmbMoney.display(price, currency: product.Currency)).font(.subheadline.bold())
+                        Text(BmbMoney.display(price, currency: product.Currency)).font(.title3.bold()).foregroundStyle(BmbTheme.ink)
                     }
                 }
                 if let tags = product.Tags, !tags.isEmpty {

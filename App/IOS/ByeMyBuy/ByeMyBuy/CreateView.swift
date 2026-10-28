@@ -38,6 +38,7 @@ struct CreateView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var mode = "buy_pass"
     @State private var visibility = "public"
+    @State private var language = Locale.current.language.languageCode?.identifier == "zh" ? "zh" : "en"
     @State private var question = ""
     @State private var hesitation = ""
     @State private var products = [ProductDraft(), ProductDraft()]
@@ -49,6 +50,7 @@ struct CreateView: View {
     private struct StoredDraft: Codable {
         var mode: String
         var visibility: String
+        var language: String?
         var question: String
         var hesitation: String
         var products: [ProductDraft]
@@ -57,11 +59,12 @@ struct CreateView: View {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("byemybuy-create-draft.json")
     }
     private var draftData: Data? {
-        try? JSONEncoder().encode(StoredDraft(mode: mode, visibility: visibility, question: question, hesitation: hesitation, products: products))
+        try? JSONEncoder().encode(StoredDraft(mode: mode, visibility: visibility, language: language, question: question, hesitation: hesitation, products: products))
     }
     init() {
         if let data = try? Data(contentsOf: Self.draftURL), let draft = try? JSONDecoder().decode(StoredDraft.self, from: data), draft.products.count == 2 {
             _mode = State(initialValue: draft.mode); _visibility = State(initialValue: draft.visibility)
+            _language = State(initialValue: draft.language == "zh" ? "zh" : "en")
             _question = State(initialValue: draft.question); _hesitation = State(initialValue: draft.hesitation)
             _products = State(initialValue: draft.products)
         }
@@ -215,6 +218,10 @@ struct CreateView: View {
                 BmbCard {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Who can see this?").font(.headline)
+                        Picker(BmbEngagementCopy.text("Content language", "内容语言"), selection: $language) {
+                            Text("简体中文").tag("zh")
+                            Text("English").tag("en")
+                        }
                         VStack(spacing: 8) {
                             visibilityChoice("private", title: "Link only")
                             visibilityChoice("public", title: "Submit to Explore (after review)")
@@ -372,7 +379,7 @@ struct CreateView: View {
                 fields.append(value)
             }
             let result: BmbDecision = try await session.api.call("/decisions", method: "POST",
-                body: ["Mode": mode, "Visibility": visibility, "Question": question, "Hesitation": hesitation, "Products": fields], token: token)
+                body: ["Mode": mode, "Visibility": visibility, "Language": language, "Question": question, "Hesitation": hesitation, "Products": fields], token: token)
             try? FileManager.default.removeItem(at: Self.draftURL)
             publishedDecision = result
             error = nil

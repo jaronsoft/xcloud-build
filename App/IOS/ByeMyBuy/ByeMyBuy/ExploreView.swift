@@ -10,10 +10,12 @@ struct ExploreView: View {
     @State private var page = 0
     @State private var snapshot: Int64?
     @State private var hasMore = false
-    @State private var loading = false
+    @State private var loading = true
     @State private var error: String?
     @State private var filter = "recommended"
     @State private var tag = ""
+    @AppStorage("bmb.content_language") private var contentLanguage = Locale.current.language.languageCode?.identifier == "zh" ? "zh" : "en"
+    @AppStorage("bmb.include_english") private var includeEnglish = true
     @State private var feedRequest = UUID()
 
     var body: some View {
@@ -58,8 +60,39 @@ struct ExploreView: View {
                         Button("Retry") { Task { await load(reset: page == 0) } }
                     } }
                 }
+                if loading && items.isEmpty && error == nil {
+                    BmbCard {
+                        VStack(spacing: 13) {
+                            ProgressView().tint(.green)
+                            Text("Finding community decisions…").font(.subheadline.bold())
+                            Text("Just a moment.").font(.caption).foregroundStyle(BmbTheme.muted)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 180)
+                    }
+                }
                 if items.isEmpty && !loading && error == nil {
-                    BmbCard { Text("No public decisions yet.").foregroundStyle(BmbTheme.muted) }
+                    BmbCard {
+                        VStack(spacing: 11) {
+                            ZStack(alignment: .topTrailing) {
+                                Circle().fill(BmbTheme.hero).frame(width: 118, height: 118)
+                                Image("LaunchMark").resizable().scaledToFit().frame(width: 74, height: 74).padding(22)
+                                Text("?").font(.title2.bold()).foregroundStyle(.white)
+                                    .frame(width: 32, height: 32).background(.orange, in: Circle())
+                            }
+                            Text("It's quiet here for now").font(.headline)
+                            Text(contentLanguage == "zh" && !includeEnglish ? "No Chinese decisions yet. Try including English." : "No public decisions match this view yet.")
+                                .font(.subheadline).foregroundStyle(BmbTheme.muted).multilineTextAlignment(.center)
+                            if contentLanguage == "zh" && !includeEnglish {
+                                Button("Include English") { includeEnglish = true; Task { await load(reset: true) } }
+                                    .font(.subheadline.bold()).foregroundStyle(.green)
+                            }
+                            Button("Ask everyone") { showCreate = true }
+                                .font(.subheadline.bold()).foregroundStyle(BmbTheme.ink)
+                                .padding(.horizontal, 20).frame(height: 42)
+                                .background(BmbTheme.lime, in: Capsule())
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 18)
+                    }
                 }
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(0..<columnCount, id: \.self) { column in
@@ -78,7 +111,7 @@ struct ExploreView: View {
         .sheet(isPresented: $showCreate) { NavigationStack { CreateView() } }
         .sheet(isPresented: $showFilters) { filterSheet }
         .task {
-            if !hasActiveFilters, let cached: BmbPublicPage = await BmbAPI().cached("/decisions/public?page=1&size=20") {
+            if !hasActiveFilters, let cached: BmbPublicPage = await BmbAPI().cached("/decisions/public?page=1&size=20&language=\(contentLanguage)&includeEnglish=\(contentLanguage == "zh" && includeEnglish)") {
                 items = cached.Items; page = cached.Page; snapshot = cached.Snapshot; hasMore = cached.HasMore
             }
             await load(reset: true)
@@ -86,7 +119,7 @@ struct ExploreView: View {
         .refreshable { await load(reset: true) }
     }
 
-    private var hasActiveFilters: Bool { filter != "recommended" || !tag.isEmpty }
+    private var hasActiveFilters: Bool { filter != "recommended" || !tag.isEmpty || contentLanguage == "zh" && includeEnglish }
 
     private func filterTitle(_ value: String) -> String {
         switch value {
@@ -99,6 +132,13 @@ struct ExploreView: View {
     private var filterSheet: some View {
         NavigationStack {
             Form {
+                Section(BmbEngagementCopy.text("Content language", "内容语言")) {
+                    Picker(BmbEngagementCopy.text("My language", "我的语言"), selection: $contentLanguage) {
+                        Text("简体中文").tag("zh")
+                        Text("English").tag("en")
+                    }
+                    if contentLanguage == "zh" { Toggle(BmbEngagementCopy.text("Include English", "同时显示英语"), isOn: $includeEnglish) }
+                }
                 Section(BmbEngagementCopy.text("Decisions", "提问范围")) {
                     Picker(BmbEngagementCopy.text("Filter", "筛选"), selection: $draftFilter) {
                         ForEach(["recommended", "unanswered", "results"], id: \.self) { value in
@@ -123,13 +163,10 @@ struct ExploreView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(BmbEngagementCopy.text("Apply", "应用")) {
                         let nextTag = draftTag.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let changed = filter != draftFilter || tag != nextTag
                         filter = draftFilter; tag = nextTag; showFilters = false
-                        if changed {
-                            // 换条件时清空旧列表及快照，避免把旧结果误认作新筛选结果。
-                            items = []; page = 0; snapshot = nil; hasMore = false
-                            Task { await load(reset: true) }
-                        }
+                        // 换条件时清空旧列表及快照，避免把旧结果误认作新筛选结果。
+                        items = []; page = 0; snapshot = nil; hasMore = false
+                        Task { await load(reset: true) }
                     }.fontWeight(.semibold)
                 }
             }
@@ -140,36 +177,25 @@ struct ExploreView: View {
 
     private func pinColumn(_ column: Int, columnCount: Int, width: CGFloat) -> some View {
         LazyVStack(spacing: 12) {
-            ForEach(Array(items.enumerated()).filter { $0.offset % columnCount == column }, id: \.element.Id) { index, item in
+            ForEach(Array(items.enumerated()).filter { $0.offset % columnCount == column }, id: \.element.Id) { _, item in
                 NavigationLink(destination: DecisionView(shareToken: item.ShareToken)) {
-                    pinCard(item, index: index, width: width)
+                    pinCard(item, width: width)
                 }.buttonStyle(.plain)
             }
         }.frame(width: width)
     }
 
-    private func pinCard(_ item: BmbPublicDecision, index: Int, width: CGFloat) -> some View {
+    private func pinCard(_ item: BmbPublicDecision, width: CGFloat) -> some View {
         let product = item.Products.first
         return VStack(alignment: .leading, spacing: 0) {
-            ZStack(alignment: .topLeading) {
-                BmbTheme.hero
-                if let image = product?.ImageUrl, let url = URL(string: image) {
-                    BmbCachedImage(url: url) {
-                        Image("LaunchMark").resizable().scaledToFit().padding(40)
-                    }
-                } else {
-                    Image("LaunchMark").resizable().scaledToFit().padding(40)
-                }
-            }
-            // 先约束图片容器的宽高，再裁剪填充图，防止原图的固有宽度撑开瀑布流列。
-            .frame(width: width, height: [188.0, 230.0, 205.0][index % 3]).clipped()
-            .overlay(alignment: .topLeading) {
-                if item.Mode == "pick_one" {
-                    Text("A / B").font(.caption2.bold()).padding(6)
-                        .background(BmbTheme.card, in: RoundedRectangle(cornerRadius: 7)).padding(9)
-                }
+            if let image = product?.ImageUrl, let url = URL(string: image) {
+                BmbExploreImage(url: url, width: width)
             }
             VStack(alignment: .leading, spacing: 5) {
+                if item.Mode == "pick_one" && product?.ImageUrl == nil {
+                    Text("A / B").font(.caption2.bold()).padding(6)
+                        .background(BmbTheme.paper, in: RoundedRectangle(cornerRadius: 7))
+                }
                 Text(product?.Title ?? item.Question).font(.subheadline.bold()).lineLimit(2)
                 if let model = product?.Model, !model.isEmpty {
                     Text(model).font(.caption2).foregroundStyle(BmbTheme.muted).lineLimit(1)
@@ -188,6 +214,12 @@ struct ExploreView: View {
         .background(BmbTheme.card, in: RoundedRectangle(cornerRadius: 16))
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(BmbTheme.ink.opacity(0.07)))
+        .overlay(alignment: .topLeading) {
+            if item.Mode == "pick_one" && product?.ImageUrl != nil {
+                Text("A / B").font(.caption2.bold()).padding(6)
+                    .background(BmbTheme.card, in: RoundedRectangle(cornerRadius: 7)).padding(9)
+            }
+        }
         .foregroundStyle(BmbTheme.ink)
     }
 
@@ -200,7 +232,8 @@ struct ExploreView: View {
             let nextPage = reset ? 1 : page + 1
             let snapshotQuery = reset ? "" : snapshot.map { "&snapshot=\($0)" } ?? ""
             var components = URLComponents()
-            components.queryItems = [URLQueryItem(name: "filter", value: filter), URLQueryItem(name: "tag", value: tag)]
+            components.queryItems = [URLQueryItem(name: "filter", value: filter), URLQueryItem(name: "tag", value: tag),
+                URLQueryItem(name: "language", value: contentLanguage), URLQueryItem(name: "includeEnglish", value: contentLanguage == "zh" && includeEnglish ? "true" : "false")]
             let query = components.percentEncodedQuery ?? ""
             let response: BmbPublicPage = try await BmbAPI().call("/decisions/public?page=\(nextPage)&size=20&\(query)\(snapshotQuery)")
             guard current == feedRequest else { return }
@@ -208,7 +241,31 @@ struct ExploreView: View {
             page = response.Page
             snapshot = response.Snapshot
             hasMore = response.HasMore
-        } catch { if current == feedRequest { self.error = error.localizedDescription } }
+        } catch {
+            let cancelled = Task.isCancelled || error is CancellationError
+                || (error as? URLError)?.code == .cancelled
+                || (error as NSError).code == NSURLErrorCancelled
+            if current == feedRequest && !cancelled { self.error = error.localizedDescription }
+        }
         if current == feedRequest { loading = false }
+    }
+}
+
+private struct BmbExploreImage: View {
+    let url: URL
+    let width: CGFloat
+    @State private var height: CGFloat = 150
+
+    var body: some View {
+        BmbCachedImage(url: url, loadingLabel: "Loading image…", contentMode: .fit, preset: .list,
+                       onImageLoaded: { size in
+            guard size.width > 0 else { return }
+            height = min(320, max(90, width * size.height / size.width))
+        }) {
+            ProgressView().tint(.green)
+        }
+        .frame(width: width, height: height)
+        .background(BmbTheme.hero)
+        .clipped()
     }
 }

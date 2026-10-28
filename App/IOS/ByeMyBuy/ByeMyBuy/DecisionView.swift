@@ -41,29 +41,36 @@ struct DecisionView: View {
                         VStack(alignment: .leading, spacing: 15) {
                             Text("THE VERDICT").font(.caption.bold()).tracking(2).foregroundStyle(.green)
                             Text("Your vote").font(.title2.bold())
-                            Text("Voting is open to everyone. Sign in to add a reason.")
+                            Text(BmbEngagementCopy.text("Tap an option to vote. You can choose a reason first.", "点击选项即可投票；也可以先选填理由。"))
                                 .font(.caption).foregroundStyle(BmbTheme.muted)
-                            ForEach(voteChoices, id: \.0) { key, label in
-                                let reasons = key == "buy" ? ["useful","value","quality"] : key == "pass" ? ["expensive","duplicate","wait"] : ["value","fit","quality"]
-                                Picker(BmbEngagementCopy.text("Reason (optional)", "理由（可选）"), selection: Binding(get: { voteReasons[key] ?? "" }, set: { voteReasons[key] = $0 })) {
-                                    Text("—").tag("")
-                                    ForEach(reasons, id: \.self) { reason in Text(BmbEngagementCopy.reason(reason)).tag(reason) }
-                                }
-                                Button { Task { await vote(key) } } label: {
-                                    HStack {
-                                        Text(label).fontWeight(.bold)
-                                        Spacer()
-                                        Text("\(decision.Votes[key] ?? 0)").fontWeight(.bold)
-                                        Text("\(decision.VoteCount == 0 ? 0 : Int(Double(decision.Votes[key] ?? 0) / Double(decision.VoteCount) * 100))%")
-                                    }.padding(15)
-                                        .background(key == "pass" || key == "b" ? Color.orange.opacity(0.12) : Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 13))
-                                }
-                                .buttonStyle(.plain).disabled(decision.Status != "open")
-                                ForEach((decision.VoteReasons?[key] ?? [:]).keys.sorted(), id: \.self) { reason in
-                                    Text("\(BmbEngagementCopy.reason(reason)): \(decision.VoteReasons?[key]?[reason] ?? 0)").font(.caption)
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 10) {
+                                ForEach(voteChoices, id: \.0) { key, label in
+                                    Button { Task { await vote(key) } } label: {
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Text(label).fontWeight(.bold).fixedSize(horizontal: false, vertical: true)
+                                            Text("\(decision.VoteCount == 0 ? 0 : Int(Double(decision.Votes[key] ?? 0) / Double(decision.VoteCount) * 100))% · \(decision.Votes[key] ?? 0) \(BmbEngagementCopy.text("votes", "票"))")
+                                                .font(.caption)
+                                        }
+                                        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading).padding(12)
+                                        .background(key == "pass" || key == "b" ? Color.orange.opacity(0.16) : Color.green.opacity(0.16), in: RoundedRectangle(cornerRadius: 13))
+                                    }
+                                    .buttonStyle(.plain).disabled(decision.Status != "open")
                                 }
                             }
-                            Text("\(decision.VoteCount) votes").font(.caption).foregroundStyle(BmbTheme.muted)
+                            DisclosureGroup(BmbEngagementCopy.text("Add a reason (optional)", "补充投票理由（可选）")) {
+                                ForEach(voteChoices, id: \.0) { key, label in
+                                    let reasons = key == "buy" ? ["useful","value","quality"] : key == "pass" ? ["expensive","duplicate","wait"] : ["value","fit","quality"]
+                                    Picker(selection: Binding(get: { voteReasons[key] ?? "" }, set: { voteReasons[key] = $0 })) {
+                                        Text(BmbEngagementCopy.text("No reason", "不选理由")).tag("")
+                                        ForEach(reasons, id: \.self) { reason in Text(BmbEngagementCopy.reason(reason)).tag(reason) }
+                                    } label: { Text(label) }
+                                    .pickerStyle(.menu)
+                                    ForEach((decision.VoteReasons?[key] ?? [:]).keys.sorted(), id: \.self) { reason in
+                                        Text("\(BmbEngagementCopy.reason(reason)): \(decision.VoteReasons?[key]?[reason] ?? 0)").font(.caption)
+                                    }
+                                }
+                            }
+                            Text("\(decision.VoteCount) \(BmbEngagementCopy.text("votes", "票"))").font(.caption).foregroundStyle(BmbTheme.muted)
                                 .frame(maxWidth: .infinity)
                         }
                     }
@@ -71,6 +78,9 @@ struct DecisionView: View {
                         PriceOfferSection(shareToken: shareToken, product: product,
                             offers: decision.PriceOffers.filter { $0.ProductId == product.Id },
                             isOwner: decision.IsOwner, isOpen: decision.Status == "open", reload: load)
+                        PromoLinkSection(shareToken: shareToken, product: product,
+                            links: (decision.PromoLinks ?? []).filter { $0.ProductId == product.Id },
+                            isOpen: decision.Status == "open", reload: load)
                     }
                     BmbDecisionTools(item: decision, reload: load)
                     if let choice = decision.FinalChoice {
@@ -88,6 +98,8 @@ struct DecisionView: View {
                                 Divider()
                             }
                             if decision.Status == "open" {
+                                Text(BmbEngagementCopy.text("Sign in to share your opinion.", "登录后可以发表您的看法。"))
+                                    .font(.caption).foregroundStyle(BmbTheme.muted)
                                 TextField("What would you suggest?", text: $comment, axis: .vertical)
                                     .lineLimit(2...5).textFieldStyle(.roundedBorder)
                                 TextField("Alternative product URL (optional)", text: $suggestedURL)
@@ -106,7 +118,7 @@ struct DecisionView: View {
         }
         }
         .background(BmbTheme.paper)
-        .navigationTitle("Decision")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         .task(id: shareToken) {
@@ -160,6 +172,75 @@ struct DecisionView: View {
         do {
             let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/reports", method: "POST", body: ["Reason": reportReason], token: token)
             message = String(localized: "Report sent")
+        } catch { message = error.localizedDescription }
+    }
+}
+
+private struct PromoLinkSection: View {
+    let shareToken: String
+    let product: BmbProduct
+    let links: [BmbPromoLink]
+    let isOpen: Bool
+    let reload: () async -> Void
+    @EnvironmentObject private var session: BmbSession
+    @State private var showForm = false
+    @State private var url = ""
+    @State private var note = ""
+    @State private var message: String?
+
+    var body: some View {
+        BmbCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(BmbEngagementCopy.text("Creator offers", "博主优惠链接")).font(.headline)
+                Text(BmbEngagementCopy.text("Have a relevant discount link? Share it with someone deciding.", "有适用的优惠链接？分享给正在考虑购买的人。"))
+                    .font(.caption).foregroundStyle(BmbTheme.muted)
+                ForEach(links) { link in
+                    Divider()
+                    Text(BmbEngagementCopy.text("Promotional link", "推广链接")).font(.caption.bold()).foregroundStyle(.green)
+                    Text(link.Note).font(.subheadline)
+                    if let destination = URL(string: link.Url) { Link(BmbEngagementCopy.text("View link", "查看链接"), destination: destination) }
+                    if link.Status == "pending" { Text(BmbEngagementCopy.text("Awaiting review", "待审核")).font(.caption) }
+                    if link.Status == "approved" {
+                        HStack {
+                            Button(BmbEngagementCopy.text("Expired", "链接失效")) { Task { await report(link, reason: "expired") } }
+                            Button(BmbEngagementCopy.text("Not relevant", "内容不相关")) { Task { await report(link, reason: "irrelevant") } }
+                        }.font(.caption)
+                    }
+                }
+                if isOpen {
+                    Button(BmbEngagementCopy.text("Share my offer link", "推荐我的优惠链接")) { showForm.toggle() }
+                    if showForm {
+                        TextField("https://…", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
+                        TextField(BmbEngagementCopy.text("Offer and conditions", "优惠内容与条件"), text: $note, axis: .vertical)
+                            .lineLimit(2...4).textFieldStyle(.roundedBorder)
+                        Button(session.isLoggedIn ? BmbEngagementCopy.text("Send for review", "提交审核") : BmbEngagementCopy.text("Sign in to share", "登录后推荐")) {
+                            Task { await submit() }
+                        }.disabled(!url.hasPrefix("https://") || note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                if let message { Text(message).font(.caption).foregroundStyle(.orange) }
+            }
+        }
+    }
+
+    private func submit() async {
+        guard let token = session.token else { session.showLogin = true; return }
+        guard let productId = product.Id else { return }
+        do {
+            let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/promo-links", method: "POST",
+                body: ["ProductId": productId, "Url": url, "Note": note], token: token)
+            url = ""; note = ""; showForm = false
+            message = BmbEngagementCopy.text("Sent for review", "已提交审核")
+            await reload()
+        } catch { message = error.localizedDescription }
+    }
+
+    private func report(_ link: BmbPromoLink, reason: String) async {
+        guard let token = session.token else { session.showLogin = true; return }
+        do {
+            let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/promo-links/\(link.Id)/issues", method: "POST",
+                body: ["Body": reason], token: token)
+            message = BmbEngagementCopy.text("Feedback sent", "已反馈")
         } catch { message = error.localizedDescription }
     }
 }
@@ -218,6 +299,7 @@ private struct PriceOfferSection: View {
     @State private var currency: String
     @State private var url = ""
     @State private var note = ""
+    @State private var showForm = false
     @State private var message: String?
 
     init(shareToken: String, product: BmbProduct, offers: [BmbPriceOffer], isOwner: Bool, isOpen: Bool, reload: @escaping () async -> Void) {
@@ -236,6 +318,10 @@ private struct PriceOfferSection: View {
                 if let captured = product.CapturedAt { Text(captured).font(.caption).foregroundStyle(BmbTheme.muted) }
                 Text("Price I would accept").font(.subheadline.bold())
                 Text(product.TargetPrice.map { BmbMoney.display($0, currency: product.Currency) } ?? "—").font(.subheadline)
+                if isOpen {
+                    Button(BmbEngagementCopy.text("I found a better price", "我发现了更好的价格")) { showForm.toggle() }
+                        .font(.subheadline.bold())
+                }
                 if isOwner && isOpen {
                     TextField("Edit target price; clear to remove", text: $target).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
                     Button("Save target") { Task { await saveTarget() } }
@@ -272,9 +358,8 @@ private struct PriceOfferSection: View {
                     }
                     if let url = offer.Url, let link = URL(string: url) { Link("View product", destination: link) }
                 }
-                if isOpen {
-                    Divider()
-                    Text("Share a price you found").font(.subheadline.bold())
+                if isOpen { Divider() }
+                if isOpen && showForm {
                     TextField("Website", text: $site).textFieldStyle(.roundedBorder)
                     TextField("Model (optional)", text: $model).textFieldStyle(.roundedBorder)
                     TextField("Country or region code (US)", text: $country).textInputAutocapitalization(.characters).textFieldStyle(.roundedBorder)

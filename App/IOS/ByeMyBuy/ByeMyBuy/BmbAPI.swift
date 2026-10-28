@@ -4,6 +4,7 @@ import Security
 
 struct BmbEnvelope<T: Decodable>: Decodable {
     let success: Bool
+    let status: Int?
     let msg: String?
     let response: T?
 }
@@ -11,11 +12,13 @@ struct BmbEnvelope<T: Decodable>: Decodable {
 struct BmbAuth: Decodable {
     let UserId: String
     let AccessToken: String
+    let RefreshToken: String?
     let Email: String?
     let Phone: String?
     let DisplayName: String?
     let AvatarUrl: String?
     let DefaultCurrency: String?
+    let CountryCode: String?
 }
 
 struct BmbNonce: Decodable { let Nonce: String }
@@ -63,6 +66,8 @@ struct BmbPriceOffer: Decodable, Identifiable {
 }
 
 struct BmbDecision: Decodable, Identifiable {
+    let Language: String?
+    let PromoLinks: [BmbPromoLink]?
     let IsWaiting: Bool?
     let ReviewAt: String?
     let Hesitation: String?
@@ -88,6 +93,15 @@ struct BmbDecision: Decodable, Identifiable {
     var id: String { Id }
 }
 
+struct BmbPromoLink: Decodable, Identifiable {
+    let Id: String
+    let ProductId: String
+    let Url: String
+    let Note: String
+    let Status: String
+    var id: String { Id }
+}
+
 struct BmbDecisionSummary: Decodable, Identifiable {
     let Id: String
     let ShareToken: String
@@ -105,6 +119,7 @@ struct BmbDecisionSummary: Decodable, Identifiable {
 }
 
 struct BmbPublicDecision: Decodable, Identifiable {
+    let Language: String?
     let IsWaiting: Bool?
     let FinalChoice: String?
     let VoteCount: Int?
@@ -133,6 +148,9 @@ struct BmbProfile: Decodable {
     let DisplayName: String?
     let AvatarUrl: String?
     let DefaultCurrency: String?
+    let CountryCode: String?
+    let NicknameReviewPending: Bool?
+    let AvatarReviewPending: Bool?
 }
 
 struct BmbError: LocalizedError {
@@ -160,6 +178,43 @@ enum BmbKeychain {
     }
 }
 
+actor BmbAuthRenewal {
+    static let shared = BmbAuthRenewal()
+    private var task: Task<String, Error>?
+
+    func refresh(rejected: String?) async throws -> String {
+        if let current = BmbKeychain.read("access"), current != rejected { return current }
+        if let task { return try await task.value }
+        let newTask = Task<String, Error> {
+            guard let refresh = BmbKeychain.read("refresh") else { throw BmbError(message: "Please sign in again.") }
+            var request = URLRequest(url: URL(string: "/api/byemybuy/auth/refresh", relativeTo: BmbAPI.baseURL)!.absoluteURL)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["RefreshToken": refresh])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { throw BmbError(message: "Session refresh unavailable.") }
+            let result = try? JSONDecoder().decode(BmbEnvelope<BmbAuth>.self, from: data)
+            if http.statusCode == 401 || result?.status == 401 {
+                BmbKeychain.write("access", value: nil)
+                BmbKeychain.write("refresh", value: nil)
+                NotificationCenter.default.post(name: Notification.Name("BmbAuthChanged"), object: nil)
+                throw BmbError(message: "Please sign in again.")
+            }
+            guard http.statusCode < 400, result?.success == true,
+                  let auth = result?.response, let next = auth.RefreshToken else {
+                throw BmbError(message: result?.msg ?? "Session refresh unavailable.")
+            }
+            BmbKeychain.write("access", value: auth.AccessToken)
+            BmbKeychain.write("refresh", value: next)
+            NotificationCenter.default.post(name: Notification.Name("BmbAuthChanged"), object: nil)
+            return auth.AccessToken
+        }
+        task = newTask
+        defer { task = nil }
+        return try await newTask.value
+    }
+}
+
 struct BmbAPI {
     static let baseURL = URL(string: "https://byemybuy.get-free.net")!
 
@@ -179,11 +234,33 @@ struct BmbAPI {
         request.httpMethod = method
         request.timeoutInterval = 15
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let currentToken = token == nil ? nil : (BmbKeychain.read("access") ?? token)
+        if let currentToken { request.setValue("Bearer \(currentToken)", forHTTPHeaderField: "Authorization") }
         if let visitor = BmbKeychain.read("visitor") { request.setValue(visitor, forHTTPHeaderField: "X-BMB-Visitor") }
         if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body) }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let startedAt = Date()
+        let initial: (Data, URLResponse)
+        do { initial = try await URLSession.shared.data(for: request) }
+        catch {
+            await BmbDiagnostics.shared.record("API", "\(method) \(Self.diagnosticPath(path)) · network error")
+            throw error
+        }
+        var (data, response) = initial
+        await BmbDiagnostics.shared.record("API", "\(method) \(Self.diagnosticPath(path)) · \((response as? HTTPURLResponse)?.statusCode ?? 0) · \(Int(Date().timeIntervalSince(startedAt) * 1000)) ms")
+        if let http = response as? HTTPURLResponse, let currentToken,
+           (http.statusCode == 401 || (try? JSONDecoder().decode(BmbEnvelope<T>.self, from: data))?.status == 401),
+           !["/auth/email/send-code", "/auth/email", "/auth/password", "/auth/apple/nonce", "/auth/apple", "/auth/mini", "/auth/refresh", "/auth/logout"].contains(path) {
+            let renewed = try await BmbAuthRenewal.shared.refresh(rejected: currentToken)
+            request.setValue("Bearer \(renewed)", forHTTPHeaderField: "Authorization")
+            (data, response) = try await URLSession.shared.data(for: request)
+            await BmbDiagnostics.shared.record("API", "\(method) \(Self.diagnosticPath(path)) · retry \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+        }
         guard let http = response as? HTTPURLResponse else { throw BmbError(message: "No server response") }
+        if http.statusCode == 401, currentToken != nil {
+            BmbKeychain.write("access", value: nil)
+            BmbKeychain.write("refresh", value: nil)
+            NotificationCenter.default.post(name: Notification.Name("BmbAuthChanged"), object: nil)
+        }
         guard let envelope = try? JSONDecoder().decode(BmbEnvelope<T>.self, from: data) else {
             throw BmbError(message: "Unexpected server response (\(http.statusCode))")
         }
@@ -203,6 +280,12 @@ struct BmbAPI {
             await BmbCache.shared.storeData(data, for: cacheKey(path, token: token))
         }
         return value
+    }
+
+    private static func diagnosticPath(_ path: String) -> String {
+        let parts = path.split(separator: "?", maxSplits: 1)
+        let route = String(parts.first ?? "")
+        return route.hasPrefix("/d/") ? "/d/[decision]" : route
     }
 
     func resolve(_ url: String) async throws -> BmbProduct {
@@ -237,8 +320,15 @@ struct BmbAPI {
         request.timeoutInterval = 30
         request.httpBody = body
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (responseData, response) = try await URLSession.shared.data(for: request)
+        let currentToken = BmbKeychain.read("access") ?? token
+        request.setValue("Bearer \(currentToken)", forHTTPHeaderField: "Authorization")
+        var (responseData, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse,
+           (http.statusCode == 401 || (try? JSONDecoder().decode(BmbEnvelope<BmbImageUpload>.self, from: responseData))?.status == 401) {
+            let renewed = try await BmbAuthRenewal.shared.refresh(rejected: currentToken)
+            request.setValue("Bearer \(renewed)", forHTTPHeaderField: "Authorization")
+            (responseData, response) = try await URLSession.shared.data(for: request)
+        }
         guard let http = response as? HTTPURLResponse,
               let envelope = try? JSONDecoder().decode(BmbEnvelope<BmbImageUpload>.self, from: responseData),
               http.statusCode < 400, envelope.success, let value = envelope.response else {
@@ -263,7 +353,7 @@ final class BmbSession: ObservableObject {
     @Published var message: String?
     @Published var showLogin = false
     let api = BmbAPI()
-    var isLoggedIn: Bool { token != nil }
+    var isLoggedIn: Bool { token != nil || BmbKeychain.read("refresh") != nil }
 
     init() {
         if BmbKeychain.read("visitor") == nil {
@@ -271,10 +361,28 @@ final class BmbSession: ObservableObject {
         }
     }
 
+
+    func syncAuth() {
+        token = BmbKeychain.read("access")
+        if token == nil { profile = nil }
+    }
+
+    func restoreSession() async {
+        guard token == nil, BmbKeychain.read("refresh") != nil else { return }
+        do {
+            _ = try await BmbAuthRenewal.shared.refresh(rejected: nil)
+            syncAuth()
+        } catch {
+            // 网络中断时保留刷新凭据，下一次进入页面继续尝试恢复。
+            syncAuth()
+        }
+    }
+
     func adopt(_ result: BmbAuth) {
         token = result.AccessToken
         BmbKeychain.write("access", value: result.AccessToken)
-        profile = BmbProfile(UserId: result.UserId, Email: result.Email, Phone: result.Phone, DisplayName: result.DisplayName, AvatarUrl: result.AvatarUrl, DefaultCurrency: result.DefaultCurrency)
+        BmbKeychain.write("refresh", value: result.RefreshToken)
+        profile = BmbProfile(UserId: result.UserId, Email: result.Email, Phone: result.Phone, DisplayName: result.DisplayName, AvatarUrl: result.AvatarUrl, DefaultCurrency: result.DefaultCurrency, CountryCode: result.CountryCode, NicknameReviewPending: nil, AvatarReviewPending: nil)
     }
 
     func sendCode(_ email: String) async throws {
@@ -309,7 +417,9 @@ final class BmbSession: ObservableObject {
     }
 
     func logout() {
-        token = nil; profile = nil; BmbKeychain.write("access", value: nil)
+        let refresh = BmbKeychain.read("refresh")
+        token = nil; profile = nil; BmbKeychain.write("access", value: nil); BmbKeychain.write("refresh", value: nil)
+        if let refresh { Task { let _: BmbAcknowledgement? = try? await api.call("/auth/logout", method: "POST", body: ["RefreshToken": refresh]) } }
         Task { await BmbCache.shared.clearData() }
     }
 

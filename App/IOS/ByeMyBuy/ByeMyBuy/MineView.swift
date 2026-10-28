@@ -26,7 +26,7 @@ struct MineView: View {
                             BmbCard {
                                 VStack(alignment: .leading, spacing: 14) {
                                     HStack(alignment: .top, spacing: 13) {
-                                        BmbCachedImage(url: item.ImageUrl.flatMap(URL.init(string:))) {
+                                        BmbCachedImage(url: item.ImageUrl.flatMap(URL.init(string:)), preset: .thumbnail) {
                                             Image("LaunchMark").resizable().scaledToFit().padding(16)
                                         }
                                         .frame(width: 78, height: 78)

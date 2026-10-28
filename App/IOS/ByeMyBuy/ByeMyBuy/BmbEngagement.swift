@@ -53,15 +53,25 @@ struct BmbNotificationsView: View {
     @State private var error: String?
     private func t(_ en: String, _ zh: String) -> String { BmbEngagementCopy.text(en, zh) }
     var body: some View {
-        List {
-            if !session.isLoggedIn { Button("Sign in") { session.showLogin = true } }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("BYEMYBUY COMMUNITY").font(.caption.bold()).tracking(2).foregroundStyle(.green)
+                Text(t("Messages", "消息中心")).font(.system(size: 31, weight: .black, design: .rounded))
+            }
+            if !session.isLoggedIn { BmbCard { VStack(alignment: .leading, spacing: 12) {
+                Text(t("Sign in to see your updates.", "登录后查看与你有关的消息。"))
+                Button(t("Sign in", "登录")) { session.showLogin = true }
+                    .font(.subheadline.bold()).padding(.horizontal, 20).frame(height: 44)
+                    .background(BmbTheme.lime, in: Capsule())
+            } } }
             else {
-                Button(t("Mark all read", "全部已读")) { Task { await read(nil) } }
-                if items.isEmpty { Text(t("No messages yet", "暂无消息")) }
+                Button(t("Mark all read", "全部已读")) { Task { await read(nil) } }.font(.subheadline.bold())
+                if items.isEmpty { BmbCard { Text(t("No messages yet", "暂无消息")) } }
                 ForEach(items) { item in
                     if item.Available, let token = item.ShareToken {
-                        NavigationLink { DecisionView(shareToken: token).task { await read(item.Id) } } label: { messageRow(item) }
-                    } else { Button { Task { await read(item.Id) } } label: { messageRow(item) } }
+                        NavigationLink { DecisionView(shareToken: token).task { await read(item.Id) } } label: { BmbCard { messageRow(item) } }
+                    } else { Button { Task { await read(item.Id) } } label: { BmbCard { messageRow(item) } } }
                 }
                 HStack {
                     Button(t("Previous", "上一页")) { Task { await load(page - 1) } }.disabled(page == 1)
@@ -69,7 +79,7 @@ struct BmbNotificationsView: View {
                     Button(t("Next", "下一页")) { Task { await load(page + 1) } }.disabled(page * 20 >= total)
                 }
                 if preferences != nil {
-                    Section(t("Email preferences", "邮件通知设置")) {
+                    BmbCard { VStack(alignment: .leading, spacing: 12) { Text(t("Email preferences", "邮件通知设置")).font(.headline)
                         Text(t("Opt in to email. The daily digest arrives at 09:00 in your time zone.", "自愿订阅；互动摘要每天当地时间 09:00 发送。"))
                         if preferences?.HasEmail != true { Text(t("Verify an email in Account first.", "请先在账号中绑定并验证邮箱。")) }
                         Toggle(t("Daily digest", "互动摘要"), isOn: binding(\.DigestEmail)).disabled(preferences?.HasEmail != true)
@@ -79,12 +89,19 @@ struct BmbNotificationsView: View {
                         TextField(t("Time zone", "时区"), text: binding(\.TimeZone)).textInputAutocapitalization(.never)
                         Button(t("Use local time zone", "使用本地时区")) { preferences?.TimeZone = TimeZone.current.identifier }
                         Button(t("Save preferences", "保存设置")) { Task { await save() } }
-                    }
+                    } }
                 }
             }
             if let error { Text(error).foregroundStyle(.orange) }
-        }.navigationTitle(t("Messages", "消息中心"))
-            .task(id: session.token) { await load() }.refreshable { await load() }
+            }.padding(20)
+        }.background(BmbTheme.paper).navigationBarHidden(true)
+            .task(id: session.token) {
+                await session.restoreSession()
+                await load()
+            }.refreshable {
+                await session.restoreSession()
+                await load()
+            }
     }
     private func binding<T>(_ key: WritableKeyPath<BmbPreferences, T>) -> Binding<T> {
         Binding(get: { preferences![keyPath: key] }, set: { preferences?[keyPath: key] = $0 })

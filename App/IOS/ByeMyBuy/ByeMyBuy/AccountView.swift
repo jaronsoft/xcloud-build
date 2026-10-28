@@ -13,14 +13,22 @@ struct AccountView: View {
     @State private var codeSending = false
     @State private var message: String?
     @State private var confirmDelete = false
+    @State private var confirmDeleteFinal = false
+    @State private var showSecurity = false
     @State private var appleDelegate: BmbAppleDelegate?
     @State private var displayName = ""
+    @State private var showNicknameEditor = false
+    @State private var nicknameError: String?
     @State private var preferredCurrency = BmbCurrency.defaultCode
+    @State private var countryCode = ""
+    @State private var debugUnlocked = false
+    @State private var showingDiagnostics = false
+    @State private var debugStatus: String?
+    @State private var profileNotice: String?
+    @State private var cropImage: UIImage?
+    @State private var showAvatarCrop = false
     @State private var selectedAvatar: PhotosPickerItem?
     @State private var profileSaving = false
-    @State private var cacheSizes: (data: Int64, images: Int64) = (0, 0)
-    @State private var confirmClearData = false
-    @State private var confirmClearImages = false
 
     var body: some View {
         ScrollView {
@@ -32,6 +40,24 @@ struct AccountView: View {
                         Text("Make this space yours.").font(.system(size: 14)).foregroundStyle(BmbTheme.muted)
                     }
                     Spacer()
+                    if session.isLoggedIn {
+                        Menu {
+                            ForEach(BmbCurrency.codes, id: \.self) { code in
+                                Button { Task { await saveCurrency(code) } } label: {
+                                    Text(BmbCurrency.label(code))
+                                }
+                            }
+                        } label: {
+                            VStack(alignment: .trailing, spacing: 3) {
+                                Text("My currency").font(.caption2).foregroundStyle(BmbTheme.muted)
+                                Text(BmbCurrency.label(preferredCurrency)).font(.caption.bold())
+                                    .foregroundStyle(BmbTheme.ink).lineLimit(1)
+                            }
+                            .padding(.horizontal, 8).frame(height: 44)
+                            .background(BmbTheme.card, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .disabled(profileSaving)
+                    }
                     Menu {
                         Button { themePreference = "system" } label: {
                             Label("System", systemImage: themePreference == "system" ? "checkmark.circle.fill" : "circle.lefthalf.filled")
@@ -53,7 +79,21 @@ struct AccountView: View {
                 }
                 if session.isLoggedIn {
                     profileCard
-                    securityCard
+                    Button {
+                        message = nil
+                        showSecurity = true
+                    } label: {
+                        BmbCard {
+                            HStack {
+                                Label("Account & security", systemImage: "lock.shield")
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption.bold())
+                            }
+                            .font(.subheadline.bold())
+                            .foregroundStyle(BmbTheme.ink)
+                        }
+                    }
+                    .buttonStyle(.plain)
                     if let message { Text(message).font(.caption).foregroundStyle(.green) }
                 } else {
                     BmbCard { VStack(alignment: .leading, spacing: 18) {
@@ -61,43 +101,81 @@ struct AccountView: View {
                         BmbPrimaryButton(title: "Sign in") { session.showLogin = true }
                     } }
                 }
-                cacheCard
-                legalCard
-                if session.isLoggedIn {
-                    Button("Sign out") { session.logout() }
-                        .font(.subheadline.bold()).foregroundStyle(BmbTheme.ink)
-                        .frame(maxWidth: .infinity).padding(15)
-                        .background(BmbTheme.card, in: RoundedRectangle(cornerRadius: 16))
-                    Button("Delete account", role: .destructive) { confirmDelete = true }
-                        .font(.caption.bold()).frame(maxWidth: .infinity).padding(8)
+                NavigationLink(destination: CacheManagementView()) {
+                    BmbCard {
+                        HStack {
+                            Label("Clear cache", systemImage: "externaldrive")
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption.bold())
+                        }
+                        .font(.subheadline.bold())
+                        .foregroundStyle(BmbTheme.ink)
+                    }
                 }
+                .buttonStyle(.plain)
+                legalCard
             }.padding(20)
         }
         .background(BmbTheme.paper)
         .navigationBarHidden(true)
+        .navigationDestination(isPresented: $showSecurity) { securityPage }
         .task(id: session.token) {
             await session.loadProfile()
             preferredCurrency = session.profile?.DefaultCurrency ?? "USD"
-            cacheSizes = await BmbCache.shared.sizes()
+            countryCode = session.profile?.CountryCode ?? ""
         }
         .refreshable {
             await session.loadProfile()
-            cacheSizes = await BmbCache.shared.sizes()
         }
-        .onChange(of: session.profile?.DisplayName) { _, value in displayName = value ?? "" }
+        .onChange(of: session.profile?.DisplayName) { _, value in
+            if !showNicknameEditor { displayName = value ?? "" }
+        }
         .onChange(of: session.profile?.DefaultCurrency) { _, value in preferredCurrency = value ?? "USD" }
+        .onChange(of: session.profile?.CountryCode) { _, value in countryCode = value ?? "" }
         .onChange(of: selectedAvatar) { _, item in
             guard let item else { return }
-            Task { await changeAvatar(item) }
+            Task { await prepareAvatar(item) }
         }
-        .confirmationDialog("Delete your account and its content?", isPresented: $confirmDelete) {
-            Button("Delete account", role: .destructive) { Task { await delete() } }
+        .sheet(isPresented: $showAvatarCrop, onDismiss: { cropImage = nil; selectedAvatar = nil }) {
+            if let cropImage {
+                BmbAvatarCropView(image: cropImage) { cropped in
+                    showAvatarCrop = false
+                    Task { await uploadAvatar(cropped) }
+                }
+            }
         }
-        .confirmationDialog("Clear saved data?", isPresented: $confirmClearData) {
-            Button("Clear data cache", role: .destructive) { Task { await BmbCache.shared.clearData(); cacheSizes = await BmbCache.shared.sizes() } }
-        }
-        .confirmationDialog("Clear saved images?", isPresented: $confirmClearImages) {
-            Button("Clear image cache", role: .destructive) { Task { await BmbCache.shared.clearImages(); cacheSizes = await BmbCache.shared.sizes() } }
+        .alert("Profile review", isPresented: Binding(get: { profileNotice != nil }, set: { if !$0 { profileNotice = nil } })) {
+            Button("OK", role: .cancel) { profileNotice = nil }
+        } message: { Text(profileNotice ?? "") }
+        .sheet(isPresented: $showingDiagnostics) { BmbDiagnosticsView() }
+        .sheet(isPresented: $showNicknameEditor) {
+            NavigationStack {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Nickname").font(.caption.bold()).foregroundStyle(BmbTheme.muted)
+                    TextField("Nickname", text: $displayName)
+                        .textContentType(.nickname)
+                        .textFieldStyle(.roundedBorder)
+                    if let nicknameError {
+                        Text(nicknameError).font(.caption).foregroundStyle(.red)
+                    }
+                    Spacer()
+                }
+                .padding(20)
+                .background(BmbTheme.paper)
+                .navigationTitle("Edit nickname")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showNicknameEditor = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save nickname") { Task { await saveName() } }
+                            .disabled(profileSaving || displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                      || displayName.count > 80 || displayName == session.profile?.DisplayName)
+                    }
+                }
+            }
+            .presentationDetents([.medium])
         }
     }
 
@@ -108,119 +186,143 @@ struct AccountView: View {
                 HStack(spacing: 14) {
                     Group {
                         if let avatarUrl = session.profile?.AvatarUrl, let url = URL(string: avatarUrl) {
-                            BmbCachedImage(url: url) { Circle().fill(.green.opacity(0.15)) }
+                            BmbCachedImage(url: url, preset: .thumbnail) { Circle().fill(.green.opacity(0.15)) }
                         } else {
                             Text(String((session.profile?.DisplayName ?? "B").prefix(1)))
                                 .font(.title.bold()).frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .background(.green.opacity(0.15))
                         }
-                    }.frame(width: 70, height: 70).clipShape(Circle())
+                    }
+                    .frame(width: 70, height: 70).clipShape(Circle())
+                    .overlay {
+                        PhotosPicker(selection: $selectedAvatar, matching: .images) {
+                            Circle().fill(.clear).frame(width: 70, height: 70).contentShape(Circle())
+                        }
+                        .accessibilityLabel("Change photo")
+                        .disabled(profileSaving)
+                    }
+                    .contextMenu {
+                        if session.profile?.AvatarUrl != nil {
+                            Button("Remove avatar", role: .destructive) { Task { await removeAvatar() } }
+                        }
+                    }
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(session.profile?.DisplayName ?? String(localized: "Your profile"))
-                            .font(.headline).lineLimit(1)
+                        Button {
+                            displayName = session.profile?.DisplayName ?? ""
+                            nicknameError = nil
+                            showNicknameEditor = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(session.profile?.DisplayName ?? String(localized: "Your profile"))
+                                    .lineLimit(1)
+                                Image(systemName: "pencil").font(.caption2)
+                                    .foregroundStyle(BmbTheme.muted)
+                            }
+                            .font(.headline)
+                            .foregroundStyle(BmbTheme.ink)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Edit nickname")
+                        if session.profile?.NicknameReviewPending == true || session.profile?.AvatarReviewPending == true {
+                            Text("Profile changes awaiting review").font(.caption).foregroundStyle(BmbTheme.muted)
+                        }
                         Text(session.profile?.Email ?? session.profile?.Phone ?? "—")
                             .font(.caption).foregroundStyle(BmbTheme.muted).lineLimit(1)
                     }
                     Spacer(minLength: 0)
-                    PhotosPicker(selection: $selectedAvatar, matching: .images) {
-                        Image(systemName: "camera").font(.headline)
-                            .frame(width: 42, height: 42)
-                            .background(BmbTheme.hero, in: Circle())
-                    }
-                    .accessibilityLabel("Change photo")
-                    .disabled(profileSaving)
-                }
-                if session.profile?.AvatarUrl != nil {
-                    Button("Remove avatar") { Task { await removeAvatar() } }
-                        .font(.caption).disabled(profileSaving)
-                }
-                Divider()
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Nickname").font(.caption.bold()).foregroundStyle(BmbTheme.muted)
-                    TextField("Nickname", text: $displayName).textContentType(.nickname).textFieldStyle(.roundedBorder)
-                    if displayName != session.profile?.DisplayName {
-                        Button("Save nickname") { Task { await saveName() } }
-                            .font(.subheadline.bold()).foregroundStyle(.green)
-                            .disabled(profileSaving || displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Default currency").font(.caption.bold()).foregroundStyle(BmbTheme.muted)
-                    Picker("Default currency", selection: $preferredCurrency) {
-                        ForEach(BmbCurrency.codes, id: \.self) { code in Text(BmbCurrency.label(code)).tag(code) }
-                    }.pickerStyle(.menu).tint(BmbTheme.ink)
-                    if preferredCurrency != (session.profile?.DefaultCurrency ?? "USD") {
-                        Button("Save currency") { Task { await saveCurrency() } }
-                            .font(.subheadline.bold()).foregroundStyle(.green).disabled(profileSaving)
-                    }
                 }
             }
         }
     }
 
-    private var securityCard: some View {
-        BmbCard {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("SIGN-IN & SECURITY").font(.caption.bold()).tracking(2).foregroundStyle(.green)
-                Text("Verify and bind email").font(.headline)
-                TextField("Email", text: $email).textContentType(.emailAddress).keyboardType(.emailAddress)
-                    .textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let remaining = BmbEmailCodeCooldown.remaining(at: context.date)
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            TextField("Code", text: $code).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-                            Button(codeSending ? String(localized: "Sending…") : remaining > 0 ? String(format: NSLocalizedString("Resend in %ds", comment: ""), remaining) : String(localized: "Send code")) {
-                                Task { await sendCode() }
+    private var securityPage: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                BmbCard {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(session.profile?.Email == nil ? LocalizedStringKey("Add email") : LocalizedStringKey("Change email"))
+                            .font(.headline)
+                        if let currentEmail = session.profile?.Email {
+                            Text(currentEmail).font(.subheadline).foregroundStyle(BmbTheme.muted)
+                        }
+                        TextField("New email", text: $email)
+                            .textContentType(.emailAddress).keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            let remaining = BmbEmailCodeCooldown.remaining(at: context.date)
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    TextField("Code", text: $code).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+                                    Button(codeSending ? String(localized: "Sending…") : remaining > 0 ? String(format: NSLocalizedString("Resend in %ds", comment: ""), remaining) : String(localized: "Send code")) {
+                                        Task { await sendCode() }
+                                    }
+                                    .font(.caption.bold())
+                                    .disabled(email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || codeSending || remaining > 0 || email == session.profile?.Email)
+                                }
+                                if remaining > 0 {
+                                    Text("Code sent. Check your inbox and enter it here.")
+                                        .font(.caption).foregroundStyle(BmbTheme.muted)
+                                }
                             }
-                            .font(.caption.bold())
-                            .disabled(email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || codeSending || remaining > 0)
                         }
-                        if remaining > 0 {
-                            Text("Code sent. Check your inbox and enter it here.")
-                                .font(.caption).foregroundStyle(BmbTheme.muted)
+                        BmbPrimaryButton(title: session.profile?.Email == nil ? "Bind email" : "Update email") {
+                            Task { await bindEmail() }
+                        }
+                        .disabled(email.isEmpty || code.isEmpty || email == session.profile?.Email)
+                    }
+                }
+                if session.profile?.Email != nil {
+                    BmbCard {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Set password").font(.headline)
+                            SecureField("Set password", text: $password).textFieldStyle(.roundedBorder)
+                            Text("At least 8 characters").font(.caption).foregroundStyle(BmbTheme.muted)
+                            BmbPrimaryButton(title: "Set password") { Task { await setPassword() } }
+                                .disabled(password.count < 8)
+                        }
+                    }
+                    BmbCard {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Apple sign-in").font(.headline)
+                            BmbAppleLinkButton { Task { await bindApple() } }
+                                .frame(height: 50)
+                                .accessibilityLabel("Link Apple account")
                         }
                     }
                 }
-                Button("Bind email") { Task { await bindEmail() } }
-                    .font(.subheadline.bold()).foregroundStyle(.green)
-                    .disabled(email.isEmpty || code.isEmpty)
-                Divider()
-                Button { Task { await bindApple() } } label: {
-                    Label("Link Apple account", systemImage: "apple.logo")
-                        .font(.subheadline.bold()).foregroundStyle(BmbTheme.ink)
+                BmbCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Service region").font(.headline)
+                        Text("Choose where your images are served.")
+                            .font(.caption).foregroundStyle(BmbTheme.muted)
+                        HStack(spacing: 9) {
+                            regionButton("CN", title: "China")
+                            regionButton("XX", title: "International")
+                        }
+                    }
                 }
-                Divider()
-                Text("Set password").font(.headline)
-                SecureField("Set password", text: $password).textFieldStyle(.roundedBorder)
-                Button("Set password") { Task { await setPassword() } }
-                    .font(.subheadline.bold()).foregroundStyle(.green).disabled(password.isEmpty)
+                if let message { Text(message).font(.caption).foregroundStyle(.green) }
+                BmbCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Button("Delete account", role: .destructive) { confirmDelete = true }
+                            .font(.subheadline.bold())
+                    }
+                }
             }
+            .padding(20)
         }
-    }
-
-    private var cacheCard: some View {
-        BmbCard {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("OFFLINE STORAGE").font(.caption.bold()).tracking(2).foregroundStyle(.green)
-                Text("Saved for your next visit").font(.headline)
-                HStack {
-                    Label("Data cache", systemImage: "doc.text")
-                    Spacer()
-                    Text(ByteCountFormatter.string(fromByteCount: cacheSizes.data, countStyle: .file))
-                        .foregroundStyle(BmbTheme.muted)
-                }.font(.subheadline)
-                HStack {
-                    Label("Image cache", systemImage: "photo")
-                    Spacer()
-                    Text(ByteCountFormatter.string(fromByteCount: cacheSizes.images, countStyle: .file))
-                        .foregroundStyle(BmbTheme.muted)
-                }.font(.subheadline)
-                HStack(spacing: 12) {
-                    Button("Clear data cache") { confirmClearData = true }
-                    Button("Clear image cache") { confirmClearImages = true }
-                }.font(.caption.bold()).buttonStyle(.bordered)
-            }
+        .background(BmbTheme.paper)
+        .navigationTitle("Account & security")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarHidden(false)
+        .confirmationDialog("Delete your account and its content?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Continue to delete", role: .destructive) { confirmDeleteFinal = true }
+        }
+        .alert("Delete account permanently?", isPresented: $confirmDeleteFinal) {
+            Button("Delete account", role: .destructive) { Task { await delete() } }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Your account and its content cannot be restored.")
         }
     }
 
@@ -233,6 +335,32 @@ struct AccountView: View {
                 legalLink("Privacy Policy", path: "privacy", symbol: "hand.raised")
                 Divider()
                 legalLink("Terms of Service", path: "terms", symbol: "doc.text")
+                Divider()
+                HStack {
+                    Text("Version").foregroundStyle(BmbTheme.muted)
+                    Spacer()
+                    Text(appVersionLabel).foregroundStyle(BmbTheme.muted)
+                }
+                .font(.caption)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 5) { debugUnlocked = true }
+                if debugUnlocked {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 9) {
+                        Label("Diagnostics", systemImage: "network").font(.subheadline.bold())
+                        Button("Check connection") { Task { await checkConnection() } }
+                            .font(.subheadline.bold())
+                        Button("Request and image logs") { showingDiagnostics = true }
+                            .font(.subheadline.bold())
+                        if let debugStatus { Text(debugStatus).font(.caption).foregroundStyle(BmbTheme.muted) }
+                    }
+                }
+                if session.isLoggedIn {
+                    Divider()
+                    Button("Sign out") { session.logout() }
+                        .font(.subheadline.bold()).foregroundStyle(BmbTheme.ink)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
             }
         }
     }
@@ -248,6 +376,34 @@ struct AccountView: View {
             .font(.subheadline).foregroundStyle(BmbTheme.ink)
         }
     }
+    private var appVersionLabel: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        return "\(version) (Build \(build))"
+    }
+    private func regionButton(_ code: String, title: LocalizedStringKey) -> some View {
+        let selected = (countryCode.uppercased() == "CN" ? "CN" : "XX") == code
+        return Button { Task { await saveCountry(code) } } label: {
+            HStack(spacing: 6) {
+                if selected { Image(systemName: "checkmark.circle.fill") }
+                Text(title)
+            }
+            .font(.subheadline.bold())
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(selected ? BmbTheme.lime : BmbTheme.paper, in: RoundedRectangle(cornerRadius: 12))
+            .foregroundStyle(BmbTheme.ink)
+        }
+        .buttonStyle(.plain)
+        .disabled(profileSaving || selected)
+    }
+    private func checkConnection() async {
+        debugStatus = String(localized: "Checking connection…")
+        let start = Date()
+        do {
+            let _: BmbDebugConfig = try await session.api.call("/config")
+            debugStatus = "\(String(localized: "Service available")) · \(Int(Date().timeIntervalSince(start) * 1000)) ms"
+        } catch { debugStatus = String(localized: "Service unavailable") }
+    }
     private func saveName() async {
         guard let token = session.token else { return }
         profileSaving = true; defer { profileSaving = false }
@@ -255,28 +411,48 @@ struct AccountView: View {
             let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty, name.count <= 80 else { message = "Nickname must contain 1 to 80 characters."; return }
             let _: BmbAcknowledgement = try await session.api.call("/auth/me", method: "PUT", body: ["DisplayName": name], token: token)
-            await session.loadProfile(); message = String(localized: "Nickname saved")
-        } catch { message = error.localizedDescription }
+            await session.loadProfile()
+            showNicknameEditor = false
+            profileNotice = String(localized: "Nickname submitted for review. Your current name stays visible until approved.")
+        } catch { nicknameError = error.localizedDescription }
     }
-    private func saveCurrency() async {
+    private func saveCurrency(_ code: String) async {
+        guard let token = session.token else { return }
+        let previous = preferredCurrency
+        preferredCurrency = code
+        profileSaving = true; defer { profileSaving = false }
+        do {
+            let _: BmbAcknowledgement = try await session.api.call("/auth/me", method: "PUT", body: ["DefaultCurrency": code], token: token)
+            await session.loadProfile(); message = String(localized: "Default currency saved")
+        } catch { preferredCurrency = previous; message = error.localizedDescription }
+    }
+    private func saveCountry(_ code: String) async {
         guard let token = session.token else { return }
         profileSaving = true; defer { profileSaving = false }
         do {
-            let _: BmbAcknowledgement = try await session.api.call("/auth/me", method: "PUT", body: ["DefaultCurrency": preferredCurrency], token: token)
-            await session.loadProfile(); message = String(localized: "Default currency saved")
+            let _: BmbAcknowledgement = try await session.api.call("/auth/me/country", method: "PUT", body: ["CountryCode": code], token: token)
+            await session.loadProfile()
+            countryCode = code
+            message = String(localized: "Service region updated")
         } catch { message = error.localizedDescription }
     }
-    private func changeAvatar(_ item: PhotosPickerItem) async {
-        guard let token = session.token else { return }
+    private func prepareAvatar(_ item: PhotosPickerItem) async {
         profileSaving = true; defer { profileSaving = false; selectedAvatar = nil }
         do {
             guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { throw BmbError(message: "Could not read this photo.") }
-            let scale = min(1, 1024 / max(image.size.width, image.size.height))
-            let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-            let jpeg = UIGraphicsImageRenderer(size: size).jpegData(withCompressionQuality: 0.82) { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
-            _ = try await session.api.uploadAvatarImage(jpeg, token: token)
-            await session.loadProfile(); message = String(localized: "Photo updated")
+            cropImage = image
+            showAvatarCrop = true
         } catch { message = error.localizedDescription }
+    }
+    private func uploadAvatar(_ image: UIImage) async {
+        guard let token = session.token else { return }
+        profileSaving = true; defer { profileSaving = false }
+        do {
+            guard let jpeg = image.jpegData(compressionQuality: 0.78) else { throw BmbError(message: "Could not read this photo.") }
+            _ = try await session.api.uploadAvatarImage(jpeg, token: token)
+            await session.loadProfile()
+            profileNotice = String(localized: "Photo submitted for review. Your current photo stays visible until approved.")
+        } catch { profileNotice = error.localizedDescription }
     }
     private func removeAvatar() async {
         guard let token = session.token else { return }
@@ -297,7 +473,10 @@ struct AccountView: View {
         guard let token = session.token else { return }
         do {
             let _: BmbAcknowledgement = try await session.api.call("/auth/bind-email", method: "POST", body: ["Email": email, "Code": code], token: token)
-            await session.loadProfile(); message = String(localized: "Email bound")
+            let changingEmail = session.profile?.Email != nil
+            await session.loadProfile()
+            email = ""; code = ""
+            message = changingEmail ? String(localized: "Email updated") : String(localized: "Email bound")
         } catch { message = error.localizedDescription }
     }
     private func setPassword() async {
@@ -336,7 +515,145 @@ struct AccountView: View {
         } catch { message = error.localizedDescription }
     }
     private func delete() async {
-        do { try await session.deleteAccount() }
+        do { try await session.deleteAccount(); showSecurity = false }
         catch { message = error.localizedDescription }
+    }
+}
+
+private struct BmbDebugConfig: Decodable { let AdsEnabled: Bool? }
+
+private struct BmbDiagnosticsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var entries: [BmbDiagnosticEntry] = []
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if entries.isEmpty { Text("No diagnostic events yet").foregroundStyle(BmbTheme.muted) }
+                ForEach(entries) { entry in
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(entry.kind).font(.caption.bold()).foregroundStyle(.green)
+                        Text(entry.summary).font(.caption).textSelection(.enabled)
+                        Text(entry.time.formatted(date: .abbreviated, time: .standard))
+                            .font(.caption2).foregroundStyle(BmbTheme.muted)
+                    }
+                }
+            }
+            .navigationTitle("Diagnostics")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Refresh") { Task { await reload() } }
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    Button("Clear logs") { Task { await BmbDiagnostics.shared.clear(); await reload() } }
+                }
+            }
+            .task { await reload() }
+        }
+    }
+
+    private func reload() async { entries = await BmbDiagnostics.shared.snapshot() }
+}
+
+private struct BmbAppleLinkButton: UIViewRepresentable {
+    let action: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
+    func makeUIView(context: Context) -> ASAuthorizationAppleIDButton {
+        let button = ASAuthorizationAppleIDButton(type: .continue, style: .black)
+        button.addTarget(context.coordinator, action: #selector(Coordinator.tap), for: .touchUpInside)
+        return button
+    }
+    func updateUIView(_ button: ASAuthorizationAppleIDButton, context: Context) { context.coordinator.action = action }
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action }
+        @objc func tap() { action() }
+    }
+}
+
+private struct BmbAvatarCropView: View {
+    let image: UIImage
+    let onComplete: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var zoom: CGFloat = 1
+    @State private var settledZoom: CGFloat = 1
+    @State private var offset = CGSize.zero
+    @State private var settledOffset = CGSize.zero
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { proxy in
+                let cropSize = min(proxy.size.width - 40, 380)
+                VStack(spacing: 20) {
+                    Spacer(minLength: 10)
+                    cropCanvas(size: cropSize, showsGuide: true)
+                        .frame(width: cropSize, height: cropSize)
+                        .contentShape(Rectangle())
+                        .gesture(DragGesture().onChanged { value in
+                            offset = clamped(CGSize(width: settledOffset.width + value.translation.width,
+                                                    height: settledOffset.height + value.translation.height), size: cropSize)
+                        }.onEnded { _ in settledOffset = offset })
+                        .simultaneousGesture(MagnificationGesture().onChanged { value in
+                            zoom = min(5, max(1, settledZoom * value))
+                            offset = clamped(offset, size: cropSize)
+                        }.onEnded { _ in settledZoom = zoom; settledOffset = offset })
+                        .accessibilityLabel("Crop avatar")
+                    HStack {
+                        Image(systemName: "minus.magnifyingglass")
+                        Slider(value: Binding(get: { zoom }, set: { value in
+                            zoom = value; settledZoom = value
+                            offset = clamped(offset, size: cropSize); settledOffset = offset
+                        }), in: 1...5)
+                        Image(systemName: "plus.magnifyingglass")
+                    }
+                    .padding(.horizontal, 28)
+                    Text("Drag to position, pinch to zoom.").font(.footnote).foregroundStyle(BmbTheme.muted)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(BmbTheme.paper.ignoresSafeArea())
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Use photo") { if let result = renderedCrop(size: cropSize) { onComplete(result) } }
+                    }
+                }
+            }
+            .navigationTitle("Crop photo")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private func cropCanvas(size: CGFloat, showsGuide: Bool) -> some View {
+        ZStack {
+            Color.black
+            Image(uiImage: image).resizable().scaledToFill()
+                .frame(width: size, height: size).scaleEffect(zoom).offset(offset)
+            if showsGuide {
+                Circle().stroke(.white.opacity(0.9), lineWidth: 2).padding(3).allowsHitTesting(false)
+            }
+        }
+        .frame(width: size, height: size).clipped()
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func clamped(_ proposed: CGSize, size: CGFloat) -> CGSize {
+        let ratio = image.size.width / max(image.size.height, 1)
+        let width = ratio >= 1 ? size * ratio : size
+        let height = ratio >= 1 ? size : size / ratio
+        let maxX = max(0, (width * zoom - size) / 2)
+        let maxY = max(0, (height * zoom - size) / 2)
+        return CGSize(width: min(maxX, max(-maxX, proposed.width)),
+                      height: min(maxY, max(-maxY, proposed.height)))
+    }
+
+    @MainActor private func renderedCrop(size: CGFloat) -> UIImage? {
+        let renderer = ImageRenderer(content: cropCanvas(size: size, showsGuide: false))
+        renderer.scale = 1024 / size
+        renderer.isOpaque = true
+        return renderer.uiImage
     }
 }

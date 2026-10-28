@@ -23,7 +23,7 @@ struct HomeView: View {
 
     private func homeContent(showExploreLink: Bool) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
+            VStack(alignment: .leading, spacing: 24) {
                 HStack(spacing: 11) {
                     Image("LaunchMark").resizable().frame(width: 46, height: 46)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -32,23 +32,23 @@ struct HomeView: View {
                         Text("THINK. ASK. DECIDE.").font(.system(size: 9, weight: .bold)).tracking(2).foregroundStyle(BmbTheme.muted)
                     }
                 }
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 16) {
                     Text("A BETTER PAUSE BEFORE CHECKOUT").font(.system(size: 11, weight: .heavy)).tracking(2).foregroundStyle(.green)
-                    Text("Love it? Hear what others think.").font(.system(size: 31, weight: .black, design: .rounded)).tracking(-0.8).fixedSize(horizontal: false, vertical: true)
-                    Text("Share a product with friends, the community, and people who have bought it. Hear their votes and experiences before you decide.")
+                    Text("Love it? Hear what others think.").font(.system(size: 29, weight: .black, design: .rounded)).tracking(-0.8).fixedSize(horizontal: false, vertical: true)
+                    Text("Share a product, hear votes and experiences, then decide.")
                         .font(.system(size: 14)).foregroundStyle(BmbTheme.muted).lineSpacing(4)
                     BmbPrimaryButton(title: "Ask before you buy") { showCreate = true }
                 }
-                .padding(27).frame(maxWidth: .infinity, alignment: .leading)
-                .background(BmbTheme.hero, in: RoundedRectangle(cornerRadius: 29))
-                if showExploreLink {
-                    NavigationLink(destination: ExploreView()) {
-                        HStack { Text("Explore decisions").font(.headline); Spacer(); Image(systemName: "arrow.right") }
-                            .padding(18).background(BmbTheme.card, in: RoundedRectangle(cornerRadius: 17))
-                    }.foregroundStyle(BmbTheme.ink)
+                .padding(24).frame(maxWidth: .infinity, alignment: .leading)
+                .background(BmbTheme.hero, in: RoundedRectangle(cornerRadius: 25))
+                VStack(spacing: 12) {
+                    if showExploreLink {
+                        exploreLink("Explore decisions", subtitle: "See what others are considering.", symbol: "square.grid.2x2")
+                    }
+                    exploreLink("Have a relevant offer link?", subtitle: "Creators can share their own link on a matching product.", symbol: "tag")
                 }
                 VStack(alignment: .leading, spacing: 17) {
-                    Text("Shopping decisions feel lighter together.").font(.system(size: 26, weight: .bold, design: .rounded))
+                    Text("Shopping decisions feel lighter together.").font(.system(size: 24, weight: .bold, design: .rounded))
                     ForEach(Array(["Find something you want", "Hear what others think", "Decide with confidence"].enumerated()), id: \.offset) { index, item in
                         BmbCard {
                             HStack(spacing: 17) {
@@ -64,5 +64,27 @@ struct HomeView: View {
         }
         .background(BmbTheme.paper)
         .navigationBarHidden(true)
+    }
+
+    private func exploreLink(_ title: LocalizedStringKey, subtitle: LocalizedStringKey, symbol: String) -> some View {
+        NavigationLink(destination: ExploreView()) {
+            BmbCard {
+                HStack(spacing: 14) {
+                    Image(systemName: symbol)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.green)
+                        .frame(width: 42, height: 42)
+                        .background(BmbTheme.hero, in: RoundedRectangle(cornerRadius: 13))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(BmbTheme.ink)
+                        Text(subtitle).font(.system(size: 12)).foregroundStyle(BmbTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.right").foregroundStyle(BmbTheme.ink)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
