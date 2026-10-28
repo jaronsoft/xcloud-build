@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct ExploreView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showCreate = false
+    @State private var showFilters = false
+    @State private var draftFilter = "recommended"
+    @State private var draftTag = ""
     @State private var items: [BmbPublicDecision] = []
     @State private var page = 0
     @State private var snapshot: Int64?
@@ -13,17 +17,12 @@ struct ExploreView: View {
     @State private var feedRequest = UUID()
 
     var body: some View {
+        GeometryReader { geometry in
+        let contentWidth = max(0, geometry.size.width - 36)
+        let columnCount = dynamicTypeSize.isAccessibilitySize || contentWidth < 300 ? 1 : 2
+        let columnWidth = max(0, (contentWidth - CGFloat(columnCount - 1) * 12) / CGFloat(columnCount))
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Picker(BmbEngagementCopy.text("Filter", "筛选"), selection: $filter) {
-                    Text(BmbEngagementCopy.text("Recommended", "推荐")).tag("recommended")
-                    Text(BmbEngagementCopy.text("No votes yet", "还没人投票")).tag("unanswered")
-                    Text(BmbEngagementCopy.text("With results", "已有结果")).tag("results")
-                }.pickerStyle(.segmented)
-                HStack {
-                    TextField(BmbEngagementCopy.text("Filter by tag", "按标签筛选"), text: $tag).textFieldStyle(.roundedBorder)
-                    Button(BmbEngagementCopy.text("Search", "筛选")) { Task { await load(reset: true) } }
-                }
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("THE COMMUNITY").font(.caption.bold()).tracking(2).foregroundStyle(.green)
@@ -31,6 +30,16 @@ struct ExploreView: View {
                         Text("See what people are thinking of buying.").font(.system(size: 14)).foregroundStyle(BmbTheme.muted)
                     }
                     Spacer(minLength: 0)
+                    Button {
+                        draftFilter = filter; draftTag = tag; showFilters = true
+                    } label: {
+                        Image(systemName: hasActiveFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
+                            .font(.title3).frame(width: 44, height: 44)
+                            .background(BmbTheme.card, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(BmbEngagementCopy.text("Filter", "筛选"))
+                    .accessibilityValue(hasActiveFilters ? BmbEngagementCopy.text("Filters applied", "已启用筛选") : BmbEngagementCopy.text("All decisions", "全部提问"))
                     Button { showCreate = true } label: {
                         Label("Post", systemImage: "plus")
                             .font(.subheadline.bold()).foregroundStyle(BmbTheme.ink)
@@ -38,6 +47,10 @@ struct ExploreView: View {
                             .background(BmbTheme.lime, in: Capsule())
                     }
                     .buttonStyle(.plain)
+                }
+                if hasActiveFilters {
+                    Text([filter == "recommended" ? nil : filterTitle(filter), tag.isEmpty ? nil : "#\(tag)"].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(BmbTheme.muted)
                 }
                 if let error {
                     BmbCard { VStack(alignment: .leading, spacing: 10) {
@@ -49,39 +62,93 @@ struct ExploreView: View {
                     BmbCard { Text("No public decisions yet.").foregroundStyle(BmbTheme.muted) }
                 }
                 HStack(alignment: .top, spacing: 12) {
-                    pinColumn(0)
-                    pinColumn(1)
+                    ForEach(0..<columnCount, id: \.self) { column in
+                        pinColumn(column, columnCount: columnCount, width: columnWidth)
+                    }
                 }
                 if hasMore {
                     Button(loading ? "Loading…" : "Load more") { Task { await load(reset: false) } }
                         .disabled(loading).frame(maxWidth: .infinity).padding(14)
                 }
-            }.padding(18)
+            }.frame(width: contentWidth).padding(18)
+        }
         }
         .background(BmbTheme.paper)
         .navigationBarHidden(true)
         .sheet(isPresented: $showCreate) { NavigationStack { CreateView() } }
+        .sheet(isPresented: $showFilters) { filterSheet }
         .task {
-            if let cached: BmbPublicPage = await BmbAPI().cached("/decisions/public?page=1&size=20") {
+            if !hasActiveFilters, let cached: BmbPublicPage = await BmbAPI().cached("/decisions/public?page=1&size=20") {
                 items = cached.Items; page = cached.Page; snapshot = cached.Snapshot; hasMore = cached.HasMore
             }
             await load(reset: true)
         }
         .refreshable { await load(reset: true) }
-        .onChange(of: filter) { _, _ in Task { await load(reset: true) } }
     }
 
-    private func pinColumn(_ column: Int) -> some View {
+    private var hasActiveFilters: Bool { filter != "recommended" || !tag.isEmpty }
+
+    private func filterTitle(_ value: String) -> String {
+        switch value {
+        case "unanswered": BmbEngagementCopy.text("No votes yet", "还没人投票")
+        case "results": BmbEngagementCopy.text("With results", "已有结果")
+        default: BmbEngagementCopy.text("Recommended", "推荐")
+        }
+    }
+
+    private var filterSheet: some View {
+        NavigationStack {
+            Form {
+                Section(BmbEngagementCopy.text("Decisions", "提问范围")) {
+                    Picker(BmbEngagementCopy.text("Filter", "筛选"), selection: $draftFilter) {
+                        ForEach(["recommended", "unanswered", "results"], id: \.self) { value in
+                            Text(filterTitle(value)).tag(value)
+                        }
+                    }.pickerStyle(.inline).labelsHidden()
+                }
+                Section(BmbEngagementCopy.text("Product tag", "商品标签")) {
+                    TextField(BmbEngagementCopy.text("Filter by tag", "按标签筛选"), text: $draftTag)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+                Button(BmbEngagementCopy.text("Reset filters", "重置筛选")) {
+                    draftFilter = "recommended"; draftTag = ""
+                }
+            }
+            .navigationTitle(BmbEngagementCopy.text("Filter", "筛选"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(BmbEngagementCopy.text("Cancel", "取消")) { showFilters = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(BmbEngagementCopy.text("Apply", "应用")) {
+                        let nextTag = draftTag.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let changed = filter != draftFilter || tag != nextTag
+                        filter = draftFilter; tag = nextTag; showFilters = false
+                        if changed {
+                            // 换条件时清空旧列表及快照，避免把旧结果误认作新筛选结果。
+                            items = []; page = 0; snapshot = nil; hasMore = false
+                            Task { await load(reset: true) }
+                        }
+                    }.fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func pinColumn(_ column: Int, columnCount: Int, width: CGFloat) -> some View {
         LazyVStack(spacing: 12) {
-            ForEach(Array(items.enumerated()).filter { $0.offset % 2 == column }, id: \.element.Id) { index, item in
+            ForEach(Array(items.enumerated()).filter { $0.offset % columnCount == column }, id: \.element.Id) { index, item in
                 NavigationLink(destination: DecisionView(shareToken: item.ShareToken)) {
-                    pinCard(item, index: index)
+                    pinCard(item, index: index, width: width)
                 }.buttonStyle(.plain)
             }
-        }.frame(maxWidth: .infinity)
+        }.frame(width: width)
     }
 
-    private func pinCard(_ item: BmbPublicDecision, index: Int) -> some View {
+    private func pinCard(_ item: BmbPublicDecision, index: Int, width: CGFloat) -> some View {
         let product = item.Products.first
         return VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .topLeading) {
@@ -93,12 +160,15 @@ struct ExploreView: View {
                 } else {
                     Image("LaunchMark").resizable().scaledToFit().padding(40)
                 }
+            }
+            // 先约束图片容器的宽高，再裁剪填充图，防止原图的固有宽度撑开瀑布流列。
+            .frame(width: width, height: [188.0, 230.0, 205.0][index % 3]).clipped()
+            .overlay(alignment: .topLeading) {
                 if item.Mode == "pick_one" {
                     Text("A / B").font(.caption2.bold()).padding(6)
                         .background(BmbTheme.card, in: RoundedRectangle(cornerRadius: 7)).padding(9)
                 }
             }
-            .frame(height: [188.0, 230.0, 205.0][index % 3]).clipped()
             VStack(alignment: .leading, spacing: 5) {
                 Text(product?.Title ?? item.Question).font(.subheadline.bold()).lineLimit(2)
                 if let model = product?.Model, !model.isEmpty {
@@ -114,6 +184,7 @@ struct ExploreView: View {
                 Text("\(item.VoteCount ?? 0) \(BmbEngagementCopy.text("votes", "票"))").font(.caption)
             }.padding(12)
         }
+        .frame(width: width, alignment: .leading)
         .background(BmbTheme.card, in: RoundedRectangle(cornerRadius: 16))
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(BmbTheme.ink.opacity(0.07)))

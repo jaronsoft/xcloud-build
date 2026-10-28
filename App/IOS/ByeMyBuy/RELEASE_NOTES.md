@@ -63,6 +63,7 @@ product comparison,purchase decision,target price,buy or pass,shopping advice,vo
 - 通过专属链接或图片分享问题，回看讨论并记录最终选择。
 - 用快捷理由表达看法，暂缓决定并设置复看提醒。
 - 在消息中心查看动态，关注最终结果，并按需订阅邮件。
+- 优化发现页卡片排版，将筛选收进弹出面板，浏览更清爽。
 
 ### English (U.S.)
 
@@ -71,3 +72,4 @@ product comparison,purchase decision,target price,buy or pass,shopping advice,vo
 - Share your question by link or image, revisit the discussion, and record your final choice.
 - Add a quick reason to your vote, pause a decision, and set a reminder to revisit it.
 - View updates in Messages, follow final results, and opt in to email notifications.
+- Enjoy a tidier Explore layout with improved cards and filters in a separate panel.
