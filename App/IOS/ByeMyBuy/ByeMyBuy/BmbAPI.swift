@@ -164,6 +164,7 @@ struct BmbProfile: Decodable {
     let AvatarUrl: String?
     let DefaultCurrency: String?
     let CountryCode: String?
+    let LinkedProviders: [String]?
     let NicknameReviewPending: Bool?
     let AvatarReviewPending: Bool?
 }
@@ -407,7 +408,7 @@ final class BmbSession: ObservableObject {
         token = result.AccessToken
         BmbKeychain.write("access", value: result.AccessToken)
         BmbKeychain.write("refresh", value: result.RefreshToken)
-        profile = BmbProfile(UserId: result.UserId, Email: result.Email, Phone: result.Phone, DisplayName: result.DisplayName, AvatarUrl: result.AvatarUrl, DefaultCurrency: result.DefaultCurrency, CountryCode: result.CountryCode, NicknameReviewPending: nil, AvatarReviewPending: nil)
+        profile = BmbProfile(UserId: result.UserId, Email: result.Email, Phone: result.Phone, DisplayName: result.DisplayName, AvatarUrl: result.AvatarUrl, DefaultCurrency: result.DefaultCurrency, CountryCode: result.CountryCode, LinkedProviders: nil, NicknameReviewPending: nil, AvatarReviewPending: nil)
     }
 
     func sendCode(_ email: String) async throws {

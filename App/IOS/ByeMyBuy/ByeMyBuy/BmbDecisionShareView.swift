@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreImage.CIFilterBuiltins
 import UIKit
+import Photos
 
 struct BmbDecisionShareView: View {
     let decision: BmbDecision
@@ -10,6 +11,7 @@ struct BmbDecisionShareView: View {
     @EnvironmentObject private var session: BmbSession
     @State private var copied = false
     @State private var shareImage: BmbShareImage?
+    @State private var preparingImage = false
     @State private var error: String?
 
     private var shareURL: URL? { URL(string: decision.ShareUrl) }
@@ -61,33 +63,27 @@ struct BmbDecisionShareView: View {
                 }
 
                 Button {
-                    var components = URLComponents(string: "https://x.com/intent/tweet")
-                    components?.queryItems = [
-                        URLQueryItem(name: "text", value: decision.Question),
-                        URLQueryItem(name: "url", value: decision.ShareUrl)
-                    ]
-                    if let url = components?.url { UIApplication.shared.open(url) }
-                    Task { await session.api.track("share_action", shareToken: decision.ShareToken, token: session.token) }
+                    Task { await prepareImage(forX: true) }
                 } label: {
                     Label("Share to X", systemImage: "arrow.up.right")
                         .frame(maxWidth: .infinity, minHeight: 48)
                 }
                 .buttonStyle(.bordered)
+                .disabled(preparingImage)
+
+                Text("Choose X in the share sheet to include the image and text.")
+                    .font(.caption).foregroundStyle(BmbTheme.muted)
 
                 Button {
-                    let renderer = ImageRenderer(content: BmbShareCard(decision: decision))
-                    renderer.scale = 2
-                    if let image = renderer.uiImage {
-                        shareImage = BmbShareImage(image: image)
-                        Task { await session.api.track("share_action", shareToken: decision.ShareToken, token: session.token) }
-                    } else {
-                        error = BmbLanguage.localized("Could not create the share image.")
-                    }
+                    Task { await prepareImage(forX: false) }
                 } label: {
                     Label("Create share image", systemImage: "photo")
                         .frame(maxWidth: .infinity, minHeight: 48)
                 }
                 .buttonStyle(.bordered)
+                .disabled(preparingImage)
+
+                if preparingImage { ProgressView("Preparing image…") }
 
                 if let error { Text(error).font(.caption).foregroundStyle(.red) }
 
@@ -107,21 +103,138 @@ struct BmbDecisionShareView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         .sheet(item: $shareImage) { item in
-            BmbImageActivityView(image: item.image)
+            if let caption = item.caption {
+                BmbImageActivityView(image: item.image, text: caption)
+            } else {
+                BmbShareImagePreview(image: item.image) {
+                    Task { await session.api.track("share_action", shareToken: decision.ShareToken, token: session.token) }
+                }
+            }
         }
+    }
+
+    @MainActor
+    private func prepareImage(forX: Bool) async {
+        guard !preparingImage else { return }
+        preparingImage = true
+        error = nil
+        defer { preparingImage = false }
+        var image: UIImage?
+        // 公开内容复用边缘生成的封面；私密内容只在本机生成，不进入公开图片缓存。
+        if decision.Visibility == "public", decision.PublicReviewStatus == "approved",
+           let url = URL(string: "https://byemybuy.get-free.net/share-images/\(decision.ShareToken).png") {
+            do {
+                let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+                let (data, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, http.statusCode == 200,
+                   http.mimeType == "image/png", data.count <= 5 * 1024 * 1024 {
+                    image = UIImage(data: data)
+                }
+            } catch { /* 边缘服务尚未上线或暂时不可用时，保留本机生成能力。 */ }
+        }
+        if image == nil {
+            let renderer = ImageRenderer(content: BmbShareCard(decision: decision)
+                .environment(\.locale, BmbLanguage.locale)
+                .environment(\.colorScheme, .light))
+            renderer.scale = 2
+            image = renderer.uiImage
+        }
+        guard let image else {
+            error = BmbLanguage.localized("Could not create the share image.")
+            return
+        }
+        let caption = forX ? "\(decision.Question)\n\(decision.ShareUrl)" : nil
+        shareImage = BmbShareImage(image: image, caption: caption)
+        if forX { Task { await session.api.track("share_action", shareToken: decision.ShareToken, token: session.token) } }
     }
 }
 
 private struct BmbShareImage: Identifiable {
     let id = UUID()
     let image: UIImage
+    var caption: String? = nil
+}
+
+private struct BmbShareImagePreview: View {
+    let image: UIImage
+    let onShare: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var sharing = false
+    @State private var saving = false
+    @State private var saved = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    Image(uiImage: image)
+                        .resizable().scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .accessibilityLabel(Text("Share image"))
+                    Text("Scan the code on the image to join the decision.")
+                        .font(.footnote).foregroundStyle(BmbTheme.muted)
+                    Button {
+                        Task { await saveImage() }
+                    } label: {
+                        Label(saving ? "Saving…" : saved ? "Saved to Photos" : "Save to Photos", systemImage: saved ? "checkmark" : "square.and.arrow.down")
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                    }
+                    .buttonStyle(.borderedProminent).tint(BmbTheme.ink)
+                    .disabled(saving || saved)
+                    Button {
+                        sharing = true
+                        onShare()
+                    } label: {
+                        Label("Share image", systemImage: "square.and.arrow.up")
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                    }
+                    .buttonStyle(.bordered)
+                    if let error { Text(error).font(.caption).foregroundStyle(.red).accessibilityAddTraits(.updatesFrequently) }
+                }
+                .padding(20)
+            }
+            .background(BmbTheme.paper)
+            .navigationTitle("Share image")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .sheet(isPresented: $sharing) { BmbImageActivityView(image: image) }
+        }
+        .environment(\.locale, BmbLanguage.locale)
+    }
+
+    @MainActor
+    private func saveImage() async {
+        guard !saving && !saved else { return }
+        saving = true
+        error = nil
+        defer { saving = false }
+        // 仅在用户主动保存时申请添加权限，不读取相册中的其他照片。
+        let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        guard status == .authorized || status == .limited else {
+            error = BmbLanguage.localized("Allow adding photos in Settings, then try saving again.")
+            return
+        }
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            }
+            saved = true
+        } catch {
+            self.error = BmbLanguage.localized("Could not save the image. Please try again.")
+        }
+    }
 }
 
 private struct BmbImageActivityView: UIViewControllerRepresentable {
     let image: UIImage
+    var text: String? = nil
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [image], applicationActivities: nil)
+        var items: [Any] = [image]
+        if let text { items.append(text) }
+        return UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
 
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}

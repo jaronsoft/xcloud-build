@@ -115,6 +115,7 @@ struct AccountView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                pixarivoRecommendationCard
                 legalCard
                 if debugUnlocked { diagnosticsCard }
                 if session.isLoggedIn {
@@ -189,6 +190,46 @@ struct AccountView: View {
             }
             .presentationDetents([.medium])
         }
+    }
+
+    private var pixarivoRecommendationCard: some View {
+        let isChinese = BmbLanguage.code(for: appLanguage) == "zh"
+        let storeURL = URL(string: isChinese
+                           ? "https://apps.apple.com/cn/app/pixarivo-%E5%9B%BE%E6%BC%BE/id6800612526"
+                           : "https://apps.apple.com/us/app/pixarivo/id6800612526")!
+        return Link(destination: storeURL) {
+            BmbCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("YOU MIGHT ALSO LIKE")
+                        .font(.caption.bold()).tracking(2).foregroundStyle(.green)
+                    HStack(alignment: .top, spacing: 14) {
+                        Image("PixaRivoLogo")
+                            .resizable().scaledToFit()
+                            .frame(width: 64, height: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 15))
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(verbatim: isChinese ? "图漾" : "PixaRivo")
+                                .font(.title3.bold()).foregroundStyle(BmbTheme.ink)
+                            Text("Template visual design")
+                                .font(.subheadline.bold()).foregroundStyle(BmbTheme.ink)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    Text("Choose a template, add your photos and text, and create posters and social graphics with ease.")
+                        .font(.subheadline).foregroundStyle(BmbTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        Text("View on the App Store")
+                        Image(systemName: "arrow.up.right").font(.caption.bold())
+                    }
+                    .font(.subheadline.bold()).foregroundStyle(BmbTheme.ink)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var languageCard: some View {
@@ -329,12 +370,20 @@ struct AccountView: View {
                                 .disabled(password.count < 8)
                         }
                     }
+                }
+                if session.profile?.Email != nil || session.profile?.LinkedProviders?.contains(where: { $0.lowercased() == "apple" }) == true {
                     BmbCard {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Apple sign-in").font(.headline)
-                            BmbAppleLinkButton { Task { await bindApple() } }
-                                .frame(height: 50)
-                                .accessibilityLabel("Link Apple account")
+                            if session.profile?.LinkedProviders?.contains(where: { $0.lowercased() == "apple" }) == true {
+                                Text("Apple account linked")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(BmbTheme.muted)
+                            } else {
+                                BmbAppleLinkButton { Task { await bindApple() } }
+                                    .frame(height: 50)
+                                    .accessibilityLabel("Link Apple account")
+                            }
                         }
                     }
                 }
@@ -583,6 +632,7 @@ struct AccountView: View {
                     }
                     do {
                         let _: BmbAcknowledgement = try await session.api.call("/auth/bind-apple", method: "POST", body: ["IdentityToken": identityToken, "Nonce": nonce], token: token)
+                        await session.loadProfile()
                         message = BmbLanguage.localized("Apple account linked")
                     } catch { message = error.localizedDescription }
                 }

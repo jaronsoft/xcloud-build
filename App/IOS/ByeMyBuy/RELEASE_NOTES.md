@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD013 MD024 -->
 
-本文件维护 ByeMyBuy iOS 的 App Store 文案和版本说明。当前目标版本为 1.3.5；该版本的实际构建号与上传状态待核对。
+本文件维护 ByeMyBuy iOS 的 App Store 文案和版本说明。当前目标版本为 1.3.6；该版本的实际构建号与上传状态待核对。
 
 ## 当前 App Store 推广文本
 
@@ -56,7 +56,7 @@ Explore submissions appear only after review. Anyone holding your share link can
 product comparison,purchase decision,target price,buy or pass,shopping advice,voting,alternatives
 ```
 
-## 1.3.5 — 2026-10-29 (Build 待确认) — 待发布
+## 1.3.6 — 2026-10-29 (Build 待确认) — 待发布
 
 ### 简体中文
 
@@ -66,7 +66,10 @@ product comparison,purchase decision,target price,buy or pass,shopping advice,vo
 - 可在账号页选择跟随设备、简体中文或英文界面；帮助、版本和退出登录入口更清晰。
 - 投票理由改为直接点选，并增加更多贴近日常选择的理由。
 - 分享价格、推荐优惠链接和关注最终结果的操作更醒目。
+- 详情页商品图片完整显示，避免上下内容被裁切。
+- 生成分享图片后可直接预览、保存到相册或分享给朋友，分享到 X 时也会准备图片和文案。
 - 展开 iPhone Duo 时，首页与发现页可并排查看。
+- 账号页新增图漾推荐，轻松发现模板图片创作应用。
 
 ### English (U.S.)
 
@@ -76,7 +79,10 @@ product comparison,purchase decision,target price,buy or pass,shopping advice,vo
 - Choose your app language in Account, with clearer help, version, and sign-out controls.
 - Pick a vote reason from a wider range of everyday considerations.
 - Find clearer actions for sharing a price, recommending an offer link, and following the final result.
+- View full product images on decision pages without cropping the top or bottom.
+- Preview share images, save them to Photos, or send them to friends, with an image and text prepared when sharing to X.
 - See Home and Explore side by side when iPhone Duo is unfolded.
+- Discover PixaRivo in Account for easy template-based image creation.
 
 ### 内部验收备注（不用于 App Store 文案）
 

@@ -227,7 +227,16 @@
 "Link copied" = "链接已复制";
 "More sharing options" = "更多分享方式";
 "Share to X" = "分享到 X";
+"Choose X in the share sheet to include the image and text." = "在系统分享面板中选择 X，即可携带图片和文案。";
+"Preparing image…" = "正在准备分享图片…";
 "Create share image" = "生成分享图片";
+"Share image" = "分享图片";
+"Scan the code on the image to join the decision." = "扫描图片上的二维码，即可参与这条决策。";
+"Save to Photos" = "保存到相册";
+"Saving…" = "正在保存…";
+"Saved to Photos" = "已保存到相册";
+"Allow adding photos in Settings, then try saving again." = "请在系统设置中允许添加照片，然后重新保存。";
+"Could not save the image. Please try again." = "图片保存失败，请重试。";
 "Could not create the share image." = "无法生成分享图片。";
 "View decision" = "查看决策";
 "Decision published" = "发布成功";
@@ -262,3 +271,7 @@
 "Couldn't load community questions. Pull to try again." = "暂时无法加载大家的提问，下拉可重试。";
 "Couldn't refresh. Your saved questions are still here." = "刷新暂未成功，仍为你保留上次的提问。";
 "Start a question or explore more decisions." = "发起一个提问，或去发现页逛逛。";
+"YOU MIGHT ALSO LIKE" = "你可能也喜欢";
+"Template visual design" = "模板视觉设计";
+"Choose a template, add your photos and text, and create posters and social graphics with ease." = "选好模板，换上你的图片和文字，轻松制作海报与社交配图。";
+"View on the App Store" = "前往 App Store 查看";

@@ -149,7 +149,7 @@ struct BmbProductCard: View {
                     ZStack(alignment: .topLeading) {
                         RoundedRectangle(cornerRadius: 17).fill(BmbTheme.hero)
                         if let image = product.ImageUrl, let url = URL(string: image) {
-                            BmbCachedImage(url: url, loadingLabel: "Loading image…") {
+                            BmbCachedImage(url: url, loadingLabel: "Loading image…", contentMode: .fit) {
                                 Image(systemName: "sparkles").font(.largeTitle).foregroundStyle(.brown.opacity(0.4))
                             }
                             .frame(width: geometry.size.width, height: geometry.size.height)
