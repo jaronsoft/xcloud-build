@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct HomeView: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = 40
     @AppStorage("bmb.content_language") private var contentLanguage = Locale.current.language.languageCode?.identifier == "zh" ? "zh" : "en"
@@ -22,14 +21,15 @@ struct HomeView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            if #available(iOS 27.1, *), horizontalSizeClass == .regular,
-               geometry.size.width >= 650, geometry.size.width > geometry.size.height {
-                NavigationSplitView {
-                    homeContent(showCommunity: false)
-                } detail: {
+            if #available(iOS 27.1, *), geometry.size.width >= 540 {
+                HStack(spacing: 0) {
+                    NavigationStack { homeContent(showCommunity: false) }
+                        .frame(width: min(geometry.size.width * 0.45, 420))
+                    Divider()
                     NavigationStack { ExploreView() }
+                        .frame(maxWidth: .infinity)
                 }
-                .navigationSplitViewStyle(.balanced)
+                .background(BmbTheme.paper)
             } else {
                 NavigationStack { homeContent(showCommunity: true) }
             }

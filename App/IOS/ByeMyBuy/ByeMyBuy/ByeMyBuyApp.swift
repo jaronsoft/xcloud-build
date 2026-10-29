@@ -10,22 +10,20 @@ struct ByeMyBuyApp: App {
     @State private var unread = 0
     @AppStorage("bmb.theme") private var themePreference = "system"
     @AppStorage("bmb.app_language") private var appLanguage = "system"
-    @State private var screenshotTab = Int(ProcessInfo.processInfo.environment["BMB_SCREENSHOT_TAB"] ?? "") ?? 0
-    @State private var screenshotCreate = ProcessInfo.processInfo.environment["BMB_SCREENSHOT_PAGE"] == "create"
 
     var body: some Scene {
         WindowGroup {
-            TabView(selection: $screenshotTab) {
+            TabView {
                 HomeView()
-                    .tabItem { Label("Home", systemImage: "house") }.tag(0)
+                    .tabItem { Label("Home", systemImage: "house") }
                 NavigationStack { ExploreView() }
-                    .tabItem { Label("Explore", systemImage: "square.grid.2x2") }.tag(1)
+                    .tabItem { Label("Explore", systemImage: "square.grid.2x2") }
                 NavigationStack { MineView() }
-                    .tabItem { Label("My decisions", systemImage: "square.stack") }.tag(2)
+                    .tabItem { Label("My decisions", systemImage: "square.stack") }
                 NavigationStack { BmbNotificationsView() }
-                    .tabItem { Label(BmbEngagementCopy.text("Messages", "消息"), systemImage: "bell") }.badge(unread).tag(3)
+                    .tabItem { Label(BmbEngagementCopy.text("Messages", "消息"), systemImage: "bell") }.badge(unread)
                 NavigationStack { AccountView() }
-                    .tabItem { Label("Account", systemImage: "person.crop.circle") }.tag(4)
+                    .tabItem { Label("Account", systemImage: "person.crop.circle") }
             }
             .tint(BmbTheme.ink)
             .preferredColorScheme(themePreference == "system" ? nil : themePreference == "dark" ? .dark : .light)
@@ -53,9 +51,6 @@ struct ByeMyBuyApp: App {
             }
             .sheet(item: $incomingToken) { token in
                 NavigationStack { DecisionView(shareToken: token.value) }.environmentObject(session)
-            }
-            .sheet(isPresented: $screenshotCreate) {
-                NavigationStack { CreateView() }.environmentObject(session)
             }
             .onOpenURL { url in
                 if url.host == "byemybuy.get-free.net", url.path.hasPrefix("/d/") {

@@ -66,6 +66,7 @@ product comparison,purchase decision,target price,buy or pass,shopping advice,vo
 - 可在账号页选择跟随设备、简体中文或英文界面；帮助、版本和退出登录入口更清晰。
 - 投票理由改为直接点选，并增加更多贴近日常选择的理由。
 - 分享价格、推荐优惠链接和关注最终结果的操作更醒目。
+- 展开 iPhone Duo 时，首页与发现页可并排查看。
 
 ### English (U.S.)
 
@@ -75,6 +76,7 @@ product comparison,purchase decision,target price,buy or pass,shopping advice,vo
 - Choose your app language in Account, with clearer help, version, and sign-out controls.
 - Pick a vote reason from a wider range of everyday considerations.
 - Find clearer actions for sharing a price, recommending an offer link, and following the final result.
+- See Home and Explore side by side when iPhone Duo is unfolded.
 
 ### 内部验收备注（不用于 App Store 文案）
 
