@@ -81,7 +81,7 @@ struct BmbDecisionShareView: View {
                         shareImage = BmbShareImage(image: image)
                         Task { await session.api.track("share_action", shareToken: decision.ShareToken, token: session.token) }
                     } else {
-                        error = String(localized: "Could not create the share image.")
+                        error = BmbLanguage.localized("Could not create the share image.")
                     }
                 } label: {
                     Label("Create share image", systemImage: "photo")
@@ -151,7 +151,7 @@ private struct BmbShareCard: View {
                 .font(.system(size: 16, weight: .bold)).tracking(3)
                 .foregroundStyle(Color(red: 0.38, green: 0.48, blue: 0.34))
             Spacer(minLength: 20)
-            Text(decision.Question.isEmpty ? String(localized: "What do you think?") : decision.Question)
+            Text(decision.Question.isEmpty ? BmbLanguage.localized("What do you think?") : decision.Question)
                 .font(.system(size: 52, weight: .black, design: .rounded))
                 .foregroundStyle(Color(red: 0.12, green: 0.17, blue: 0.13))
                 .lineLimit(5).minimumScaleFactor(0.65)

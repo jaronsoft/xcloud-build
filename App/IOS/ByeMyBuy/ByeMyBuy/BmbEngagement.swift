@@ -30,13 +30,28 @@ enum BmbEngagementCopy {
     static func date(_ value: String) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: value) { return date.formatted(date: .abbreviated, time: .shortened) }
+        if let date = formatter.date(from: value) {
+            return date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(BmbLanguage.locale))
+        }
         formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: value)?.formatted(date: .abbreviated, time: .shortened) ?? value
+        return formatter.date(from: value)?.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(BmbLanguage.locale)) ?? value
     }
-    static func text(_ en: String, _ zh: String) -> String { Locale.current.language.languageCode?.identifier == "zh" ? zh : en }
-    static let reasons = ["useful": ("Useful", "确实用得上"), "value": ("Good value", "性价比合适"), "quality": ("Quality", "看重品质"), "expensive": ("Too expensive", "价格偏高"), "duplicate": ("Already have similar", "已有类似的"), "wait": ("Wait for now", "建议再等等"), "fit": ("Better fit", "更符合需求")]
+    static func text(_ en: String, _ zh: String) -> String { BmbLanguage.code == "zh" ? zh : en }
+    static let reasons = [
+        "useful": ("Useful", "确实用得上"), "value": ("Good value", "性价比合适"),
+        "quality": ("Quality", "看重品质"), "frequent": ("Use it often", "经常会用"),
+        "long_term": ("Long-term use", "能用很久"), "expensive": ("Too expensive", "价格偏高"),
+        "duplicate": ("Already have similar", "已有类似的"), "wait": ("Wait for now", "建议再等等"),
+        "uncertain": ("Not sure I need it", "用途不明确"), "extra_cost": ("Ongoing costs", "后续花费多"),
+        "fit": ("Better fit", "更符合需求"), "comfort": ("More comfortable", "更舒适"),
+        "design": ("Prefer the design", "更喜欢外观")
+    ]
     static func reason(_ code: String) -> String { guard let value = reasons[code] else { return code }; return text(value.0, value.1) }
+    static func finalChoice(_ code: String) -> String {
+        let values = ["bought": ("Bought", "已购买"), "passed": ("Passed", "已放弃"), "switched": ("Switched", "换了商品"), "waiting": ("Waiting", "暂缓中")]
+        guard let value = values[code] else { return code }
+        return text(value.0, value.1)
+    }
     static func message(_ type: String) -> String {
         let values = ["votes": ("New votes", "有人参与了你的投票"), "comment": ("A new suggestion", "收到新建议"), "offer": ("A new price tip", "收到用户报价"), "target_price": ("A price tip meets your target", "用户报价达到目标价"), "reminder": ("Time to revisit your decision", "到了重新考虑的时间"), "result": ("A followed decision has a result", "关注的决策有结果了"), "public_approved": ("Explore submission approved", "发现页申请已通过"), "public_rejected": ("Explore submission declined", "发现页申请未通过"), "comment_approved": ("Comment approved", "评论已通过"), "comment_rejected": ("Comment declined", "评论未通过"), "offer_approved": ("Price tip approved", "报价已通过"), "offer_rejected": ("Price tip declined", "报价未通过"), "feedback_approved": ("Feedback approved", "结果反馈已通过"), "feedback_rejected": ("Feedback declined", "结果反馈未通过")]
         let value = values[type] ?? ("Decision update", "决策新动态")
@@ -151,7 +166,14 @@ struct BmbDecisionTools: View {
             VStack(alignment: .leading, spacing: 14) {
                 if item.IsWaiting == true { Text(t("Taking a pause; votes remain open", "暂缓中，继续听听大家的意见")); if let at = item.ReviewAt { Text(BmbEngagementCopy.date(at)).font(.caption) } }
                 if !item.IsOwner {
-                    Button(t(item.IsFollowing == true ? "Unfollow result" : "Follow the result", item.IsFollowing == true ? "取消关注结果" : "关注最终结果")) { Task { await send("/follow", method: item.IsFollowing == true ? "DELETE" : "PUT") } }
+                    BmbActionRow(
+                        title: t(item.IsFollowing == true ? "Unfollow result" : "Follow the result",
+                                 item.IsFollowing == true ? "取消关注结果" : "关注最终结果"),
+                        systemImage: item.IsFollowing == true ? "bell.slash" : "bell",
+                        trailingSymbol: item.IsFollowing == true ? "checkmark.circle.fill" : "chevron.right"
+                    ) {
+                        Task { await send("/follow", method: item.IsFollowing == true ? "DELETE" : "PUT") }
+                    }
                 }
                 if item.IsOwner && (item.Status == "open" || item.FinalChoice == "waiting") {
                     Text(t("Revisit later", "等等再决定")).font(.headline)

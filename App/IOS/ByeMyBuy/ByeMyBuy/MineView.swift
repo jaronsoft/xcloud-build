@@ -18,7 +18,7 @@ struct MineView: View {
                         BmbPrimaryButton(title: "Sign in") { session.showLogin = true }
                     } }
                 } else if items.isEmpty {
-                    BmbCard { Text(error ?? String(localized: "Your decisions will appear here."))
+                    BmbCard { Text(error ?? BmbLanguage.localized("Your decisions will appear here."))
                         .foregroundStyle(BmbTheme.muted) }
                 } else {
                     ForEach(items) { item in

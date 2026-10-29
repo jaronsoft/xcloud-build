@@ -45,9 +45,9 @@ struct LoginView: View {
                 .padding(20).background(Color(red: 0.141, green: 0.22, blue: 0.176), in: RoundedRectangle(cornerRadius: 22))
                 BmbCard {
                     VStack(alignment: .leading, spacing: 15) {
-                        Text(usePassword ? String(localized: "Sign in") : String(localized: "Email code sign-in or registration"))
+                        Text(usePassword ? BmbLanguage.localized("Sign in") : BmbLanguage.localized("Email code sign-in or registration"))
                             .font(.title.bold())
-                        Text(usePassword ? String(localized: "Sign in with your email and password.") : String(localized: "A verified new email creates an account automatically. Set a password in Account later."))
+                        Text(usePassword ? BmbLanguage.localized("Sign in with your email and password.") : BmbLanguage.localized("A verified new email creates an account automatically. Set a password in Account later."))
                             .font(.subheadline).foregroundStyle(BmbTheme.muted)
                         TextField("Email", text: $email).textContentType(.emailAddress).keyboardType(.emailAddress)
                             .textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
@@ -59,7 +59,7 @@ struct LoginView: View {
                                 VStack(alignment: .leading, spacing: 8) {
                                     HStack {
                                         TextField("Verification code", text: $code).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-                                        Button(codeSending ? String(localized: "Sending…") : remaining > 0 ? String(format: NSLocalizedString("Resend in %ds", comment: ""), remaining) : String(localized: "Send code")) {
+                                        Button(codeSending ? BmbLanguage.localized("Sending…") : remaining > 0 ? String(format: BmbLanguage.localized("Resend in %ds"), remaining) : BmbLanguage.localized("Send code")) {
                                             Task { await sendCode() }
                                         }
                                         .font(.caption.bold())
@@ -122,7 +122,7 @@ struct LoginView: View {
             coordinator.completion = { credential in
                 Task { @MainActor in
                     guard let data = credential.identityToken, let token = String(data: data, encoding: .utf8) else {
-                        self.error = "Apple identity token is missing."; self.busy = false; return
+                        self.error = BmbLanguage.localized("Apple identity token is missing."); self.busy = false; return
                     }
                     let name = [credential.fullName?.givenName, credential.fullName?.familyName].compactMap { $0 }.joined(separator: " ")
                     do {

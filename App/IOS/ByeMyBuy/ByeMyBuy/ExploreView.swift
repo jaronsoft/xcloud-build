@@ -12,11 +12,15 @@ struct ExploreView: View {
     @State private var hasMore = false
     @State private var loading = true
     @State private var error: String?
+    @State private var timedOut = false
     @State private var filter = "recommended"
     @State private var tag = ""
     @AppStorage("bmb.content_language") private var contentLanguage = Locale.current.language.languageCode?.identifier == "zh" ? "zh" : "en"
     @AppStorage("bmb.include_english") private var includeEnglish = true
     @State private var feedRequest = UUID()
+    @State private var openedPath: String?
+    @State private var voteBreakdowns: [String: (votes: [String: Int], total: Int)] = [:]
+    @State private var endMessageIndex = Int.random(in: 0..<4)
 
     var body: some View {
         GeometryReader { geometry in
@@ -50,15 +54,42 @@ struct ExploreView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                if hasActiveFilters {
+                if filter != "recommended" || !tag.isEmpty {
                     Text([filter == "recommended" ? nil : filterTitle(filter), tag.isEmpty ? nil : "#\(tag)"].compactMap { $0 }.joined(separator: " · "))
                         .font(.caption).foregroundStyle(BmbTheme.muted)
                 }
                 if let error {
-                    BmbCard { VStack(alignment: .leading, spacing: 10) {
-                        Text(error).font(.caption).foregroundStyle(.red)
-                        Button("Retry") { Task { await load(reset: page == 0) } }
-                    } }
+                    BmbCard {
+                        VStack(spacing: 12) {
+                            if timedOut && items.isEmpty {
+                                Image("TimeoutBag")
+                                    .resizable().scaledToFit()
+                                    .frame(width: 124, height: 124)
+                                    .accessibilityHidden(true)
+                            }
+                            Text(timedOut
+                                 ? BmbEngagementCopy.text("Oops, our little bag took a nap", "哎呀，小袋子打了个盹")
+                                 : BmbEngagementCopy.text("Couldn't load decisions", "暂时没能加载提问"))
+                                .font(.headline).multilineTextAlignment(.center)
+                            Text(timedOut
+                                 ? BmbEngagementCopy.text("The request took too long. Give it another try?", "等得有点久啦，再试一次吧？")
+                                 : error)
+                                .font(.subheadline).foregroundStyle(BmbTheme.muted)
+                                .multilineTextAlignment(.center)
+                            Button {
+                                Task { await load(reset: page == 0) }
+                            } label: {
+                                Label(BmbEngagementCopy.text("Try again", "再试一次"), systemImage: "arrow.clockwise")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(BmbTheme.ink)
+                                    .padding(.horizontal, 20).frame(height: 42)
+                                    .background(BmbTheme.lime, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, items.isEmpty ? 16 : 4)
+                    }
                 }
                 if loading && items.isEmpty && error == nil {
                     BmbCard {
@@ -100,8 +131,28 @@ struct ExploreView: View {
                     }
                 }
                 if hasMore {
-                    Button(loading ? "Loading…" : "Load more") { Task { await load(reset: false) } }
-                        .disabled(loading).frame(maxWidth: .infinity).padding(14)
+                    HStack {
+                        Spacer(minLength: 0)
+                        Button { Task { await load(reset: false) } } label: {
+                            Label(BmbEngagementCopy.text(loading ? "Loading…" : "Load more", loading ? "加载中…" : "加载更多"),
+                                  systemImage: "chevron.down")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(BmbTheme.ink)
+                                .padding(.horizontal, 15).padding(.vertical, 8)
+                                .background(BmbTheme.card, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(loading)
+                        .frame(minHeight: 44)
+                        Spacer(minLength: 0)
+                    }
+                } else if !items.isEmpty && !loading && error == nil {
+                    Text(endMessage)
+                        .font(.caption)
+                        .foregroundStyle(BmbTheme.muted)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
                 }
             }.frame(width: contentWidth).padding(18)
         }
@@ -110,16 +161,20 @@ struct ExploreView: View {
         .navigationBarHidden(true)
         .sheet(isPresented: $showCreate) { NavigationStack { CreateView() } }
         .sheet(isPresented: $showFilters) { filterSheet }
-        .task {
-            if !hasActiveFilters, let cached: BmbPublicPage = await BmbAPI().cached("/decisions/public?page=1&size=20&language=\(contentLanguage)&includeEnglish=\(contentLanguage == "zh" && includeEnglish)") {
-                items = cached.Items; page = cached.Page; snapshot = cached.Snapshot; hasMore = cached.HasMore
-            }
-            await load(reset: true)
-        }
+        .task { await openCurrentPage() }
         .refreshable { await load(reset: true) }
     }
 
     private var hasActiveFilters: Bool { filter != "recommended" || !tag.isEmpty || contentLanguage == "zh" && includeEnglish }
+
+    private var endMessage: String {
+        switch endMessageIndex {
+        case 0: BmbEngagementCopy.text("That's the bottom of the bag. Your next question could be next!", "我们也是有底线的。下一条提问，等你来发！")
+        case 1: BmbEngagementCopy.text("All caught up! Got something on your wish list?", "这次逛到底啦。愿望清单里还有什么想问？")
+        case 2: BmbEngagementCopy.text("No more questions for now. Maybe yours is next?", "暂时没有更多啦，也许下一条就是你的问题。")
+        default: BmbEngagementCopy.text("The shelf is empty for now. Bring us your next big maybe!", "问题架暂时见底。下一个纠结，交给大家吧！")
+        }
+    }
 
     private func filterTitle(_ value: String) -> String {
         switch value {
@@ -165,8 +220,8 @@ struct ExploreView: View {
                         let nextTag = draftTag.trimmingCharacters(in: .whitespacesAndNewlines)
                         filter = draftFilter; tag = nextTag; showFilters = false
                         // 换条件时清空旧列表及快照，避免把旧结果误认作新筛选结果。
-                        items = []; page = 0; snapshot = nil; hasMore = false
-                        Task { await load(reset: true) }
+                        items = []; page = 0; snapshot = nil; hasMore = false; loading = true; openedPath = nil
+                        Task { await openCurrentPage() }
                     }.fontWeight(.semibold)
                 }
             }
@@ -190,24 +245,36 @@ struct ExploreView: View {
         return VStack(alignment: .leading, spacing: 0) {
             if let image = product?.ImageUrl, let url = URL(string: image) {
                 BmbExploreImage(url: url, width: width)
+                    .overlay(alignment: .topTrailing) {
+                        if let result = item.FinalChoice {
+                            resultTag(result).padding(9)
+                        }
+                    }
             }
             VStack(alignment: .leading, spacing: 5) {
-                if item.Mode == "pick_one" && product?.ImageUrl == nil {
-                    Text("A / B").font(.caption2.bold()).padding(6)
-                        .background(BmbTheme.paper, in: RoundedRectangle(cornerRadius: 7))
+                if product?.ImageUrl == nil && (item.Mode == "pick_one" || item.FinalChoice != nil) {
+                    HStack(spacing: 6) {
+                        if item.Mode == "pick_one" {
+                            Text("A / B").font(.caption2.bold()).padding(6)
+                                .background(BmbTheme.paper, in: RoundedRectangle(cornerRadius: 7))
+                        }
+                        if let result = item.FinalChoice { resultTag(result) }
+                    }
                 }
                 Text(product?.Title ?? item.Question).font(.subheadline.bold()).lineLimit(2)
+                if let price = product?.Price {
+                    Text(BmbMoney.display(price, currency: product?.Currency))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(BmbTheme.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
                 if let model = product?.Model, !model.isEmpty {
                     Text(model).font(.caption2).foregroundStyle(BmbTheme.muted).lineLimit(1)
                 }
-                if let price = product?.Price {
-                    Text(BmbMoney.display(price, currency: product?.Currency))
-                        .font(.caption.bold()).foregroundStyle(BmbTheme.muted)
-                }
                 Text(item.Question).font(.caption).foregroundStyle(BmbTheme.muted).lineLimit(2)
-                if item.IsWaiting == true { Text(BmbEngagementCopy.text("Taking a pause", "暂缓中")).font(.caption.bold()) }
-                if let result = item.FinalChoice { Text(BmbEngagementCopy.text("Result: \(result)", "最终选择：\(result)")).font(.caption) }
-                Text("\(item.VoteCount ?? 0) \(BmbEngagementCopy.text("votes", "票"))").font(.caption)
+                if item.IsWaiting == true && item.FinalChoice != "waiting" { Text(BmbEngagementCopy.text("Taking a pause", "暂缓中")).font(.caption.bold()) }
+                voteSummary(item)
             }.padding(12)
         }
         .frame(width: width, alignment: .leading)
@@ -221,23 +288,123 @@ struct ExploreView: View {
             }
         }
         .foregroundStyle(BmbTheme.ink)
+        .task(id: item.ShareToken) {
+            guard item.Votes == nil, (item.VoteCount ?? 0) > 0,
+                  voteBreakdowns[item.ShareToken] == nil else { return }
+            let path = "/d/\(item.ShareToken)"
+            if let detail: BmbDecision = await BmbAPI().cached(path) {
+                voteBreakdowns[item.ShareToken] = (detail.Votes, detail.VoteCount)
+                Task { let _: BmbDecision? = try? await BmbAPI().detail(item.ShareToken, token: nil) }
+            } else if let detail = try? await BmbAPI().detail(item.ShareToken, token: nil) {
+                voteBreakdowns[item.ShareToken] = (detail.Votes, detail.VoteCount)
+            }
+        }
+    }
+
+    private func resultTag(_ choice: String) -> some View {
+        Text(BmbEngagementCopy.finalChoice(choice))
+            .font(.caption2.bold())
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .foregroundStyle(BmbTheme.ink)
+            .background(BmbTheme.lime, in: Capsule())
+    }
+
+    @ViewBuilder
+    private func voteSummary(_ item: BmbPublicDecision) -> some View {
+        let total = voteBreakdowns[item.ShareToken]?.total ?? item.VoteCount ?? 0
+        let supportColor = Color(red: 0.55, green: 0.69, blue: 0.54)
+        let opposeColor = Color(red: 0.79, green: 0.62, blue: 0.61)
+        if let votes = item.Votes ?? voteBreakdowns[item.ShareToken]?.votes {
+            let left = votes[item.Mode == "pick_one" ? "a" : "buy"] ?? 0
+            let right = votes[item.Mode == "pick_one" ? "b" : "pass"] ?? 0
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 4) {
+                    if item.Mode == "pick_one" {
+                        Text("A \(left)").foregroundStyle(supportColor)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Label("\(left)", systemImage: "hand.thumbsup").foregroundStyle(supportColor)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    Text(BmbEngagementCopy.text("\(total) vote\(total == 1 ? "" : "s")", "共 \(total) 票"))
+                        .font(.caption2).foregroundStyle(BmbTheme.muted)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    if item.Mode == "pick_one" {
+                        Text("B \(right)").foregroundStyle(opposeColor)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    } else {
+                        Label("\(right)", systemImage: "hand.thumbsdown").foregroundStyle(opposeColor)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+                .font(.caption2.weight(.semibold))
+                GeometryReader { geometry in
+                    HStack(spacing: 0) {
+                        supportColor.frame(width: total > 0 ? geometry.size.width * CGFloat(left) / CGFloat(total) : 0)
+                        opposeColor.frame(width: total > 0 ? geometry.size.width * CGFloat(right) / CGFloat(total) : 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(BmbTheme.muted.opacity(0.12))
+                    .clipShape(Capsule())
+                }
+                .frame(height: 5)
+            }
+            .padding(.top, 5)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(item.Mode == "pick_one"
+                ? BmbEngagementCopy.text("A \(left), B \(right), \(total) votes total", "A \(left) 票，B \(right) 票，共 \(total) 票")
+                : BmbEngagementCopy.text("Support \(left), against \(right), \(total) votes total", "支持 \(left) 票，不支持 \(right) 票，共 \(total) 票"))
+        } else {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 4) {
+                    if item.Mode == "pick_one" { Text("A —").frame(maxWidth: .infinity, alignment: .leading) }
+                    else { Label("—", systemImage: "hand.thumbsup").frame(maxWidth: .infinity, alignment: .leading) }
+                    Text(BmbEngagementCopy.text("\(total) vote\(total == 1 ? "" : "s")", "共 \(total) 票"))
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    if item.Mode == "pick_one" { Text("B —").frame(maxWidth: .infinity, alignment: .trailing) }
+                    else { Label("—", systemImage: "hand.thumbsdown").frame(maxWidth: .infinity, alignment: .trailing) }
+                }.font(.caption2).foregroundStyle(BmbTheme.muted)
+                Capsule().fill(BmbTheme.muted.opacity(0.12)).frame(height: 5)
+            }.padding(.top, 5)
+        }
+    }
+
+    private func publicPagePath(page: Int, snapshot: Int64? = nil) -> String {
+        BmbPublicFeed.path(page: page, snapshot: snapshot, filter: filter, tag: tag,
+                           language: contentLanguage, includeEnglish: includeEnglish)
+    }
+
+    private func openCurrentPage() async {
+        let path = publicPagePath(page: 1)
+        guard openedPath != path else { return }
+        openedPath = path
+        let request = UUID()
+        feedRequest = request
+        if let cached: BmbPublicPage = await BmbAPI().cached(path, forCurrentLaunch: true) {
+            guard request == feedRequest else { return }
+            items = cached.Items; page = cached.Page; snapshot = cached.Snapshot; hasMore = cached.HasMore
+            voteBreakdowns = [:]
+            loading = false; error = nil; timedOut = false
+            // 静默更新仅写磁盘，本次启动继续展示原列表。
+            Task { let _: BmbPublicPage? = try? await BmbAPI().call(path) }
+        } else {
+            await load(reset: true)
+        }
     }
 
     private func load(reset: Bool) async {
         guard !loading || reset else { return }
         let current = UUID()
         feedRequest = current
-        loading = true; error = nil
+        loading = true; error = nil; timedOut = false
         do {
             let nextPage = reset ? 1 : page + 1
-            let snapshotQuery = reset ? "" : snapshot.map { "&snapshot=\($0)" } ?? ""
-            var components = URLComponents()
-            components.queryItems = [URLQueryItem(name: "filter", value: filter), URLQueryItem(name: "tag", value: tag),
-                URLQueryItem(name: "language", value: contentLanguage), URLQueryItem(name: "includeEnglish", value: contentLanguage == "zh" && includeEnglish ? "true" : "false")]
-            let query = components.percentEncodedQuery ?? ""
-            let response: BmbPublicPage = try await BmbAPI().call("/decisions/public?page=\(nextPage)&size=20&\(query)\(snapshotQuery)")
+            let response: BmbPublicPage = try await BmbAPI().call(publicPagePath(page: nextPage, snapshot: reset ? nil : snapshot), activateCache: true)
             guard current == feedRequest else { return }
             items = reset ? response.Items : items + response.Items
+            if reset { voteBreakdowns = [:] }
             page = response.Page
             snapshot = response.Snapshot
             hasMore = response.HasMore
@@ -245,7 +412,11 @@ struct ExploreView: View {
             let cancelled = Task.isCancelled || error is CancellationError
                 || (error as? URLError)?.code == .cancelled
                 || (error as NSError).code == NSURLErrorCancelled
-            if current == feedRequest && !cancelled { self.error = error.localizedDescription }
+            if current == feedRequest && !cancelled {
+                timedOut = (error as? URLError)?.code == .timedOut
+                    || ((error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorTimedOut)
+                self.error = error.localizedDescription
+            }
         }
         if current == feedRequest { loading = false }
     }

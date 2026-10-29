@@ -9,20 +9,23 @@ struct ByeMyBuyApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var unread = 0
     @AppStorage("bmb.theme") private var themePreference = "system"
+    @AppStorage("bmb.app_language") private var appLanguage = "system"
+    @State private var screenshotTab = Int(ProcessInfo.processInfo.environment["BMB_SCREENSHOT_TAB"] ?? "") ?? 0
+    @State private var screenshotCreate = ProcessInfo.processInfo.environment["BMB_SCREENSHOT_PAGE"] == "create"
 
     var body: some Scene {
         WindowGroup {
-            TabView {
+            TabView(selection: $screenshotTab) {
                 HomeView()
-                    .tabItem { Label("Home", systemImage: "house") }
+                    .tabItem { Label("Home", systemImage: "house") }.tag(0)
                 NavigationStack { ExploreView() }
-                    .tabItem { Label("Explore", systemImage: "square.grid.2x2") }
+                    .tabItem { Label("Explore", systemImage: "square.grid.2x2") }.tag(1)
                 NavigationStack { MineView() }
-                    .tabItem { Label("My decisions", systemImage: "square.stack") }
+                    .tabItem { Label("My decisions", systemImage: "square.stack") }.tag(2)
                 NavigationStack { BmbNotificationsView() }
-                    .tabItem { Label(BmbEngagementCopy.text("Messages", "消息"), systemImage: "bell") }.badge(unread)
+                    .tabItem { Label(BmbEngagementCopy.text("Messages", "消息"), systemImage: "bell") }.badge(unread).tag(3)
                 NavigationStack { AccountView() }
-                    .tabItem { Label("Account", systemImage: "person.crop.circle") }
+                    .tabItem { Label("Account", systemImage: "person.crop.circle") }.tag(4)
             }
             .tint(BmbTheme.ink)
             .preferredColorScheme(themePreference == "system" ? nil : themePreference == "dark" ? .dark : .light)
@@ -51,11 +54,15 @@ struct ByeMyBuyApp: App {
             .sheet(item: $incomingToken) { token in
                 NavigationStack { DecisionView(shareToken: token.value) }.environmentObject(session)
             }
+            .sheet(isPresented: $screenshotCreate) {
+                NavigationStack { CreateView() }.environmentObject(session)
+            }
             .onOpenURL { url in
                 if url.host == "byemybuy.get-free.net", url.path.hasPrefix("/d/") {
                     incomingToken = BmbTokenItem(value: String(url.path.dropFirst(3)))
                 }
             }
+            .environment(\.locale, BmbLanguage.locale(for: appLanguage))
         }
     }
 }
@@ -106,6 +113,32 @@ struct BmbPrimaryButton: View {
                 .font(.system(size: 15, weight: .bold))
                 .padding(17).foregroundStyle(Color(red: 0.125, green: 0.169, blue: 0.141))
                 .background(BmbTheme.lime, in: RoundedRectangle(cornerRadius: 15))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct BmbActionRow: View {
+    let title: String
+    let systemImage: String
+    let trailingSymbol: String
+    var emphasized = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                Text(title).multilineTextAlignment(.leading)
+                Spacer(minLength: 8)
+                Image(systemName: trailingSymbol).font(.caption.bold())
+            }
+            .font(.subheadline.bold())
+            .foregroundStyle(BmbTheme.ink)
+            .padding(.horizontal, 15)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(emphasized ? BmbTheme.lime : BmbTheme.hero, in: RoundedRectangle(cornerRadius: 13))
+            .contentShape(RoundedRectangle(cornerRadius: 13))
         }
         .buttonStyle(.plain)
     }
@@ -222,7 +255,7 @@ struct BmbSplashView: View {
                     .opacity(showingLaunchMark ? 0 : 1)
                 }.frame(width: 300, height: 260).accessibilityHidden(true)
                 Text("ByeMyBuy").font(.system(size: 36, weight: .black, design: .rounded))
-                Text(surprised ? String(localized: "Whoa! Ask first.") : String(localized: "Hear what others think?"))
+                Text(surprised ? BmbLanguage.localized("Whoa! Ask first.") : BmbLanguage.localized("Hear what others think?"))
                     .font(.subheadline.weight(.medium)).foregroundStyle(BmbTheme.muted)
                     .opacity(showingLaunchMark ? 0 : 1)
             }

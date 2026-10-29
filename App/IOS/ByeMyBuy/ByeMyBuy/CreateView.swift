@@ -38,7 +38,7 @@ struct CreateView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var mode = "buy_pass"
     @State private var visibility = "public"
-    @State private var language = Locale.current.language.languageCode?.identifier == "zh" ? "zh" : "en"
+    @State private var language = BmbLanguage.code
     @State private var question = ""
     @State private var hesitation = ""
     @State private var products = [ProductDraft(), ProductDraft()]
@@ -118,7 +118,7 @@ struct CreateView: View {
                                     ), in: 0...100, step: 10)
                                     .accessibilityLabel(Text("Discount"))
                                     .accessibilityValue("\(Int(products[index].discountPercent ?? 0))%")
-                                    Text(products[index].discountPercent.map { "−\(Int($0))%" } ?? String(localized: "10% steps"))
+                                    Text(products[index].discountPercent.map { "−\(Int($0))%" } ?? BmbLanguage.localized("10% steps"))
                                         .font(.caption2).foregroundStyle(BmbTheme.muted)
                                 }
                                 .frame(width: 110)
@@ -168,7 +168,7 @@ struct CreateView: View {
                                         return
                                     }
                                     if jpeg.count > 5 * 1024 * 1024 {
-                                        error = String(localized: "Choose a photo under 5 MB.")
+                                        error = BmbLanguage.localized("Choose a photo under 5 MB.")
                                         products[index].photoItem = nil
                                     } else {
                                         do { try await discardRemotePhoto(at: index) }
@@ -203,12 +203,12 @@ struct CreateView: View {
                             Text(BmbEngagementCopy.text("Unsure which one", "不知道选哪个")).tag("choice")
                         }
                         VStack(spacing: 8) {
-                            questionPreset(String(localized: "Do I need this?"))
+                            questionPreset(BmbLanguage.localized("Do I need this?"))
                             questionPreset(BmbEngagementCopy.text("Should I buy now or wait?", "现在买还是等等？"))
                             if mode == "pick_one" {
-                                questionPreset(String(localized: "Which one suits me?"))
+                                questionPreset(BmbLanguage.localized("Which one suits me?"))
                             } else {
-                                questionPreset(String(localized: "I already own something similar."))
+                                questionPreset(BmbLanguage.localized("I already own something similar."))
                             }
                         }
                         TextField("I love this, but I already own something similar…", text: $question, axis: .vertical)
@@ -330,7 +330,7 @@ struct CreateView: View {
         let imageURL = products[index].imageURL
         guard !imageURL.isEmpty else { return }
         if imageURL.hasPrefix("https://") {
-            guard let token = session.token else { throw BmbError(message: String(localized: "Sign in to remove this photo.")) }
+            guard let token = session.token else { throw BmbError(message: BmbLanguage.localized("Sign in to remove this photo.")) }
             try await session.api.deleteProductImage(imageURL, token: token)
         }
         products[index].imageURL = ""
@@ -349,9 +349,9 @@ struct CreateView: View {
     }
 
     private func publish() async {
-        guard photoBusy.isEmpty else { error = String(localized: "Please wait for the photo to finish processing."); return }
+        guard photoBusy.isEmpty else { error = BmbLanguage.localized("Please wait for the photo to finish processing."); return }
         guard products.prefix(mode == "pick_one" ? 2 : 1).allSatisfy({ !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
-            error = String(localized: "Enter a product name first.")
+            error = BmbLanguage.localized("Enter a product name first.")
             return
         }
         guard let token = session.token else { session.showLogin = true; return }

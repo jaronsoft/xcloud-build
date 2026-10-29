@@ -7,6 +7,7 @@ import UIKit
 struct AccountView: View {
     @EnvironmentObject private var session: BmbSession
     @AppStorage("bmb.theme") private var themePreference = "system"
+    @AppStorage("bmb.app_language") private var appLanguage = "system"
     @State private var email = ""
     @State private var code = ""
     @State private var password = ""
@@ -21,8 +22,8 @@ struct AccountView: View {
     @State private var nicknameError: String?
     @State private var preferredCurrency = BmbCurrency.defaultCode
     @State private var countryCode = ""
-    @State private var debugUnlocked = false
-    @State private var showingDiagnostics = false
+    @AppStorage("bmb.debug_unlocked") private var debugUnlocked = false
+    @State private var showingDiagnostics: BmbDiagnosticPage?
     @State private var debugStatus: String?
     @State private var profileNotice: String?
     @State private var cropImage: UIImage?
@@ -101,6 +102,7 @@ struct AccountView: View {
                         BmbPrimaryButton(title: "Sign in") { session.showLogin = true }
                     } }
                 }
+                languageCard
                 NavigationLink(destination: CacheManagementView()) {
                     BmbCard {
                         HStack {
@@ -114,6 +116,16 @@ struct AccountView: View {
                 }
                 .buttonStyle(.plain)
                 legalCard
+                if debugUnlocked { diagnosticsCard }
+                if session.isLoggedIn {
+                    Button("Sign out") { session.logout() }
+                        .font(.subheadline.bold())
+                        .foregroundStyle(BmbTheme.ink)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .background(BmbTheme.card, in: RoundedRectangle(cornerRadius: 15))
+                        .overlay(RoundedRectangle(cornerRadius: 15).stroke(BmbTheme.ink.opacity(0.07)))
+                        .buttonStyle(.plain)
+                }
             }.padding(20)
         }
         .background(BmbTheme.paper)
@@ -147,7 +159,7 @@ struct AccountView: View {
         .alert("Profile review", isPresented: Binding(get: { profileNotice != nil }, set: { if !$0 { profileNotice = nil } })) {
             Button("OK", role: .cancel) { profileNotice = nil }
         } message: { Text(profileNotice ?? "") }
-        .sheet(isPresented: $showingDiagnostics) { BmbDiagnosticsView() }
+        .sheet(item: $showingDiagnostics) { page in BmbDiagnosticsView(page: page) }
         .sheet(isPresented: $showNicknameEditor) {
             NavigationStack {
                 VStack(alignment: .leading, spacing: 12) {
@@ -176,6 +188,42 @@ struct AccountView: View {
                 }
             }
             .presentationDetents([.medium])
+        }
+    }
+
+    private var languageCard: some View {
+        BmbCard {
+            Menu {
+                Button { appLanguage = "system" } label: {
+                    Label("Follow device", systemImage: appLanguage == "system" ? "checkmark.circle.fill" : "iphone")
+                }
+                Button { appLanguage = "zh" } label: {
+                    Label("简体中文", systemImage: appLanguage == "zh" ? "checkmark.circle.fill" : "character.bubble")
+                }
+                Button { appLanguage = "en" } label: {
+                    Label("English", systemImage: appLanguage == "en" ? "checkmark.circle.fill" : "character.bubble")
+                }
+            } label: {
+                HStack {
+                    Label("App language", systemImage: "globe")
+                    Spacer()
+                    Text(languagePreferenceName)
+                        .foregroundStyle(BmbTheme.muted)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.bold())
+                        .foregroundStyle(BmbTheme.muted)
+                }
+                .font(.subheadline)
+                .foregroundStyle(BmbTheme.ink)
+            }
+        }
+    }
+
+    private var languagePreferenceName: LocalizedStringKey {
+        switch appLanguage {
+        case "zh": "简体中文"
+        case "en": "English"
+        default: "Follow device"
         }
     }
 
@@ -213,7 +261,7 @@ struct AccountView: View {
                             showNicknameEditor = true
                         } label: {
                             HStack(spacing: 6) {
-                                Text(session.profile?.DisplayName ?? String(localized: "Your profile"))
+                                Text(session.profile?.DisplayName ?? BmbLanguage.localized("Your profile"))
                                     .lineLimit(1)
                                 Image(systemName: "pencil").font(.caption2)
                                     .foregroundStyle(BmbTheme.muted)
@@ -253,7 +301,7 @@ struct AccountView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
                                     TextField("Code", text: $code).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-                                    Button(codeSending ? String(localized: "Sending…") : remaining > 0 ? String(format: NSLocalizedString("Resend in %ds", comment: ""), remaining) : String(localized: "Send code")) {
+                                    Button(codeSending ? BmbLanguage.localized("Sending…") : remaining > 0 ? String(format: BmbLanguage.localized("Resend in %ds"), remaining) : BmbLanguage.localized("Send code")) {
                                         Task { await sendCode() }
                                     }
                                     .font(.caption.bold())
@@ -337,49 +385,75 @@ struct AccountView: View {
                 legalLink("Terms of Service", path: "terms", symbol: "doc.text")
                 Divider()
                 HStack {
-                    Text("Version").foregroundStyle(BmbTheme.muted)
+                    Label("Version", systemImage: "info.circle")
+                        .foregroundStyle(BmbTheme.ink)
                     Spacer()
                     Text(appVersionLabel).foregroundStyle(BmbTheme.muted)
                 }
-                .font(.caption)
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 5) { debugUnlocked = true }
-                if debugUnlocked {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 9) {
-                        Label("Diagnostics", systemImage: "network").font(.subheadline.bold())
-                        Button("Check connection") { Task { await checkConnection() } }
-                            .font(.subheadline.bold())
-                        Button("Request and image logs") { showingDiagnostics = true }
-                            .font(.subheadline.bold())
-                        if let debugStatus { Text(debugStatus).font(.caption).foregroundStyle(BmbTheme.muted) }
+            }
+        }
+    }
+
+    private var diagnosticsCard: some View {
+        BmbCard {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Diagnostics").font(.caption.bold()).tracking(2).foregroundStyle(.green)
+                Button { Task { await checkConnection() } } label: {
+                    HStack {
+                        Label("Check connection", systemImage: "network")
+                        Spacer()
+                        Image(systemName: "arrow.clockwise").font(.caption.bold())
                     }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+                    .font(.subheadline).foregroundStyle(BmbTheme.ink)
                 }
-                if session.isLoggedIn {
-                    Divider()
-                    Button("Sign out") { session.logout() }
-                        .font(.subheadline.bold()).foregroundStyle(BmbTheme.ink)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                .buttonStyle(.plain)
+                if let debugStatus {
+                    Text(debugStatus).font(.caption).foregroundStyle(BmbTheme.muted)
                 }
+                Divider()
+                diagnosticsLink("Request logs", symbol: "arrow.left.arrow.right", page: .requests)
+                Divider()
+                diagnosticsLink("Image logs", symbol: "photo", page: .images)
             }
         }
     }
 
     private func legalLink(_ title: LocalizedStringKey, path: String, symbol: String) -> some View {
-        let language = Locale.current.language.languageCode?.identifier == "zh" ? "zh-CN" : "en"
+        let language = BmbLanguage.code == "zh" ? "zh-CN" : "en"
         return Link(destination: URL(string: "https://byemybuy.get-free.net/\(path)/?lang=\(language)")!) {
             HStack {
                 Label(title, systemImage: symbol)
                 Spacer()
                 Image(systemName: "arrow.up.right").font(.caption.bold())
             }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
             .font(.subheadline).foregroundStyle(BmbTheme.ink)
         }
+    }
+    private func diagnosticsLink(_ title: LocalizedStringKey, symbol: String, page: BmbDiagnosticPage) -> some View {
+        Button { showingDiagnostics = page } label: {
+            HStack {
+                Label(title, systemImage: symbol)
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.bold())
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+            .font(.subheadline).foregroundStyle(BmbTheme.ink)
+        }
+        .buttonStyle(.plain)
     }
     private var appVersionLabel: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
-        return "\(version) (Build \(build))"
+        return "\(version) (\(BmbEngagementCopy.text("Build", "构建")) \(build))"
     }
     private func regionButton(_ code: String, title: LocalizedStringKey) -> some View {
         let selected = (countryCode.uppercased() == "CN" ? "CN" : "XX") == code
@@ -397,23 +471,26 @@ struct AccountView: View {
         .disabled(profileSaving || selected)
     }
     private func checkConnection() async {
-        debugStatus = String(localized: "Checking connection…")
+        debugStatus = BmbLanguage.localized("Checking connection…")
         let start = Date()
         do {
             let _: BmbDebugConfig = try await session.api.call("/config")
-            debugStatus = "\(String(localized: "Service available")) · \(Int(Date().timeIntervalSince(start) * 1000)) ms"
-        } catch { debugStatus = String(localized: "Service unavailable") }
+            debugStatus = "\(BmbLanguage.localized("Service available")) · \(Int(Date().timeIntervalSince(start) * 1000)) ms"
+        } catch { debugStatus = BmbLanguage.localized("Service unavailable") }
     }
     private func saveName() async {
         guard let token = session.token else { return }
         profileSaving = true; defer { profileSaving = false }
         do {
             let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty, name.count <= 80 else { message = "Nickname must contain 1 to 80 characters."; return }
+            guard !name.isEmpty, name.count <= 80 else {
+                message = BmbLanguage.localized("Nickname must contain 1 to 80 characters.")
+                return
+            }
             let _: BmbAcknowledgement = try await session.api.call("/auth/me", method: "PUT", body: ["DisplayName": name], token: token)
             await session.loadProfile()
             showNicknameEditor = false
-            profileNotice = String(localized: "Nickname submitted for review. Your current name stays visible until approved.")
+            profileNotice = BmbLanguage.localized("Nickname submitted for review. Your current name stays visible until approved.")
         } catch { nicknameError = error.localizedDescription }
     }
     private func saveCurrency(_ code: String) async {
@@ -423,7 +500,7 @@ struct AccountView: View {
         profileSaving = true; defer { profileSaving = false }
         do {
             let _: BmbAcknowledgement = try await session.api.call("/auth/me", method: "PUT", body: ["DefaultCurrency": code], token: token)
-            await session.loadProfile(); message = String(localized: "Default currency saved")
+            await session.loadProfile(); message = BmbLanguage.localized("Default currency saved")
         } catch { preferredCurrency = previous; message = error.localizedDescription }
     }
     private func saveCountry(_ code: String) async {
@@ -433,13 +510,15 @@ struct AccountView: View {
             let _: BmbAcknowledgement = try await session.api.call("/auth/me/country", method: "PUT", body: ["CountryCode": code], token: token)
             await session.loadProfile()
             countryCode = code
-            message = String(localized: "Service region updated")
+            message = BmbLanguage.localized("Service region updated")
         } catch { message = error.localizedDescription }
     }
     private func prepareAvatar(_ item: PhotosPickerItem) async {
         profileSaving = true; defer { profileSaving = false; selectedAvatar = nil }
         do {
-            guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { throw BmbError(message: "Could not read this photo.") }
+            guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else {
+                throw BmbError(message: BmbLanguage.localized("Could not read this photo."))
+            }
             cropImage = image
             showAvatarCrop = true
         } catch { message = error.localizedDescription }
@@ -448,10 +527,12 @@ struct AccountView: View {
         guard let token = session.token else { return }
         profileSaving = true; defer { profileSaving = false }
         do {
-            guard let jpeg = image.jpegData(compressionQuality: 0.78) else { throw BmbError(message: "Could not read this photo.") }
+            guard let jpeg = image.jpegData(compressionQuality: 0.78) else {
+                throw BmbError(message: BmbLanguage.localized("Could not read this photo."))
+            }
             _ = try await session.api.uploadAvatarImage(jpeg, token: token)
             await session.loadProfile()
-            profileNotice = String(localized: "Photo submitted for review. Your current photo stays visible until approved.")
+            profileNotice = BmbLanguage.localized("Photo submitted for review. Your current photo stays visible until approved.")
         } catch { profileNotice = error.localizedDescription }
     }
     private func removeAvatar() async {
@@ -459,7 +540,7 @@ struct AccountView: View {
         profileSaving = true; defer { profileSaving = false }
         do {
             let _: BmbAcknowledgement = try await session.api.call("/auth/me/avatar", method: "DELETE", token: token)
-            await session.loadProfile(); message = String(localized: "Photo removed")
+            await session.loadProfile(); message = BmbLanguage.localized("Photo removed")
         } catch { message = error.localizedDescription }
     }
     private func sendCode() async {
@@ -476,14 +557,14 @@ struct AccountView: View {
             let changingEmail = session.profile?.Email != nil
             await session.loadProfile()
             email = ""; code = ""
-            message = changingEmail ? String(localized: "Email updated") : String(localized: "Email bound")
+            message = changingEmail ? BmbLanguage.localized("Email updated") : BmbLanguage.localized("Email bound")
         } catch { message = error.localizedDescription }
     }
     private func setPassword() async {
         guard let token = session.token else { return }
         do {
             let _: BmbAcknowledgement = try await session.api.call("/auth/set-password", method: "POST", body: ["Password": password], token: token)
-            password = ""; message = String(localized: "Password set")
+            password = ""; message = BmbLanguage.localized("Password set")
         } catch { message = error.localizedDescription }
     }
     private func bindApple() async {
@@ -498,11 +579,11 @@ struct AccountView: View {
             coordinator.completion = { credential in
                 Task { @MainActor in
                     guard let data = credential.identityToken, let identityToken = String(data: data, encoding: .utf8) else {
-                        message = "Apple identity token is missing."; return
+                        message = BmbLanguage.localized("Apple identity token is missing."); return
                     }
                     do {
                         let _: BmbAcknowledgement = try await session.api.call("/auth/bind-apple", method: "POST", body: ["IdentityToken": identityToken, "Nonce": nonce], token: token)
-                        message = String(localized: "Apple account linked")
+                        message = BmbLanguage.localized("Apple account linked")
                     } catch { message = error.localizedDescription }
                 }
             }
@@ -522,38 +603,51 @@ struct AccountView: View {
 
 private struct BmbDebugConfig: Decodable { let AdsEnabled: Bool? }
 
+private enum BmbDiagnosticPage: String, Identifiable {
+    case requests = "API"
+    case images = "IMAGE"
+
+    var id: String { rawValue }
+    var title: LocalizedStringKey { self == .requests ? "Request logs" : "Image logs" }
+    var emptyMessage: LocalizedStringKey { self == .requests ? "No request logs yet" : "No image logs yet" }
+}
+
 private struct BmbDiagnosticsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var entries: [BmbDiagnosticEntry] = []
+    let page: BmbDiagnosticPage
 
     var body: some View {
         NavigationStack {
             List {
-                if entries.isEmpty { Text("No diagnostic events yet").foregroundStyle(BmbTheme.muted) }
+                if entries.isEmpty { Text(page.emptyMessage).foregroundStyle(BmbTheme.muted) }
                 ForEach(entries) { entry in
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(entry.kind).font(.caption.bold()).foregroundStyle(.green)
                         Text(entry.summary).font(.caption).textSelection(.enabled)
                         Text(entry.time.formatted(date: .abbreviated, time: .standard))
                             .font(.caption2).foregroundStyle(BmbTheme.muted)
                     }
                 }
             }
-            .navigationTitle("Diagnostics")
+            .navigationTitle(page.title)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Refresh") { Task { await reload() } }
-                }
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
                 ToolbarItem(placement: .bottomBar) {
-                    Button("Clear logs") { Task { await BmbDiagnostics.shared.clear(); await reload() } }
+                    Button("Clear logs") { Task { await BmbDiagnostics.shared.clear(kind: page.rawValue); await reload() } }
                 }
             }
-            .task { await reload() }
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                while !Task.isCancelled {
+                    await reload()
+                    do { try await Task.sleep(for: .seconds(2)) } catch { break }
+                }
+            }
         }
     }
 
-    private func reload() async { entries = await BmbDiagnostics.shared.snapshot() }
+    private func reload() async { entries = await BmbDiagnostics.shared.snapshot(kind: page.rawValue) }
 }
 
 private struct BmbAppleLinkButton: UIViewRepresentable {

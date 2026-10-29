@@ -11,15 +11,18 @@ struct BmbDiagnosticEntry: Identifiable, Sendable {
 
 actor BmbDiagnostics {
     static let shared = BmbDiagnostics()
-    private var entries: [BmbDiagnosticEntry] = []
+    private var entriesByKind: [String: [BmbDiagnosticEntry]] = [:]
 
     func record(_ kind: String, _ summary: String) {
+        // 按类型分别保留记录，避免高频图片加载挤掉网络请求日志。
+        var entries = entriesByKind[kind] ?? []
         entries.insert(BmbDiagnosticEntry(kind: kind, summary: summary), at: 0)
         if entries.count > 150 { entries.removeLast(entries.count - 150) }
+        entriesByKind[kind] = entries
     }
 
-    func snapshot() -> [BmbDiagnosticEntry] { entries }
-    func clear() { entries.removeAll() }
+    func snapshot(kind: String) -> [BmbDiagnosticEntry] { entriesByKind[kind] ?? [] }
+    func clear(kind: String) { entriesByKind.removeValue(forKey: kind) }
 }
 
 actor BmbCache {
@@ -27,6 +30,9 @@ actor BmbCache {
 
     private let files = FileManager.default
     private var imageLoads: [String: Task<UIImage?, Never>] = [:]
+    private var launchData: [String: Data] = [:]
+    private var capturedKeys: Set<String> = []
+    private var dataRequests: [String: (id: UUID, activatesLaunch: Bool)] = [:]
     private let root: URL
 
     private init() {
@@ -50,8 +56,39 @@ actor BmbCache {
         return folder(name).appendingPathComponent(digest)
     }
 
-    func data(for key: String) -> Data? { try? Data(contentsOf: file(key, in: "Data")) }
-    func storeData(_ data: Data, for key: String) { try? data.write(to: file(key, in: "Data"), options: .atomic) }
+    func data(for key: String, forCurrentLaunch: Bool = false) -> Data? {
+        if forCurrentLaunch {
+            captureLaunchData(for: key)
+            return launchData[key]
+        }
+        return try? Data(contentsOf: file(key, in: "Data"))
+    }
+
+    private func captureLaunchData(for key: String) {
+        guard capturedKeys.insert(key).inserted else { return }
+        launchData[key] = try? Data(contentsOf: file(key, in: "Data"))
+    }
+
+    func beginDataRequest(for key: String, activateForCurrentLaunch: Bool = false) -> UUID {
+        let request = UUID()
+        // 用户主动刷新期间，其他页面的静默请求不能抢占缓存写入权。
+        if dataRequests[key]?.activatesLaunch == true && !activateForCurrentLaunch { return request }
+        dataRequests[key] = (request, activateForCurrentLaunch)
+        return request
+    }
+
+    func finishDataRequest(for key: String, request: UUID) {
+        if dataRequests[key]?.id == request { dataRequests[key] = nil }
+    }
+
+    func storeData(_ data: Data, for key: String, request: UUID, activateForCurrentLaunch: Bool) {
+        // 后发请求优先，防止较慢的静默更新覆盖用户下拉刷新的结果。
+        guard dataRequests[key]?.id == request else { return }
+        captureLaunchData(for: key)
+        try? data.write(to: file(key, in: "Data"), options: .atomic)
+        if activateForCurrentLaunch { launchData[key] = data }
+        finishDataRequest(for: key, request: request)
+    }
     func image(for url: URL) -> UIImage? {
         if let cached = BmbImageMemoryCache.shared.image(for: url) { return cached }
         guard let data = try? Data(contentsOf: file(url.absoluteString, in: "Images")) else { return nil }
@@ -113,7 +150,12 @@ actor BmbCache {
         }
     }
 
-    func clearData() { clear("Data") }
+    func clearData() {
+        launchData.removeAll()
+        capturedKeys.removeAll()
+        dataRequests.removeAll()
+        clear("Data")
+    }
     func clearImages() { clear("Images") }
     private func clear(_ name: String) {
         if name == "Images" { BmbImageMemoryCache.shared.clear() }

@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD013 MD024 -->
 
-本文件维护 ByeMyBuy iOS 的 App Store 文案和版本说明。当前目标版本为 1.3.3。此前未发布的说明已并入本版本；实际构建号与上传状态待核对。
+本文件维护 ByeMyBuy iOS 的 App Store 文案和版本说明。当前目标版本为 1.3.5；该版本的实际构建号与上传状态待核对。
 
 ## 当前 App Store 推广文本
 
@@ -56,7 +56,31 @@ Explore submissions appear only after review. Anyone holding your share link can
 product comparison,purchase decision,target price,buy or pass,shopping advice,voting,alternatives
 ```
 
-## 1.3.3 — 2026-10-29 (Build 待确认) — 待发布
+## 1.3.5 — 2026-10-29 (Build 待确认) — 待发布
+
+### 简体中文
+
+- 首页焕新，更方便发起提问和浏览大家正在纠结的商品。
+- 首页和发现页打开时优先显示上次内容，下次启动可看到更新，也能下拉立即刷新。
+- 发现页的价格、投票结果和最终选择更容易查看；网络超时与列表末尾的提示也更友好。
+- 可在账号页选择跟随设备、简体中文或英文界面；帮助、版本和退出登录入口更清晰。
+- 投票理由改为直接点选，并增加更多贴近日常选择的理由。
+- 分享价格、推荐优惠链接和关注最终结果的操作更醒目。
+
+### English (U.S.)
+
+- Enjoy a refreshed home screen that makes it easier to ask a question and browse what others are considering.
+- See your last view of Home and Explore immediately, see updates on your next app launch, or pull to refresh now.
+- See prices, votes, and final choices more clearly in Explore, with friendlier messages at timeouts and the end of a list.
+- Choose your app language in Account, with clearer help, version, and sign-out controls.
+- Pick a vote reason from a wider range of everyday considerations.
+- Find clearer actions for sharing a price, recommending an offer link, and following the final result.
+
+### 内部验收备注（不用于 App Store 文案）
+
+- 版本行连续点击五次后会在本机记住调试入口；帮助与协议、调试分成独立卡片。请求和图片日志分别查看、自动更新，相关入口支持整行点击。
+
+## 1.3.3 — 2026-10-29 (Build 待确认) — 首次发行，已提交商店审核
 
 ### 简体中文
 

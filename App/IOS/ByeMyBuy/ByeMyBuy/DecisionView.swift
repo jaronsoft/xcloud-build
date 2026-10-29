@@ -58,16 +58,42 @@ struct DecisionView: View {
                                 }
                             }
                             DisclosureGroup(BmbEngagementCopy.text("Add a reason (optional)", "补充投票理由（可选）")) {
+                                Text(BmbEngagementCopy.text("Choose a reason, then tap your vote above. Tap again to clear it.",
+                                                            "选好理由后点击上方选项投票；再次点击理由可取消。"))
+                                    .font(.caption).foregroundStyle(BmbTheme.muted)
                                 ForEach(voteChoices, id: \.0) { key, label in
-                                    let reasons = key == "buy" ? ["useful","value","quality"] : key == "pass" ? ["expensive","duplicate","wait"] : ["value","fit","quality"]
-                                    Picker(selection: Binding(get: { voteReasons[key] ?? "" }, set: { voteReasons[key] = $0 })) {
-                                        Text(BmbEngagementCopy.text("No reason", "不选理由")).tag("")
-                                        ForEach(reasons, id: \.self) { reason in Text(BmbEngagementCopy.reason(reason)).tag(reason) }
-                                    } label: { Text(label) }
-                                    .pickerStyle(.menu)
-                                    ForEach((decision.VoteReasons?[key] ?? [:]).keys.sorted(), id: \.self) { reason in
-                                        Text("\(BmbEngagementCopy.reason(reason)): \(decision.VoteReasons?[key]?[reason] ?? 0)").font(.caption)
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text(label).font(.caption.bold()).foregroundStyle(BmbTheme.ink)
+                                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                                            ForEach(reasonChoices(for: key), id: \.self) { reason in
+                                                let selected = voteReasons[key] == reason
+                                                Button {
+                                                    voteReasons[key] = selected ? nil : reason
+                                                } label: {
+                                                    HStack(spacing: 6) {
+                                                        if selected { Image(systemName: "checkmark.circle.fill") }
+                                                        Text(BmbEngagementCopy.reason(reason))
+                                                            .multilineTextAlignment(.leading)
+                                                        if let count = decision.VoteReasons?[key]?[reason], count > 0 {
+                                                            Spacer(minLength: 2)
+                                                            Text("\(count)").foregroundStyle(BmbTheme.muted)
+                                                        }
+                                                    }
+                                                    .font(.caption)
+                                                    .foregroundStyle(BmbTheme.ink)
+                                                    .padding(.horizontal, 10)
+                                                    .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+                                                    .background(selected ? BmbTheme.lime : BmbTheme.paper,
+                                                                in: RoundedRectangle(cornerRadius: 10))
+                                                    .contentShape(RoundedRectangle(cornerRadius: 10))
+                                                }
+                                                .buttonStyle(.plain)
+                                                .disabled(decision.Status != "open")
+                                                .accessibilityAddTraits(selected ? .isSelected : [])
+                                            }
+                                        }
                                     }
+                                    .padding(.top, 8)
                                 }
                             }
                             Text("\(decision.VoteCount) \(BmbEngagementCopy.text("votes", "票"))").font(.caption).foregroundStyle(BmbTheme.muted)
@@ -84,7 +110,7 @@ struct DecisionView: View {
                     }
                     BmbDecisionTools(item: decision, reload: load)
                     if let choice = decision.FinalChoice {
-                        Label("Final choice: \(choice)", systemImage: "checkmark.seal")
+                        Label(BmbEngagementCopy.text("Final choice: \(BmbEngagementCopy.finalChoice(choice))", "最终选择：\(BmbEngagementCopy.finalChoice(choice))"), systemImage: "checkmark.seal")
                             .font(.subheadline.bold()).foregroundStyle(.green)
                     }
                     BmbCard {
@@ -137,6 +163,11 @@ struct DecisionView: View {
     private var voteChoices: [(String, LocalizedStringKey)] {
         decision?.Mode == "pick_one" ? [("a", "Option A"), ("b", "Option B")] : [("buy", "Buy it"), ("pass", "Pass")]
     }
+    private func reasonChoices(for key: String) -> [String] {
+        key == "buy" ? ["useful", "value", "quality", "frequent", "long_term"]
+            : key == "pass" ? ["expensive", "duplicate", "wait", "uncertain", "extra_cost"]
+            : ["value", "fit", "quality", "comfort", "design"]
+    }
     private var finalChoices: [(String, LocalizedStringKey)] {
         [("bought", "Bought"), ("passed", "Passed"), ("switched", "Switched"), ("waiting", "Waiting")]
     }
@@ -163,7 +194,7 @@ struct DecisionView: View {
         do {
             let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/comments", method: "POST",
                 body: ["Body": comment, "SuggestedUrl": suggestedURL], token: token)
-            comment = ""; suggestedURL = ""; message = String(localized: "Your comment is awaiting review.")
+            comment = ""; suggestedURL = ""; message = BmbLanguage.localized("Your comment is awaiting review.")
             await load()
         } catch { message = error.localizedDescription }
     }
@@ -171,7 +202,7 @@ struct DecisionView: View {
         guard let token = session.token else { session.showLogin = true; return }
         do {
             let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/reports", method: "POST", body: ["Reason": reportReason], token: token)
-            message = String(localized: "Report sent")
+            message = BmbLanguage.localized("Report sent")
         } catch { message = error.localizedDescription }
     }
 }
@@ -208,7 +239,9 @@ private struct PromoLinkSection: View {
                     }
                 }
                 if isOpen {
-                    Button(BmbEngagementCopy.text("Share my offer link", "推荐我的优惠链接")) { showForm.toggle() }
+                    BmbActionRow(title: BmbEngagementCopy.text("Share my offer link", "推荐我的优惠链接"),
+                                 systemImage: "link", trailingSymbol: showForm ? "chevron.up" : "chevron.down",
+                                 emphasized: true) { showForm.toggle() }
                     if showForm {
                         TextField("https://…", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
                         TextField(BmbEngagementCopy.text("Offer and conditions", "优惠内容与条件"), text: $note, axis: .vertical)
@@ -319,8 +352,9 @@ private struct PriceOfferSection: View {
                 Text("Price I would accept").font(.subheadline.bold())
                 Text(product.TargetPrice.map { BmbMoney.display($0, currency: product.Currency) } ?? "—").font(.subheadline)
                 if isOpen {
-                    Button(BmbEngagementCopy.text("I found a better price", "我发现了更好的价格")) { showForm.toggle() }
-                        .font(.subheadline.bold())
+                    BmbActionRow(title: BmbEngagementCopy.text("I found a better price", "我发现了更好的价格"),
+                                 systemImage: "tag", trailingSymbol: showForm ? "chevron.up" : "chevron.down",
+                                 emphasized: true) { showForm.toggle() }
                 }
                 if isOwner && isOpen {
                     TextField("Edit target price; clear to remove", text: $target).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
@@ -384,7 +418,7 @@ private struct PriceOfferSection: View {
         do {
             let body: [String: Any] = ["TargetPrice": Double(target) as Any? ?? NSNull(), "TargetCurrency": product.Currency ?? ""]
             let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/products/\(id)/target-price", method: "PUT", body: body, token: token)
-            message = String(localized: "Target price updated")
+            message = BmbLanguage.localized("Target price updated")
             await reload()
         } catch { message = error.localizedDescription }
     }
@@ -398,7 +432,7 @@ private struct PriceOfferSection: View {
                 "Currency": currency, "Url": url, "Note": note
             ], token: token)
             site = ""; country = ""; price = ""; url = ""; note = ""
-            message = String(localized: "Price submitted for review")
+            message = BmbLanguage.localized("Price submitted for review")
             await reload()
         } catch { message = error.localizedDescription }
     }

@@ -123,6 +123,7 @@ struct BmbPublicDecision: Decodable, Identifiable {
     let IsWaiting: Bool?
     let FinalChoice: String?
     let VoteCount: Int?
+    let Votes: [String: Int]?
     let Hesitation: String?
     let Id: String
     let ShareToken: String
@@ -139,6 +140,20 @@ struct BmbPublicPage: Decodable {
     let Snapshot: Int64?
     let Page: Int
     let HasMore: Bool
+}
+
+enum BmbPublicFeed {
+    static func path(page: Int = 1, snapshot: Int64? = nil, filter: String = "recommended",
+                     tag: String = "", language: String, includeEnglish: Bool) -> String {
+        var components = URLComponents()
+        components.queryItems = [
+            URLQueryItem(name: "filter", value: filter),
+            URLQueryItem(name: "tag", value: tag),
+            URLQueryItem(name: "language", value: language),
+            URLQueryItem(name: "includeEnglish", value: language == "zh" && includeEnglish ? "true" : "false")
+        ]
+        return "/decisions/public?page=\(page)&size=20&\(components.percentEncodedQuery ?? "")\(snapshot.map { "&snapshot=\($0)" } ?? "")"
+    }
 }
 
 struct BmbProfile: Decodable {
@@ -220,24 +235,33 @@ struct BmbAPI {
 
     private func cacheKey(_ path: String, token: String?) -> String { "GET:/api/byemybuy\(path):\(token ?? "public")" }
 
-    func cached<T: Decodable>(_ path: String, token: String? = nil) async -> T? {
-        guard let data = await BmbCache.shared.data(for: cacheKey(path, token: token)),
+    func cached<T: Decodable>(_ path: String, token: String? = nil, forCurrentLaunch: Bool = false) async -> T? {
+        guard let data = await BmbCache.shared.data(for: cacheKey(path, token: token), forCurrentLaunch: forCurrentLaunch),
               let envelope = try? JSONDecoder().decode(BmbEnvelope<T>.self, from: data), envelope.success else { return nil }
         return envelope.response
     }
 
-    func call<T: Decodable>(_ path: String, method: String = "GET", body: [String: Any]? = nil, token: String? = nil) async throws -> T {
+    func call<T: Decodable>(_ path: String, method: String = "GET", body: [String: Any]? = nil, token: String? = nil,
+                            activateCache: Bool = false) async throws -> T {
         guard let url = URL(string: "/api/byemybuy\(path)", relativeTo: Self.baseURL)?.absoluteURL else {
             throw BmbError(message: "Invalid request URL")
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 15
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let currentToken = token == nil ? nil : (BmbKeychain.read("access") ?? token)
         if let currentToken { request.setValue("Bearer \(currentToken)", forHTTPHeaderField: "Authorization") }
         if let visitor = BmbKeychain.read("visitor") { request.setValue(visitor, forHTTPHeaderField: "X-BMB-Visitor") }
         if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body) }
+        let key = cacheKey(path, token: token)
+        let dataRequest = method == "GET" ? await BmbCache.shared.beginDataRequest(for: key, activateForCurrentLaunch: activateCache) : nil
+        defer {
+            if let dataRequest {
+                Task { await BmbCache.shared.finishDataRequest(for: key, request: dataRequest) }
+            }
+        }
         let startedAt = Date()
         let initial: (Data, URLResponse)
         do { initial = try await URLSession.shared.data(for: request) }
@@ -276,8 +300,9 @@ struct BmbAPI {
             let shareToken = String(segments[1])
             Task { await track(code, shareToken: shareToken, token: token) }
         }
-        if method == "GET" && path != "/auth/apple/nonce" {
-            await BmbCache.shared.storeData(data, for: cacheKey(path, token: token))
+        if let dataRequest, path != "/auth/apple/nonce" {
+            await BmbCache.shared.storeData(data, for: cacheKey(path, token: token), request: dataRequest,
+                                            activateForCurrentLaunch: activateCache)
         }
         return value
     }
