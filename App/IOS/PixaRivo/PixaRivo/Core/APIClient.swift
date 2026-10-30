@@ -284,7 +284,7 @@ struct APIClient: Sendable {
             }
             throw Self.classifiedError(
                 error,
-                statusCode: receivedStatusCode ?? receivedResponse?.statusCode
+                statusCode: receivedResponse?.statusCode
             )
         }
     }
