@@ -27,7 +27,6 @@ struct WorkDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 artworkSection
-                if job.mediaURL != nil { xShareButton }
                 statusSection
                 if !metadataItems.isEmpty { metadataSection }
                 if let error = job.errorMessage?.nilIfEmpty {
@@ -38,6 +37,7 @@ struct WorkDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
                 }
+                if job.mediaURL != nil { xShareButton }
             }
             .frame(maxWidth: 720, alignment: .leading)
             .padding(16)
