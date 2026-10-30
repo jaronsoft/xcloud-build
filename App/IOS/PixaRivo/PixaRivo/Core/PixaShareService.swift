@@ -38,7 +38,6 @@ enum PixaShareService {
         description: String?,
         imageURL: URL?,
         source: PixaShareSource,
-        xPrompt: String? = nil,
         templateID: String? = nil,
         tags: [String] = [],
         publicURL: URL? = nil
@@ -74,11 +73,17 @@ enum PixaShareService {
             xImage = comparisonRenderer.uiImage?.pixaOpaqueImage()
         }
         var items: [Any] = [PixaShareImageActivityItem(image: result, xImage: xImage, omitsX: publicURL != nil)]
-        // X 只接收标题、标签和可选提示词，其他渠道继续分享本机海报。
-        items.append(PixaXPromptActivityItem(text: makeXText(title: title, prompt: xPrompt, tags: tags)))
-        if let publicURL {
-            items.append(PixaXLinkActivityItem(url: publicURL))
-        }
+        // X 分享正文包含模板简介；其他渠道继续使用本机海报。
+        let xText = makeXText(
+            title: title,
+            introduction: source == .template ? description : nil,
+            source: source,
+            tags: tags,
+            hasPublicURL: publicURL != nil
+        )
+        items.append(PixaXTextActivityItem(text: publicURL.map {
+            "\(xText)\n\($0.absoluteString)"
+        } ?? xText))
         return PixaSharePayload(items: items)
     }
 
@@ -91,7 +96,13 @@ enum PixaShareService {
             return nil
         }
         // 未公开作品只经系统分享界面传给用户选择的应用，不改变任务的公开状态。
-        return PixaSharePayload(items: [image, makeXText(title: title, prompt: nil, tags: [])])
+        return PixaSharePayload(items: [image, makeXText(
+            title: title,
+            introduction: nil,
+            source: .work,
+            tags: [],
+            hasPublicURL: false
+        )])
     }
 
     private static func templateSampleImage(id: String) async -> UIImage? {
@@ -109,30 +120,64 @@ enum PixaShareService {
         return try? await PixaImageCache.shared.image(for: request)
     }
 
-    private static func makeXText(title: String, prompt: String?, tags: [String]) -> String {
-        let normalizedPrompt = prompt?
-            .split(whereSeparator: \Character.isWhitespace)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let heading = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(90))
+    private static func makeXText(
+        title: String,
+        introduction: String?,
+        source: PixaShareSource,
+        tags: [String],
+        hasPublicURL: Bool
+    ) -> String {
+        // X 按加权字符计算，并将分享链接计为固定长度；额外预留少量空间给系统分享界面。
+        let textLimit = 280 - (hasPublicURL ? 24 : 0) - 8
         var hashtags = ["#PixaRivo"]
-        for tag in tags {
+        let candidates = (source == .template ? [AppLanguage.localized("share.x.template_tag")] : []) + tags
+        for tag in candidates {
             let value = String(tag.filter { $0.isLetter || $0.isNumber || $0 == "_" }.prefix(24))
             guard !value.isEmpty, !hashtags.contains(where: { $0.caseInsensitiveCompare("#\(value)") == .orderedSame }) else { continue }
-            hashtags.append("#\(value)")
+            let hashtag = "#\(value)"
+            guard weightedLength((hashtags + [hashtag]).joined(separator: " ")) <= 72 else { continue }
+            hashtags.append(hashtag)
             if hashtags.count == 4 { break }
         }
         let suffix = hashtags.joined(separator: " ")
-        guard let normalizedPrompt, !normalizedPrompt.isEmpty else { return "\(heading)\n\(suffix)" }
-        let promptHeading = String.localizedStringWithFormat(
-            AppLanguage.localized("share.x.template_prompt"), heading
+        let normalizedTitle = normalizedShareText(title)
+        let heading = weightedPrefix(
+            normalizedTitle.isEmpty ? source.localizedName : normalizedTitle,
+            limit: min(90, textLimit - weightedLength(suffix) - 2)
         )
-        // 为链接与 X 的字符计数预留空间，提示词只显示可读摘要。
-        let promptLimit = max(20, 250 - promptHeading.count - suffix.count - 2)
-        let summary = normalizedPrompt.count > promptLimit
-            ? String(normalizedPrompt.prefix(promptLimit - 1)) + "…"
-            : normalizedPrompt
-        return "\(promptHeading)\n\(summary)\n\(suffix)"
+        guard source == .template else { return "\(heading)\n\(suffix)" }
+        let normalizedIntroduction = normalizedShareText(introduction ?? "")
+        let summary = normalizedIntroduction.isEmpty
+            ? AppLanguage.localized("share.x.template_intro")
+            : normalizedIntroduction
+        let summaryLimit = textLimit - weightedLength(heading) - weightedLength(suffix) - 2
+        let shortSummary = weightedPrefix(summary, limit: summaryLimit)
+        return "\(heading)\n\(shortSummary)\n\(suffix)"
+    }
+
+    private static func normalizedShareText(_ value: String) -> String {
+        value.replacingOccurrences(of: "https?://\\S+", with: "", options: .regularExpression)
+            .split(whereSeparator: \Character.isWhitespace)
+            .joined(separator: " ")
+    }
+
+    private static func weightedLength(_ value: String) -> Int {
+        value.unicodeScalars.reduce(0) { total, scalar in
+            let code = scalar.value
+            let singleWeight = code <= 0x10FF || (0x2000...0x200D).contains(code)
+                || (0x2010...0x201F).contains(code) || (0x2032...0x2037).contains(code)
+            return total + (singleWeight ? 1 : 2)
+        }
+    }
+
+    private static func weightedPrefix(_ value: String, limit: Int) -> String {
+        guard weightedLength(value) > limit else { return value }
+        var result = ""
+        for character in value {
+            guard weightedLength(result) + weightedLength(String(character)) + 2 <= limit else { break }
+            result.append(character)
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 
     private static func makeQRCode(_ value: String) -> UIImage? {
@@ -239,26 +284,7 @@ private struct PixaComparisonArtwork: View {
     }
 }
 
-private final class PixaXLinkActivityItem: NSObject, UIActivityItemSource {
-    private let url: URL
-
-    init(url: URL) {
-        self.url = url
-    }
-
-    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
-        url
-    }
-
-    func activityViewController(
-        _ activityViewController: UIActivityViewController,
-        itemForActivityType activityType: UIActivity.ActivityType?
-    ) -> Any? {
-        PixaXActivity.matches(activityType) ? url : nil
-    }
-}
-
-private final class PixaXPromptActivityItem: NSObject, UIActivityItemSource {
+private final class PixaXTextActivityItem: NSObject, UIActivityItemSource {
     private let text: String
 
     init(text: String) {

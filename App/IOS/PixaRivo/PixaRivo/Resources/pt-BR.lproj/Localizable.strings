@@ -190,7 +190,8 @@
 "share.failed.title" = "Não é possível compartilhar";
 "share.failed.message" = "A imagem ainda não está pronta. Por favor, tente novamente em breve.";
 "share.app_store" = "Baixe na App Store";
-"share.x.template_prompt" = "Prompt de criação para “%@”:";
+"share.x.template_intro" = "Personalize este modelo com suas fotos e textos.";
+"share.x.template_tag" = "ModelosCriativos";
 "filter.all" = "Todos";
 "points.format" = "%d pontos";
 "startup.brand" = "PixaRivo";

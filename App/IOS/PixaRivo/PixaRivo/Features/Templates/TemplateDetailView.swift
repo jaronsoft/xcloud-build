@@ -229,7 +229,6 @@ struct TemplateDetailView: View {
             description: active.description,
             imageURL: active.imageURL,
             source: .template,
-            xPrompt: active.publicPrompt,
             publicURL: PixaShareService.publicURL(source: .template, id: active.id)
         )
         showsShareError = sharePayload == nil

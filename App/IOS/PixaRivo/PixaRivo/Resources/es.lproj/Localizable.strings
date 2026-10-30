@@ -190,7 +190,8 @@
 "share.failed.title" = "No se puede compartir";
 "share.failed.message" = "La imagen aún no está lista. Inténtelo de nuevo en breve.";
 "share.app_store" = "Descargar en la tienda de aplicaciones";
-"share.x.template_prompt" = "Mensaje de creación para “%@”:";
+"share.x.template_intro" = "Personaliza esta plantilla con tus fotos y textos.";
+"share.x.template_tag" = "PlantillasCreativas";
 "filter.all" = "Todo";
 "points.format" = "%d puntos";
 "startup.brand" = "PixaRivo";

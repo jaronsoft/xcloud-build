@@ -37,7 +37,8 @@
 "share.failed.title" = "暂时无法分享";
 "share.failed.message" = "图片尚未加载完成，请稍后再试。";
 "share.app_store" = "App Store 下载";
-"share.x.template_prompt" = "「%@」创作提示词：";
+"share.x.template_intro" = "选择这个模板，替换图片和文字，创作自己的作品。";
+"share.x.template_tag" = "模板创作";
 "filter.all" = "全部";
 "points.format" = "%d 点";
 "tab.home" = "首页";

@@ -37,7 +37,8 @@
 "share.failed.title" = "Unable to Share";
 "share.failed.message" = "The image is not ready yet. Please try again shortly.";
 "share.app_store" = "Download on App Store";
-"share.x.template_prompt" = "Creation prompt for “%@”:";
+"share.x.template_intro" = "Make it your own with photos and text.";
+"share.x.template_tag" = "CreativeTemplates";
 "filter.all" = "All";
 "points.format" = "%d pts";
 "tab.home" = "Home";

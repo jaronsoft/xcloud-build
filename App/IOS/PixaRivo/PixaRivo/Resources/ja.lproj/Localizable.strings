@@ -169,7 +169,8 @@
 "share.failed.title" = "共有できません";
 "share.failed.message" = "画像はまだ準備ができていません。しばらくしてからもう一度お試しください。";
 "share.app_store" = "App Storeでダウンロード";
-"share.x.template_prompt" = "「%@」の作成プロンプト:";
+"share.x.template_intro" = "写真や文字を入れ替えて、自分だけの作品を作れます。";
+"share.x.template_tag" = "テンプレート制作";
 "filter.all" = "全て";
 "points.format" = "%d ポイント";
 "startup.brand" = "PixaRivo";
