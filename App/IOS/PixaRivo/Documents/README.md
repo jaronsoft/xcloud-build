@@ -2,12 +2,12 @@
 
 <!-- markdownlint-disable MD013 -->
 
-> 更新时间：2026-09-30
+> 更新时间：2026-10-30
 >
 > 适用范围：PixaRivo iOS App 开发与 App Store Connect
 
-当前工程营销版本为 `1.2.12`，本地 `CURRENT_PROJECT_VERSION = 58`，仅支持
-iPhone。`1.2.11 (Build 133)` 已发布，线上 Build 由发布流程自动生成。工程事实以
+当前工程营销版本为 `1.5.0`，本地 `CURRENT_PROJECT_VERSION = 58`，仅支持
+iPhone。App Store 公共目录显示 `1.3.0` 已发布，实际 Build 待核；线上 Build 由发布流程自动生成。工程事实以
 [iOS 工程说明](../README.md) 为准，版本更新
 中英文内容与发布状态维护在 [`RELEASE_NOTES.md`](../RELEASE_NOTES.md)，其他四种语言维护在
 [其他语言发布说明](../RELEASE_NOTES_OTHER_LANGUAGES.md)；送审进度统一维护在

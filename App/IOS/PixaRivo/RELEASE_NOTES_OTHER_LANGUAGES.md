@@ -22,7 +22,17 @@ Modelos de Halloween chegaram! Crie pôsteres com fotos e texto. PixaRivo agora 
 
 萬聖節範本來了！選好範本，換上圖片與文字，輕鬆製作海報與社群配圖。PixaRivo 現已支援 iPhone Duo，展開或摺疊都能自在創作。新用戶註冊及每日首次使用可領點數。
 
-## 1.3.0 — 2026-10-25 (Build 待自动生成) — 待发布
+## 1.5.0 — 2026-10-30 (Build 待自动生成) — 待发布
+
+### 日本語
+
+### Español
+
+### Português (Brasil)
+
+### 繁體中文
+
+## 1.3.0 — 2026-10-26 (Build 待确认) — 已发布
 
 ### 日本語
 

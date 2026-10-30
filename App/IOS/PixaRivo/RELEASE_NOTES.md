@@ -15,7 +15,19 @@
 
 Halloween templates are here! Add photos and text to create posters and social graphics. PixaRivo now supports iPhone Duo, open or closed. Earn signup and daily points.
 
-## 1.3.0 — 2026-10-25 (Build 待自动生成) — 待发布
+## 1.5.0 — 2026-10-30 (Build 待自动生成) — 待发布
+
+### 简体中文
+
+- 分享公开模板和案例到 X 时，可显示对应内容的图片预览卡片。
+- 编辑模板时会自动保存未完成的内容，重新打开同一模板可继续创作。
+
+### English (U.S.)
+
+- Shared public templates and gallery creations can show an image preview card on X.
+- Unfinished template edits are saved automatically, so you can continue when you reopen the same template.
+
+## 1.3.0 — 2026-10-26 (Build 待确认) — 已发布
 
 ### 简体中文
 
