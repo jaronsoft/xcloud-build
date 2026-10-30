@@ -14,7 +14,7 @@ PixaRivo 是 WeKare Partners LLC 推出的模板化视觉合成应用。用户�
 
 - SwiftUI、Swift 6、最低 iOS 17
 - Bundle ID：`com.wekarepartners.pixarivo`
-- API：`https://ais.get-free.net`
+- API：线上和真机 Debug 使用线上路由；模拟器 Debug 使用 `http://localhost:8800` 本地 API，需先启动本机服务
 - 支持在“我的 → 语言”中选择跟随系统、简体中文或 English；应用内界面立即切换，无需重新启动，选择会在本机持久保存
 - 应用内语言只影响本地界面和本地化内容，不改变 API 基址、接口区域策略或静态图片 CDN；素材区域仍由独立的“素材区域”设置控制
 - 桌面名称按系统语言本地化：简体中文显示“图漾”，英文及默认语言显示“PixaRivo”
