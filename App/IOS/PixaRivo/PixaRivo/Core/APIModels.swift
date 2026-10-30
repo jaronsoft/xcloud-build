@@ -249,6 +249,9 @@ struct StyleTemplate: Decodable, Identifiable, Hashable {
     var imageURL: URL? {
         resolvedMediaURL(coverAssetURL) ?? resolvedMediaURL(sampleAssetURL)
     }
+    var sampleImageURL: URL? {
+        resolvedMediaURL(sampleAssetURL) ?? resolvedMediaURL(coverAssetURL)
+    }
 
     mutating func preserveMissingMedia(from fallback: StyleTemplate) {
         // 详情接口偶发未解析出素材地址时，保留列表已经成功展示的地址，避免有效图片被空值覆盖。

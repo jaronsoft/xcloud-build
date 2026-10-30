@@ -221,6 +221,8 @@ struct GalleryView: View {
             description: item.description,
             imageURL: item.mediaURL,
             source: .gallery,
+            templateID: item.styleTemplateID,
+            tags: item.keywords,
             publicURL: PixaShareService.publicURL(source: .gallery, id: item.id)
         )
         showsShareError = sharePayload == nil

@@ -39,6 +39,8 @@ enum PixaShareService {
         imageURL: URL?,
         source: PixaShareSource,
         xPrompt: String? = nil,
+        templateID: String? = nil,
+        tags: [String] = [],
         publicURL: URL? = nil
     ) async -> PixaSharePayload? {
         guard let request = PixaImageURLBuilder.resolve(
@@ -62,37 +64,63 @@ enum PixaShareService {
         // 分享图固定为 1080px 宽，兼顾微信清晰度和内存、上传体积。
         renderer.scale = 1.5
         guard let result = renderer.uiImage?.pixaOpaqueImage() else { return nil }
-        // 公开内容在 X 使用网页大图卡片，其余渠道继续分享本机海报。
-        var items: [Any] = [PixaShareImageActivityItem(image: result, omitsX: publicURL != nil)]
-        if let xText = makeXText(title: title, prompt: xPrompt) {
-            // 仅在用户选择 X 时返回文字，避免微信等渠道把海报与说明拆成多个分享项。
-            items.append(PixaXPromptActivityItem(text: xText))
+        // 公开案例优先展示模板样图与生成图；模板无法读取时保留原有网页卡片。
+        var xImage: UIImage?
+        if source == .gallery, let templateID,
+           let sample = await templateSampleImage(id: templateID) {
+            let comparison = PixaComparisonArtwork(sample: sample, result: image, title: title)
+            let comparisonRenderer = ImageRenderer(content: comparison)
+            comparisonRenderer.scale = 1
+            xImage = comparisonRenderer.uiImage?.pixaOpaqueImage()
         }
+        var items: [Any] = [PixaShareImageActivityItem(image: result, xImage: xImage, omitsX: publicURL != nil)]
+        // X 只接收标题、标签和可选提示词，其他渠道继续分享本机海报。
+        items.append(PixaXPromptActivityItem(text: makeXText(title: title, prompt: xPrompt, tags: tags)))
         if let publicURL {
             items.append(PixaXLinkActivityItem(url: publicURL))
         }
         return PixaSharePayload(items: items)
     }
 
-    private static func makeXText(title: String, prompt: String?) -> String? {
+    private static func templateSampleImage(id: String) async -> UIImage? {
+        guard !id.isEmpty, id.allSatisfy(\.isNumber),
+              let template: StyleTemplate = try? await APIClient().get(
+                "/api/ais/style-templates/\(id)",
+                query: [.init(name: "language", value: AppLanguage.apiValue)]
+              ),
+              let url = template.sampleImageURL,
+              let request = PixaImageURLBuilder.resolve(
+                from: url,
+                preset: .detail,
+                maximumPixelWidth: 1_200
+              ) else { return nil }
+        return try? await PixaImageCache.shared.image(for: request)
+    }
+
+    private static func makeXText(title: String, prompt: String?, tags: [String]) -> String {
         let normalizedPrompt = prompt?
             .split(whereSeparator: \Character.isWhitespace)
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let normalizedPrompt, !normalizedPrompt.isEmpty else { return nil }
-
-        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let heading = String.localizedStringWithFormat(
-            AppLanguage.localized("share.x.template_prompt"),
-            normalizedTitle
+        let heading = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(90))
+        var hashtags = ["#PixaRivo"]
+        for tag in tags {
+            let value = String(tag.filter { $0.isLetter || $0.isNumber || $0 == "_" }.prefix(24))
+            guard !value.isEmpty, !hashtags.contains(where: { $0.caseInsensitiveCompare("#\(value)") == .orderedSame }) else { continue }
+            hashtags.append("#\(value)")
+            if hashtags.count == 4 { break }
+        }
+        let suffix = hashtags.joined(separator: " ")
+        guard let normalizedPrompt, !normalizedPrompt.isEmpty else { return "\(heading)\n\(suffix)" }
+        let promptHeading = String.localizedStringWithFormat(
+            AppLanguage.localized("share.x.template_prompt"), heading
         )
-        let suffix = "\n#PixaRivo"
-        // 为 X 的媒体分享和不同字符计数规则预留余量，超长公开提示词只截取可读摘要。
-        let promptLimit = max(40, 240 - heading.count - suffix.count - 1)
-        let summarizedPrompt = normalizedPrompt.count > promptLimit
-            ? String(normalizedPrompt.prefix(max(1, promptLimit - 1))) + "…"
+        // 为链接与 X 的字符计数预留空间，提示词只显示可读摘要。
+        let promptLimit = max(20, 250 - promptHeading.count - suffix.count - 2)
+        let summary = normalizedPrompt.count > promptLimit
+            ? String(normalizedPrompt.prefix(promptLimit - 1)) + "…"
             : normalizedPrompt
-        return "\(heading)\n\(summarizedPrompt)\(suffix)"
+        return "\(promptHeading)\n\(summary)\n\(suffix)"
     }
 
     private static func makeQRCode(_ value: String) -> UIImage? {
@@ -123,10 +151,12 @@ private enum PixaXActivity {
 
 private final class PixaShareImageActivityItem: NSObject, UIActivityItemSource {
     private let image: UIImage
+    private let xImage: UIImage?
     private let omitsX: Bool
 
-    init(image: UIImage, omitsX: Bool) {
+    init(image: UIImage, xImage: UIImage?, omitsX: Bool) {
         self.image = image
+        self.xImage = xImage
         self.omitsX = omitsX
     }
 
@@ -138,7 +168,62 @@ private final class PixaShareImageActivityItem: NSObject, UIActivityItemSource {
         _ activityViewController: UIActivityViewController,
         itemForActivityType activityType: UIActivity.ActivityType?
     ) -> Any? {
-        omitsX && PixaXActivity.matches(activityType) ? nil : image
+        if PixaXActivity.matches(activityType) { return xImage ?? (omitsX ? nil : image) }
+        return image
+    }
+}
+
+private struct PixaComparisonArtwork: View {
+    let sample: UIImage
+    let result: UIImage
+    let title: String
+
+    private let width: CGFloat = 1_200
+    private var isLandscape: Bool { result.size.width > result.size.height * 1.1 }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if isLandscape {
+                comparisonPanel(sample, label: AppLanguage.isChinese ? "模板样图" : "Template", width: 1_160, height: 425)
+                comparisonPanel(result, label: AppLanguage.isChinese ? "生成作品" : "Created", width: 1_160, height: 425)
+            } else {
+                HStack(spacing: 0) {
+                    comparisonPanel(sample, label: AppLanguage.isChinese ? "模板样图" : "Template", width: 580, height: 770)
+                    comparisonPanel(result, label: AppLanguage.isChinese ? "生成作品" : "Created", width: 580, height: 770)
+                }
+            }
+            HStack {
+                Text(title).font(.system(size: 32, weight: .bold)).lineLimit(1)
+                Spacer(minLength: 20)
+                Text("PixaRivo").font(.system(size: 25, weight: .bold, design: .serif))
+            }
+            .foregroundStyle(PixaTheme.ink)
+            .padding(.horizontal, 28)
+            .frame(height: 80)
+        }
+        .padding(20)
+        .frame(width: width)
+        .background(PixaTheme.paper)
+        .environment(\.colorScheme, .light)
+    }
+
+    private func comparisonPanel(_ image: UIImage, label: String, width: CGFloat, height: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: width, height: height)
+                .clipped()
+            Text(label)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.black.opacity(0.68), in: Capsule())
+                .padding(16)
+        }
+        .frame(width: width, height: height)
+        .clipped()
     }
 }
 
