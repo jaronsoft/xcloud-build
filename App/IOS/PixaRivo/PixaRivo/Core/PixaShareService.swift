@@ -26,12 +26,20 @@ enum PixaShareSource {
 
 @MainActor
 enum PixaShareService {
+    static func publicURL(source: PixaShareSource, id: String) -> URL? {
+        guard source != .work else { return nil }
+        guard !id.isEmpty, id.allSatisfy(\.isNumber) else { return nil }
+        let kind = source == .template ? "template" : "job"
+        return URL(string: "https://pixarivo.get-free.net/share/\(kind)/\(id)")
+    }
+
     static func prepare(
         title: String,
         description: String?,
         imageURL: URL?,
         source: PixaShareSource,
-        xPrompt: String? = nil
+        xPrompt: String? = nil,
+        publicURL: URL? = nil
     ) async -> PixaSharePayload? {
         guard let request = PixaImageURLBuilder.resolve(
             from: imageURL,
@@ -54,10 +62,14 @@ enum PixaShareService {
         // 分享图固定为 1080px 宽，兼顾微信清晰度和内存、上传体积。
         renderer.scale = 1.5
         guard let result = renderer.uiImage?.pixaOpaqueImage() else { return nil }
-        var items: [Any] = [result]
+        // 公开内容在 X 使用网页大图卡片，其余渠道继续分享本机海报。
+        var items: [Any] = [PixaShareImageActivityItem(image: result, omitsX: publicURL != nil)]
         if let xText = makeXText(title: title, prompt: xPrompt) {
             // 仅在用户选择 X 时返回文字，避免微信等渠道把海报与说明拆成多个分享项。
             items.append(PixaXPromptActivityItem(text: xText))
+        }
+        if let publicURL {
+            items.append(PixaXLinkActivityItem(url: publicURL))
         }
         return PixaSharePayload(items: items)
     }
@@ -99,6 +111,56 @@ enum PixaShareService {
     }
 }
 
+private enum PixaXActivity {
+    static func matches(_ activityType: UIActivity.ActivityType?) -> Bool {
+        guard let activityType else { return false }
+        let identifier = activityType.rawValue.lowercased()
+        return identifier.contains("tweetie")
+            || identifier.contains("twitter")
+            || identifier == "com.x.x.shareextension"
+    }
+}
+
+private final class PixaShareImageActivityItem: NSObject, UIActivityItemSource {
+    private let image: UIImage
+    private let omitsX: Bool
+
+    init(image: UIImage, omitsX: Bool) {
+        self.image = image
+        self.omitsX = omitsX
+    }
+
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+        image
+    }
+
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        itemForActivityType activityType: UIActivity.ActivityType?
+    ) -> Any? {
+        omitsX && PixaXActivity.matches(activityType) ? nil : image
+    }
+}
+
+private final class PixaXLinkActivityItem: NSObject, UIActivityItemSource {
+    private let url: URL
+
+    init(url: URL) {
+        self.url = url
+    }
+
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+        url
+    }
+
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        itemForActivityType activityType: UIActivity.ActivityType?
+    ) -> Any? {
+        PixaXActivity.matches(activityType) ? url : nil
+    }
+}
+
 private final class PixaXPromptActivityItem: NSObject, UIActivityItemSource {
     private let text: String
 
@@ -116,15 +178,8 @@ private final class PixaXPromptActivityItem: NSObject, UIActivityItemSource {
         _ activityViewController: UIActivityViewController,
         itemForActivityType activityType: UIActivity.ActivityType?
     ) -> Any? {
-        guard let activityType, Self.isX(activityType) else { return nil }
+        guard PixaXActivity.matches(activityType) else { return nil }
         return text
-    }
-
-    private static func isX(_ activityType: UIActivity.ActivityType) -> Bool {
-        let identifier = activityType.rawValue.lowercased()
-        return identifier.contains("tweetie")
-            || identifier.contains("twitter")
-            || identifier == "com.x.x.shareextension"
     }
 }
 

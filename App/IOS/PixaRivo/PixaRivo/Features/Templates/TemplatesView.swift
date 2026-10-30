@@ -328,7 +328,8 @@ struct TemplatesView: View {
             title: template.name,
             description: template.description,
             imageURL: template.imageURL,
-            source: .template
+            source: .template,
+            publicURL: PixaShareService.publicURL(source: .template, id: template.id)
         )
         showsShareError = sharePayload == nil
     }

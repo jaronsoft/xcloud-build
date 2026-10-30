@@ -220,7 +220,8 @@ struct GalleryView: View {
             title: item.title.nilIfEmpty ?? AppLanguage.localized("gallery.untitled"),
             description: item.description,
             imageURL: item.mediaURL,
-            source: .gallery
+            source: .gallery,
+            publicURL: PixaShareService.publicURL(source: .gallery, id: item.id)
         )
         showsShareError = sharePayload == nil
     }
