@@ -1,6 +1,16 @@
 import CryptoKit
+import Combine
 import Foundation
 import Security
+
+@MainActor
+final class BmbWriteActivity: ObservableObject {
+    static let shared = BmbWriteActivity()
+    @Published private(set) var count = 0
+
+    func begin() { count += 1 }
+    func end() { count = max(0, count - 1) }
+}
 
 struct BmbEnvelope<T: Decodable>: Decodable {
     let success: Bool
@@ -244,6 +254,11 @@ struct BmbAPI {
 
     func call<T: Decodable>(_ path: String, method: String = "GET", body: [String: Any]? = nil, token: String? = nil,
                             activateCache: Bool = false) async throws -> T {
+        let foregroundWrite = method != "GET" && method != "HEAD" && path != "/events"
+        if foregroundWrite { await BmbWriteActivity.shared.begin() }
+        defer {
+            if foregroundWrite { Task { @MainActor in BmbWriteActivity.shared.end() } }
+        }
         guard let url = URL(string: "/api/byemybuy\(path)", relativeTo: Self.baseURL)?.absoluteURL else {
             throw BmbError(message: "Invalid request URL")
         }
@@ -336,6 +351,8 @@ struct BmbAPI {
     }
 
     private func uploadImage(_ data: Data, token: String, path: String) async throws -> String {
+        await BmbWriteActivity.shared.begin()
+        defer { Task { @MainActor in BmbWriteActivity.shared.end() } }
         let boundary = UUID().uuidString
         var body = Data()
         body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"product.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".utf8))
@@ -376,6 +393,8 @@ struct BmbImageUpload: Decodable { let ImageUrl: String }
 final class BmbSession: ObservableObject {
     @Published private(set) var token: String? = BmbKeychain.read("access")
     @Published var profile: BmbProfile?
+    @Published private(set) var profileVerified = false
+    @Published private(set) var profileCheckFailed = false
     @Published var message: String?
     @Published var showLogin = false
     let api = BmbAPI()
@@ -389,7 +408,9 @@ final class BmbSession: ObservableObject {
 
 
     func syncAuth() {
-        token = BmbKeychain.read("access")
+        let current = BmbKeychain.read("access")
+        if current != token { profileVerified = false; profileCheckFailed = false }
+        token = current
         if token == nil { profile = nil }
     }
 
@@ -406,6 +427,8 @@ final class BmbSession: ObservableObject {
 
     func adopt(_ result: BmbAuth) {
         token = result.AccessToken
+        profileVerified = false
+        profileCheckFailed = false
         BmbKeychain.write("access", value: result.AccessToken)
         BmbKeychain.write("refresh", value: result.RefreshToken)
         profile = BmbProfile(UserId: result.UserId, Email: result.Email, Phone: result.Phone, DisplayName: result.DisplayName, AvatarUrl: result.AvatarUrl, DefaultCurrency: result.DefaultCurrency, CountryCode: result.CountryCode, LinkedProviders: nil, NicknameReviewPending: nil, AvatarReviewPending: nil)
@@ -436,15 +459,26 @@ final class BmbSession: ObservableObject {
     }
 
     func loadProfile() async {
-        guard let token else { return }
-        if profile == nil { profile = await api.cached("/auth/me", token: token) }
-        do { profile = try await api.call("/auth/me", token: token) }
-        catch { message = error.localizedDescription }
+        guard let token else { profileVerified = false; profileCheckFailed = false; return }
+        profileVerified = false
+        profileCheckFailed = false
+        if profile == nil {
+            let cached: BmbProfile? = await api.cached("/auth/me", token: token)
+            if self.token == token { profile = cached }
+        }
+        do {
+            let current: BmbProfile = try await api.call("/auth/me", token: token)
+            guard self.token == token else { return }
+            profile = current
+            profileVerified = true
+        } catch {
+            if self.token == token { profileCheckFailed = true; message = error.localizedDescription }
+        }
     }
 
     func logout() {
         let refresh = BmbKeychain.read("refresh")
-        token = nil; profile = nil; BmbKeychain.write("access", value: nil); BmbKeychain.write("refresh", value: nil)
+        token = nil; profile = nil; profileVerified = false; profileCheckFailed = false; BmbKeychain.write("access", value: nil); BmbKeychain.write("refresh", value: nil)
         if let refresh { Task { let _: BmbAcknowledgement? = try? await api.call("/auth/logout", method: "POST", body: ["RefreshToken": refresh]) } }
         Task { await BmbCache.shared.clearData() }
     }

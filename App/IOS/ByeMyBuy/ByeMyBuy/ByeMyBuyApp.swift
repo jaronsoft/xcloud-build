@@ -33,6 +33,7 @@ struct ByeMyBuyApp: App {
                         .transition(.opacity)
                 }
             }
+            .bmbWriteFeedback()
             .environmentObject(session)
             .task { await session.restoreSession() }
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("BmbAuthChanged"))) { _ in session.syncAuth() }
@@ -47,10 +48,10 @@ struct ByeMyBuyApp: App {
                 }
             }
             .sheet(isPresented: $session.showLogin) {
-                NavigationStack { LoginView() }.environmentObject(session)
+                NavigationStack { LoginView() }.environmentObject(session).bmbWriteFeedback()
             }
             .sheet(item: $incomingToken) { token in
-                NavigationStack { DecisionView(shareToken: token.value) }.environmentObject(session)
+                NavigationStack { DecisionView(shareToken: token.value) }.environmentObject(session).bmbWriteFeedback()
             }
             .onOpenURL { url in
                 if url.host == "byemybuy.get-free.net", url.path.hasPrefix("/d/") {
@@ -60,6 +61,36 @@ struct ByeMyBuyApp: App {
             .environment(\.locale, BmbLanguage.locale(for: appLanguage))
         }
     }
+}
+
+private struct BmbWriteFeedbackView: View {
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.3).ignoresSafeArea()
+            HStack(spacing: 12) {
+                ProgressView()
+                Text(BmbEngagementCopy.text("Saving, please wait…", "正在处理，请稍候…"))
+                    .font(.subheadline.bold())
+            }
+            .foregroundStyle(BmbTheme.ink)
+            .padding(18)
+            .background(BmbTheme.card, in: RoundedRectangle(cornerRadius: 16))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isModal)
+    }
+}
+
+private struct BmbWriteFeedbackModifier: ViewModifier {
+    @ObservedObject private var activity = BmbWriteActivity.shared
+
+    func body(content: Content) -> some View {
+        content.overlay { if activity.count > 0 { BmbWriteFeedbackView() } }
+    }
+}
+
+extension View {
+    func bmbWriteFeedback() -> some View { modifier(BmbWriteFeedbackModifier()) }
 }
 
 struct BmbTokenItem: Identifiable {

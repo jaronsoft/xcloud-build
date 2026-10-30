@@ -30,6 +30,7 @@ struct AccountView: View {
     @State private var showAvatarCrop = false
     @State private var selectedAvatar: PhotosPickerItem?
     @State private var profileSaving = false
+    @State private var savingCountry: String?
 
     var body: some View {
         ScrollView {
@@ -87,6 +88,18 @@ struct AccountView: View {
                         BmbCard {
                             HStack {
                                 Label("Account & security", systemImage: "lock.shield")
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption.bold())
+                            }
+                            .font(.subheadline.bold())
+                            .foregroundStyle(BmbTheme.ink)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    NavigationLink(destination: BmbNotificationsView(preferencesOnly: true)) {
+                        BmbCard {
+                            HStack {
+                                Label(BmbEngagementCopy.text("Email notifications", "邮件通知"), systemImage: "envelope.badge")
                                 Spacer()
                                 Image(systemName: "chevron.right").font(.caption.bold())
                             }
@@ -155,6 +168,7 @@ struct AccountView: View {
                     showAvatarCrop = false
                     Task { await uploadAvatar(cropped) }
                 }
+                .bmbWriteFeedback()
             }
         }
         .alert("Profile review", isPresented: Binding(get: { profileNotice != nil }, set: { if !$0 { profileNotice = nil } })) {
@@ -189,6 +203,7 @@ struct AccountView: View {
                 }
             }
             .presentationDetents([.medium])
+            .bmbWriteFeedback()
         }
     }
 
@@ -371,11 +386,23 @@ struct AccountView: View {
                         }
                     }
                 }
-                if session.profile?.Email != nil || session.profile?.LinkedProviders?.contains(where: { $0.lowercased() == "apple" }) == true {
+                if !session.profileVerified || session.profile?.Email != nil || session.profile?.LinkedProviders?.contains(where: { $0.lowercased() == "apple" }) == true {
                     BmbCard {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Apple sign-in").font(.headline)
-                            if session.profile?.LinkedProviders?.contains(where: { $0.lowercased() == "apple" }) == true {
+                            if session.profileCheckFailed {
+                                Button(BmbEngagementCopy.text("Check failed. Retry", "检测失败，点击重试")) {
+                                    Task { await session.loadProfile() }
+                                }
+                                .font(.subheadline.bold())
+                            } else if !session.profileVerified {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                    Text(BmbEngagementCopy.text("Checking Apple account…", "正在检测 Apple 账号…"))
+                                }
+                                .font(.subheadline)
+                                .foregroundStyle(BmbTheme.muted)
+                            } else if session.profile?.LinkedProviders?.contains(where: { $0.lowercased() == "apple" }) == true {
                                 Text("Apple account linked")
                                     .font(.subheadline.bold())
                                     .foregroundStyle(BmbTheme.muted)
@@ -508,8 +535,13 @@ struct AccountView: View {
         let selected = (countryCode.uppercased() == "CN" ? "CN" : "XX") == code
         return Button { Task { await saveCountry(code) } } label: {
             HStack(spacing: 6) {
-                if selected { Image(systemName: "checkmark.circle.fill") }
-                Text(title)
+                if savingCountry == code {
+                    ProgressView()
+                    Text(BmbEngagementCopy.text("Switching…", "切换中…"))
+                } else {
+                    if selected { Image(systemName: "checkmark.circle.fill") }
+                    Text(title)
+                }
             }
             .font(.subheadline.bold())
             .frame(maxWidth: .infinity, minHeight: 46)
@@ -553,8 +585,10 @@ struct AccountView: View {
         } catch { preferredCurrency = previous; message = error.localizedDescription }
     }
     private func saveCountry(_ code: String) async {
-        guard let token = session.token else { return }
-        profileSaving = true; defer { profileSaving = false }
+        guard let token = session.token, !profileSaving else { return }
+        profileSaving = true
+        savingCountry = code
+        defer { profileSaving = false; savingCountry = nil }
         do {
             let _: BmbAcknowledgement = try await session.api.call("/auth/me/country", method: "PUT", body: ["CountryCode": code], token: token)
             await session.loadProfile()
@@ -633,7 +667,11 @@ struct AccountView: View {
                     do {
                         let _: BmbAcknowledgement = try await session.api.call("/auth/bind-apple", method: "POST", body: ["IdentityToken": identityToken, "Nonce": nonce], token: token)
                         await session.loadProfile()
-                        message = BmbLanguage.localized("Apple account linked")
+                        if session.profileVerified && session.profile?.LinkedProviders?.contains(where: { $0.lowercased() == "apple" }) == true {
+                            message = BmbLanguage.localized("Apple account linked")
+                        } else {
+                            message = BmbEngagementCopy.text("Could not verify Apple account status. Please retry.", "无法确认 Apple 账号绑定状态，请重试。")
+                        }
                     } catch { message = error.localizedDescription }
                 }
             }

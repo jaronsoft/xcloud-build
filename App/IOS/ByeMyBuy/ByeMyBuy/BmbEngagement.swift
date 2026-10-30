@@ -60,19 +60,22 @@ enum BmbEngagementCopy {
 }
 
 struct BmbNotificationsView: View {
+    var preferencesOnly = false
     @EnvironmentObject private var session: BmbSession
     @State private var items: [BmbMessage] = []
     @State private var preferences: BmbPreferences?
     @State private var page = 1
     @State private var total = 0
     @State private var error: String?
+    @State private var savingPreferences = false
     private func t(_ en: String, _ zh: String) -> String { BmbEngagementCopy.text(en, zh) }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("BYEMYBUY COMMUNITY").font(.caption.bold()).tracking(2).foregroundStyle(.green)
-                Text(t("Messages", "消息中心")).font(.system(size: 31, weight: .black, design: .rounded))
+                Text(preferencesOnly ? t("Email notifications", "邮件通知") : t("Messages", "消息中心"))
+                    .font(.system(size: 31, weight: .black, design: .rounded))
             }
             if !session.isLoggedIn { BmbCard { VStack(alignment: .leading, spacing: 12) {
                 Text(t("Sign in to see your updates.", "登录后查看与你有关的消息。"))
@@ -81,21 +84,23 @@ struct BmbNotificationsView: View {
                     .background(BmbTheme.lime, in: Capsule())
             } } }
             else {
-                Button(t("Mark all read", "全部已读")) { Task { await read(nil) } }.font(.subheadline.bold())
-                if items.isEmpty { BmbCard { Text(t("No messages yet", "暂无消息")) } }
-                ForEach(items) { item in
-                    if item.Available, let token = item.ShareToken {
-                        NavigationLink { DecisionView(shareToken: token).task { await read(item.Id) } } label: { BmbCard { messageRow(item) } }
-                    } else { Button { Task { await read(item.Id) } } label: { BmbCard { messageRow(item) } } }
-                }
-                HStack {
-                    Button(t("Previous", "上一页")) { Task { await load(page - 1) } }.disabled(page == 1)
-                    Spacer()
-                    Button(t("Next", "下一页")) { Task { await load(page + 1) } }.disabled(page * 20 >= total)
+                if !preferencesOnly {
+                    Button(t("Mark all read", "全部已读")) { Task { await read(nil) } }.font(.subheadline.bold())
+                    if items.isEmpty { BmbCard { Text(t("No messages yet", "暂无消息")) } }
+                    ForEach(items) { item in
+                        if item.Available, let token = item.ShareToken {
+                            NavigationLink { DecisionView(shareToken: token).task { await read(item.Id) } } label: { BmbCard { messageRow(item) } }
+                        } else { Button { Task { await read(item.Id) } } label: { BmbCard { messageRow(item) } } }
+                    }
+                    HStack {
+                        Button(t("Previous", "上一页")) { Task { await load(page - 1) } }.disabled(page == 1)
+                        Spacer()
+                        Button(t("Next", "下一页")) { Task { await load(page + 1) } }.disabled(page * 20 >= total)
+                    }
                 }
                 if preferences != nil {
                     BmbCard { VStack(alignment: .leading, spacing: 12) { Text(t("Email preferences", "邮件通知设置")).font(.headline)
-                        Text(t("Opt in to email. The daily digest arrives at 09:00 in your time zone.", "自愿订阅；互动摘要每天当地时间 09:00 发送。"))
+                        Text(t("Turn off a category to unsubscribe from those emails. In-app messages remain available. The daily digest arrives at 09:00 in your time zone.", "关闭某类邮件即可退订；站内消息仍会保留。互动摘要每天当地时间 09:00 发送。"))
                         if preferences?.HasEmail != true { Text(t("Verify an email in Account first.", "请先在账号中绑定并验证邮箱。")) }
                         Toggle(t("Daily digest", "互动摘要"), isOn: binding(\.DigestEmail)).disabled(preferences?.HasEmail != true)
                         Toggle(t("Followed results", "关注的最终结果"), isOn: binding(\.ResultEmail)).disabled(preferences?.HasEmail != true)
@@ -103,13 +108,16 @@ struct BmbNotificationsView: View {
                         Picker(t("Language", "邮件语言"), selection: binding(\.Language)) { Text("English").tag("en"); Text("简体中文").tag("zh") }
                         TextField(t("Time zone", "时区"), text: binding(\.TimeZone)).textInputAutocapitalization(.never)
                         Button(t("Use local time zone", "使用本地时区")) { preferences?.TimeZone = TimeZone.current.identifier }
-                        Button(t("Save preferences", "保存设置")) { Task { await save() } }
+                        Button(savingPreferences ? t("Saving…", "保存中…") : t("Save preferences", "保存设置")) { Task { await save() } }
+                            .disabled(savingPreferences)
                     } }
                 }
             }
             if let error { Text(error).foregroundStyle(.orange) }
             }.padding(20)
-        }.background(BmbTheme.paper).navigationBarHidden(true)
+        }.background(BmbTheme.paper).navigationBarHidden(!preferencesOnly)
+            .navigationTitle(preferencesOnly ? t("Email notifications", "邮件通知") : "")
+            .navigationBarTitleDisplayMode(.inline)
             .task(id: session.token) {
                 await session.restoreSession()
                 await load()
@@ -131,8 +139,10 @@ struct BmbNotificationsView: View {
     private func load(_ next: Int = 1) async {
         guard let token = session.token else { return }
         do {
-            let data: BmbMessagePage = try await session.api.call("/notifications?page=\(next)", token: token)
-            items = data.Items; total = data.Total; page = next
+            if !preferencesOnly {
+                let data: BmbMessagePage = try await session.api.call("/notifications?page=\(next)", token: token)
+                items = data.Items; total = data.Total; page = next
+            }
             preferences = try await session.api.call("/notifications/preferences", token: token)
         } catch { self.error = error.localizedDescription }
     }
@@ -144,7 +154,9 @@ struct BmbNotificationsView: View {
         } catch { self.error = error.localizedDescription }
     }
     private func save() async {
-        guard let token = session.token, let p = preferences else { return }
+        guard let token = session.token, let p = preferences, !savingPreferences else { return }
+        savingPreferences = true
+        defer { savingPreferences = false }
         do {
             let _: BmbAcknowledgement = try await session.api.call("/notifications/preferences", method: "PUT", body: ["DigestEmail": p.DigestEmail, "ResultEmail": p.ResultEmail, "ReminderEmail": p.ReminderEmail, "Language": p.Language, "TimeZone": p.TimeZone], token: token)
             error = t("Settings saved", "设置已保存")

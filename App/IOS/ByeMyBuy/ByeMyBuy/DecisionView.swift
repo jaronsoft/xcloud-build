@@ -6,6 +6,7 @@ struct DecisionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var decision: BmbDecision?
     @State private var comment = ""
+    @State private var showCommentForm = false
     @State private var voteReasons: [String: String] = [:]
     @State private var suggestedURL = ""
     @State private var reportReason = ""
@@ -57,7 +58,11 @@ struct DecisionView: View {
                                     .buttonStyle(.plain).disabled(decision.Status != "open")
                                 }
                             }
-                            DisclosureGroup(BmbEngagementCopy.text("Add a reason (optional)", "补充投票理由（可选）")) {
+                            Text(BmbEngagementCopy.text("\(decision.VoteCount) \(decision.VoteCount == 1 ? "vote" : "votes")", "共 \(decision.VoteCount) 票"))
+                                .font(.caption.weight(.semibold)).foregroundStyle(BmbTheme.muted)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .padding(.trailing, 4)
+                            DisclosureGroup {
                                 Text(BmbEngagementCopy.text("Choose a reason, then tap your vote above. Tap again to clear it.",
                                                             "选好理由后点击上方选项投票；再次点击理由可取消。"))
                                     .font(.caption).foregroundStyle(BmbTheme.muted)
@@ -95,9 +100,20 @@ struct DecisionView: View {
                                     }
                                     .padding(.top, 8)
                                 }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "text.bubble").font(.subheadline.weight(.semibold))
+                                    Text(BmbEngagementCopy.text("Add a voting reason", "补充投票理由"))
+                                        .font(.subheadline.weight(.semibold))
+                                    Text(BmbEngagementCopy.text("Optional", "可选"))
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(BmbTheme.muted)
+                                }
+                                .foregroundStyle(BmbTheme.ink)
                             }
-                            Text("\(decision.VoteCount) \(BmbEngagementCopy.text("votes", "票"))").font(.caption).foregroundStyle(BmbTheme.muted)
-                                .frame(maxWidth: .infinity)
+                            .tint(BmbTheme.ink)
+                            .padding(14)
+                            .background(BmbTheme.paper, in: RoundedRectangle(cornerRadius: 13))
                         }
                     }
                     ForEach(Array(decision.Products.enumerated()), id: \.offset) { _, product in
@@ -124,14 +140,22 @@ struct DecisionView: View {
                                 Divider()
                             }
                             if decision.Status == "open" {
-                                Text(BmbEngagementCopy.text("Sign in to share your opinion.", "登录后可以发表您的看法。"))
-                                    .font(.caption).foregroundStyle(BmbTheme.muted)
-                                TextField("What would you suggest?", text: $comment, axis: .vertical)
-                                    .lineLimit(2...5).textFieldStyle(.roundedBorder)
-                                TextField("Alternative product URL (optional)", text: $suggestedURL)
-                                    .textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
-                                Button("Send for review") { Task { await submitComment() } }
-                                    .font(.subheadline.bold()).disabled(comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                BmbActionRow(title: BmbEngagementCopy.text("Share my advice", "发表我的建议"),
+                                             systemImage: "square.and.pencil", trailingSymbol: showCommentForm ? "chevron.up" : "chevron.down",
+                                             emphasized: true) { showCommentForm.toggle() }
+                                    .accessibilityValue(BmbEngagementCopy.text(showCommentForm ? "Expanded" : "Collapsed", showCommentForm ? "已展开" : "已收起"))
+                                if showCommentForm {
+                                    if !session.isLoggedIn {
+                                        Text(BmbEngagementCopy.text("Sign in to share your opinion.", "登录后可以发表您的看法。"))
+                                            .font(.caption).foregroundStyle(BmbTheme.muted)
+                                    }
+                                    TextField("What would you suggest?", text: $comment, axis: .vertical)
+                                        .lineLimit(2...5).textFieldStyle(.roundedBorder)
+                                    TextField("Alternative product URL (optional)", text: $suggestedURL)
+                                        .textInputAutocapitalization(.never).textFieldStyle(.roundedBorder)
+                                    Button("Send for review") { Task { await submitComment() } }
+                                        .font(.subheadline.bold()).disabled(comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                }
                             }
                         }
                     }
@@ -194,7 +218,8 @@ struct DecisionView: View {
         do {
             let _: BmbAcknowledgement = try await session.api.call("/d/\(shareToken)/comments", method: "POST",
                 body: ["Body": comment, "SuggestedUrl": suggestedURL], token: token)
-            comment = ""; suggestedURL = ""; message = BmbLanguage.localized("Your comment is awaiting review.")
+            comment = ""; suggestedURL = ""; showCommentForm = false
+            message = BmbLanguage.localized("Your comment is awaiting review.")
             await load()
         } catch { message = error.localizedDescription }
     }

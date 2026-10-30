@@ -159,7 +159,7 @@ struct ExploreView: View {
         }
         .background(BmbTheme.paper)
         .navigationBarHidden(true)
-        .sheet(isPresented: $showCreate) { NavigationStack { CreateView() } }
+        .sheet(isPresented: $showCreate) { NavigationStack { CreateView() }.bmbWriteFeedback() }
         .sheet(isPresented: $showFilters) { filterSheet }
         .task { await openCurrentPage() }
         .refreshable { await load(reset: true) }

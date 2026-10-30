@@ -34,7 +34,7 @@ struct HomeView: View {
                 NavigationStack { homeContent(showCommunity: true) }
             }
         }
-        .sheet(isPresented: $showCreate) { NavigationStack { CreateView() } }
+        .sheet(isPresented: $showCreate) { NavigationStack { CreateView() }.bmbWriteFeedback() }
         .sheet(isPresented: $showHelp) { helpSheet }
         .task(id: feedPath) { await openFeed() }
     }
