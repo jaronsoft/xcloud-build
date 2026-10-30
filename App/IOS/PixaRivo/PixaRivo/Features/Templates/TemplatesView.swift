@@ -13,8 +13,6 @@ struct TemplatesView: View {
     @Environment(PixaNavigationStore.self) private var navigation
     @Environment(PixaNotificationStore.self) private var notifications
     @State private var store = TemplateStore(surface: .creation)
-    @State private var sharePayload: PixaSharePayload?
-    @State private var preparingShareID: String?
     @State private var showsShareError = false
     @State private var showsFilters = false
     @State private var notificationTemplate: StyleTemplate?
@@ -84,7 +82,7 @@ struct TemplatesView: View {
                                     TemplateCard(template: template)
                                 }
                                 .buttonStyle(.plain)
-                                PixaShareButton(isPreparing: preparingShareID == template.id) {
+                                PixaXShareButton {
                                     Task { await share(template) }
                                 }
                                 .padding(8)
@@ -115,9 +113,6 @@ struct TemplatesView: View {
             await store.loadFilterGroups(forceRefresh: mediaRegion.revision > 0)
             await store.load(forceRefresh: mediaRegion.revision > 0)
         }
-        .sheet(item: $sharePayload) { payload in
-            PixaActivityView(items: payload.items)
-        }
         .sheet(isPresented: $showsFilters) {
             TemplateAdvancedFilterSheet(
                 groups: store.filterGroups,
@@ -142,7 +137,7 @@ struct TemplatesView: View {
         .alert("share.failed.title", isPresented: $showsShareError) {
             Button("common.ok", role: .cancel) {}
         } message: {
-            Text("share.failed.message")
+            Text("share.x.open_failed")
         }
         .alert("common.error", isPresented: $showsUnavailableTemplate) {
             Button("common.ok", role: .cancel) {}
@@ -321,17 +316,11 @@ struct TemplatesView: View {
 
     @MainActor
     private func share(_ template: StyleTemplate) async {
-        guard preparingShareID == nil else { return }
-        preparingShareID = template.id
-        defer { preparingShareID = nil }
-        sharePayload = await PixaShareService.prepare(
+        showsShareError = !(await PixaShareService.openTemplateOnX(
             title: template.name,
             description: template.description,
-            imageURL: template.imageURL,
-            source: .template,
-            publicURL: PixaShareService.publicURL(source: .template, id: template.id)
-        )
-        showsShareError = sharePayload == nil
+            id: template.id
+        ))
     }
 }
 

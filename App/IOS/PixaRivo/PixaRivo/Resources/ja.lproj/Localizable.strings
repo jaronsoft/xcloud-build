@@ -171,6 +171,7 @@
 "share.app_store" = "App Storeでダウンロード";
 "share.x.template_intro" = "写真や文字を入れ替えて、自分だけの作品を作れます。";
 "share.x.template_tag" = "テンプレート制作";
+"share.x.open_failed" = "現在 X を開けません。しばらくしてからお試しください。";
 "filter.all" = "全て";
 "points.format" = "%d ポイント";
 "startup.brand" = "PixaRivo";

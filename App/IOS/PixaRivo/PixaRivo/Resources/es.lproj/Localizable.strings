@@ -192,6 +192,7 @@
 "share.app_store" = "Descargar en la tienda de aplicaciones";
 "share.x.template_intro" = "Personaliza esta plantilla con tus fotos y textos.";
 "share.x.template_tag" = "PlantillasCreativas";
+"share.x.open_failed" = "No se puede abrir X ahora. Inténtalo de nuevo más tarde.";
 "filter.all" = "Todo";
 "points.format" = "%d puntos";
 "startup.brand" = "PixaRivo";

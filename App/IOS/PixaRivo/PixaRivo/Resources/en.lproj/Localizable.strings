@@ -39,6 +39,7 @@
 "share.app_store" = "Download on App Store";
 "share.x.template_intro" = "Make it your own with photos and text.";
 "share.x.template_tag" = "CreativeTemplates";
+"share.x.open_failed" = "Unable to open X right now. Please try again.";
 "filter.all" = "All";
 "points.format" = "%d pts";
 "tab.home" = "Home";

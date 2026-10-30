@@ -33,6 +33,35 @@ enum PixaShareService {
         return URL(string: "https://pixarivo.get-free.net/share/\(kind)/\(id)")
     }
 
+    static func openTemplateOnX(title: String, description: String?, id: String) async -> Bool {
+        guard let pageURL = publicURL(source: .template, id: id) else { return false }
+        let message = makeXText(
+            title: title,
+            introduction: description,
+            source: .template,
+            tags: [],
+            hasPublicURL: true
+        )
+        var native = URLComponents()
+        native.scheme = "twitter"
+        native.host = "post"
+        native.queryItems = [URLQueryItem(name: "message", value: "\(message)\n\(pageURL.absoluteString)")]
+        // 已安装 X 时优先打开原生发帖页，旧版或不支持该入口时回退到网页发布入口。
+        if let nativeURL = native.url, await UIApplication.shared.open(nativeURL) {
+            return true
+        }
+        var components = URLComponents(string: "https://x.com/intent/post")
+        components?.queryItems = [
+            URLQueryItem(name: "text", value: message),
+            URLQueryItem(name: "url", value: pageURL.absoluteString)
+        ]
+        guard let target = components?.url else { return false }
+        if await UIApplication.shared.open(target, options: [.universalLinksOnly: true]) {
+            return true
+        }
+        return await UIApplication.shared.open(target)
+    }
+
     static func prepare(
         title: String,
         description: String?,
@@ -435,6 +464,23 @@ struct PixaShareButton: View {
         .buttonStyle(.plain)
         .disabled(isPreparing)
         .accessibilityLabel("share.action")
+    }
+}
+
+struct PixaXShareButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text("𝕏")
+                .font(.system(size: 17, weight: .semibold))
+                .frame(width: 34, height: 34)
+                .foregroundStyle(PixaTheme.ink)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay { Circle().stroke(PixaTheme.line) }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("invitation.share_x")
     }
 }
 

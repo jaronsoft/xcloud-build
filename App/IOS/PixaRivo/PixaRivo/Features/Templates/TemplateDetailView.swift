@@ -8,8 +8,6 @@ struct TemplateDetailView: View {
     @State private var cases: [GalleryJob] = []
     @State private var showsEditor = false
     @State private var showsLogin = false
-    @State private var sharePayload: PixaSharePayload?
-    @State private var isPreparingShare = false
     @State private var showsShareError = false
     @State private var previewTarget: ArtworkPreviewTarget?
 
@@ -116,7 +114,7 @@ struct TemplateDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                PixaShareButton(isPreparing: isPreparingShare) {
+                PixaXShareButton {
                     Task { await share() }
                 }
             }
@@ -167,16 +165,13 @@ struct TemplateDetailView: View {
         }
         .sheet(isPresented: $showsEditor) { TemplateEditorView(template: active) }
         .sheet(isPresented: $showsLogin) { LoginView() }
-        .sheet(item: $sharePayload) { payload in
-            PixaActivityView(items: payload.items)
-        }
         .fullScreenCover(item: $previewTarget) { target in
             PixaArtworkPreview(url: target.url)
         }
         .alert("share.failed.title", isPresented: $showsShareError) {
             Button("common.ok", role: .cancel) {}
         } message: {
-            Text("share.failed.message")
+            Text("share.x.open_failed")
         }
         .task(id: template.id) {
             async let accountLoad: Void = accountData.load(session: session)
@@ -221,17 +216,11 @@ struct TemplateDetailView: View {
 
     @MainActor
     private func share() async {
-        guard !isPreparingShare else { return }
-        isPreparingShare = true
-        defer { isPreparingShare = false }
-        sharePayload = await PixaShareService.prepare(
+        showsShareError = !(await PixaShareService.openTemplateOnX(
             title: active.name,
             description: active.description,
-            imageURL: active.imageURL,
-            source: .template,
-            publicURL: PixaShareService.publicURL(source: .template, id: active.id)
-        )
-        showsShareError = sharePayload == nil
+            id: active.id
+        ))
     }
 }
 

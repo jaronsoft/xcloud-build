@@ -39,6 +39,7 @@
 "share.app_store" = "App Store 下载";
 "share.x.template_intro" = "选择这个模板，替换图片和文字，创作自己的作品。";
 "share.x.template_tag" = "模板创作";
+"share.x.open_failed" = "暂时无法打开 X，请稍后重试。";
 "filter.all" = "全部";
 "points.format" = "%d 点";
 "tab.home" = "首页";

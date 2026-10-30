@@ -196,6 +196,7 @@
 "share.app_store" = "在應用程式商店下載";
 "share.x.template_intro" = "選擇這個範本，替換圖片和文字，創作自己的作品。";
 "share.x.template_tag" = "範本創作";
+"share.x.open_failed" = "暫時無法開啟 X，請稍後重試。";
 "filter.all" = "全部";
 "points.format" = "%d 分";
 "startup.brand" = "PixaRivo";
