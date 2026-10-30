@@ -242,9 +242,7 @@ struct StyleTemplate: Decodable, Identifiable, Hashable {
     var publicPrompt: String { AppLanguage.value(zh: publicPromptZh, en: publicPromptEn) }
     var aspectRatioText: String { defaultAspectRatio ?? aspectRatios.first ?? "4:5" }
     var displayAspectRatio: CGFloat {
-        let parts = aspectRatioText.split(separator: ":").compactMap { Double($0) }
-        guard parts.count == 2, parts[1] > 0 else { return 0.8 }
-        return CGFloat(parts[0] / parts[1])
+        ratioValue(aspectRatioText)
     }
     var imageURL: URL? {
         resolvedMediaURL(coverAssetURL) ?? resolvedMediaURL(sampleAssetURL)
@@ -954,8 +952,12 @@ private func resolvedMediaURL(_ value: String?) -> URL? {
 }
 private func ratioValue(_ value: String) -> CGFloat {
     let parts = value.split(separator: ":").compactMap { Double($0) }
-    guard parts.count == 2, parts[1] > 0 else { return 0.8 }
-    return CGFloat(parts[0] / parts[1])
+    guard parts.count == 2,
+          parts[0].isFinite, parts[0] > 0,
+          parts[1].isFinite, parts[1] > 0 else { return 0.8 }
+    let ratio = parts[0] / parts[1]
+    guard ratio.isFinite, ratio > 0 else { return 0.8 }
+    return CGFloat(min(10, max(0.1, ratio)))
 }
 extension KeyedDecodingContainer {
     func decodeFlexibleString(forKey key: Key) throws -> String? {

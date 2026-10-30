@@ -455,8 +455,12 @@ struct WorksView: View {
 
     private func submissionAspectRatio(_ value: String) -> CGFloat {
         let parts = value.split(separator: ":").compactMap { Double($0) }
-        guard parts.count == 2, parts[1] > 0 else { return 0.8 }
-        return CGFloat(parts[0] / parts[1])
+        guard parts.count == 2,
+              parts[0].isFinite, parts[0] > 0,
+              parts[1].isFinite, parts[1] > 0 else { return 0.8 }
+        let ratio = parts[0] / parts[1]
+        guard ratio.isFinite, ratio > 0 else { return 0.8 }
+        return CGFloat(min(10, max(0.1, ratio)))
     }
 
     private func submissionStatusText(_ item: PixaCreationSubmissionItem) -> String {

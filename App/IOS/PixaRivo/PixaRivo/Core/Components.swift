@@ -514,19 +514,23 @@ struct MasonryLayout: Layout {
     }
 
     private func layout(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, points: [CGPoint], columnWidth: CGFloat) {
-        let width = proposal.width ?? 320
+        let proposedWidth = proposal.width ?? 320
+        let width = proposedWidth.isFinite ? max(0, proposedWidth) : 320
+        let safeSpacing = spacing.isFinite ? max(0, spacing) : 0
         // 宽窗口使用四列，折叠屏中线落在列间；窄窗口沿用双列布局。
-        let resolvedColumns = columns == 2 && width >= 4 * 180 + 3 * spacing ? 4 : columns
-        let columnWidth = (width - CGFloat(resolvedColumns - 1) * spacing) / CGFloat(resolvedColumns)
+        let preferredColumns = columns == 2 && width >= 4 * 180 + 3 * safeSpacing ? 4 : max(1, columns)
+        // 过渡布局可能暂时给出零宽度，列间距不能把子视图宽度算成负数。
+        let resolvedColumns = width <= CGFloat(preferredColumns - 1) * safeSpacing ? 1 : preferredColumns
+        let columnWidth = max(0, (width - CGFloat(resolvedColumns - 1) * safeSpacing) / CGFloat(resolvedColumns))
         var heights = Array(repeating: CGFloat.zero, count: resolvedColumns)
         var points: [CGPoint] = []
         for view in subviews {
             let column = heights.enumerated().min(by: { $0.element < $1.element })?.offset ?? 0
             let size = view.sizeThatFits(ProposedViewSize(width: columnWidth, height: nil))
-            points.append(CGPoint(x: CGFloat(column) * (columnWidth + spacing), y: heights[column]))
-            heights[column] += size.height + spacing
+            points.append(CGPoint(x: CGFloat(column) * (columnWidth + safeSpacing), y: heights[column]))
+            heights[column] += (size.height.isFinite ? max(0, size.height) : 0) + safeSpacing
         }
-        return (CGSize(width: width, height: max(0, (heights.max() ?? 0) - spacing)), points, columnWidth)
+        return (CGSize(width: width, height: max(0, (heights.max() ?? 0) - safeSpacing)), points, columnWidth)
     }
 }
 
