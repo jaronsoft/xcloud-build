@@ -133,10 +133,36 @@ struct DecisionView: View {
                         VStack(alignment: .leading, spacing: 13) {
                             Text("Advice from others").font(.headline)
                             ForEach(decision.Comments) { item in
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(item.Body).font(.subheadline).fixedSize(horizontal: false, vertical: true)
-                                    if item.Status == "pending" { Text("Awaiting review").font(.caption).foregroundStyle(BmbTheme.muted) }
-                                }.padding(.vertical, 7)
+                                HStack(alignment: .top, spacing: 10) {
+                                    ZStack {
+                                        Circle().fill(BmbTheme.hero)
+                                        if let avatar = item.AuthorAvatarUrl, let url = URL(string: avatar) {
+                                            BmbCachedImage(url: url, preset: .thumbnail) {
+                                                Image(systemName: "person.fill").foregroundStyle(BmbTheme.muted)
+                                            }
+                                        } else {
+                                            Image(systemName: "person.fill").foregroundStyle(BmbTheme.muted)
+                                        }
+                                    }
+                                    .frame(width: 36, height: 36)
+                                    .clipShape(Circle())
+                                    .accessibilityHidden(true)
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                            Text(item.AuthorName ?? BmbEngagementCopy.text("Community member", "匿名用户"))
+                                                .font(.caption.bold())
+                                            Spacer(minLength: 4)
+                                            if let createdAt = item.CreateTime {
+                                                Text(BmbEngagementCopy.date(createdAt))
+                                                    .font(.caption2).foregroundStyle(BmbTheme.muted)
+                                                    .lineLimit(1).minimumScaleFactor(0.8)
+                                            }
+                                        }
+                                        Text(item.Body).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                                        if item.Status == "pending" { Text("Awaiting review").font(.caption).foregroundStyle(BmbTheme.muted) }
+                                    }
+                                }
+                                .padding(.vertical, 7)
                                 Divider()
                             }
                             if decision.Status == "open" {

@@ -54,6 +54,8 @@ struct BmbComment: Decodable, Identifiable {
     let Body: String
     let SuggestedUrl: String?
     let Status: String
+    let AuthorName: String?
+    let AuthorAvatarUrl: String?
     let CreateTime: String?
     var id: String { Id }
 }

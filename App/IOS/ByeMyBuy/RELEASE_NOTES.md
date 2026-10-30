@@ -66,6 +66,8 @@ product comparison,purchase decision,target price,buy or pass,shopping advice,vo
 - 可在账号页选择跟随设备、简体中文或英文界面；帮助、版本和退出登录入口更清晰。
 - 投票理由改为直接点选，并增加更多贴近日常选择的理由。
 - 分享价格、推荐优惠链接和关注最终结果的操作更醒目。
+- “等等再决定”可以按需展开，提醒时间与最终选择按钮更容易辨认和点击。
+- 大家的建议现在显示脱敏昵称、头像和发表时间。
 - 详情页商品图片完整显示，避免上下内容被裁切。
 - 生成分享图片后可直接预览、保存到相册或分享给朋友，分享到 X 时也会准备图片和文案。
 - 展开 iPhone Duo 时，首页与发现页可并排查看。
@@ -79,6 +81,8 @@ product comparison,purchase decision,target price,buy or pass,shopping advice,vo
 - Choose your app language in Account, with clearer help, version, and sign-out controls.
 - Pick a vote reason from a wider range of everyday considerations.
 - Find clearer actions for sharing a price, recommending an offer link, and following the final result.
+- Expand “Revisit later” when needed, with clearer reminder and final-choice buttons.
+- See masked names, profile photos, and posting times alongside community advice.
 - View full product images on decision pages without cropping the top or bottom.
 - Preview share images, save them to Photos, or send them to friends, with an image and text prepared when sharing to X.
 - See Home and Explore side by side when iPhone Duo is unfolded.

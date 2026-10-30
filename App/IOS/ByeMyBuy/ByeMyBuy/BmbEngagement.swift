@@ -172,6 +172,7 @@ struct BmbDecisionTools: View {
     @State private var bodyText = ""
     @State private var selected = "a"
     @State private var message: String?
+    @State private var showReminderOptions = false
     private func t(_ en: String, _ zh: String) -> String { BmbEngagementCopy.text(en, zh) }
     var body: some View {
         BmbCard {
@@ -188,22 +189,87 @@ struct BmbDecisionTools: View {
                     }
                 }
                 if item.IsOwner && (item.Status == "open" || item.FinalChoice == "waiting") {
-                    Text(t("Revisit later", "等等再决定")).font(.headline)
-                    HStack { ForEach([1,3,7], id: \.self) { days in Button(t("In \(days) days", "\(days) 天后")) { Task { await remind(Date().addingTimeInterval(Double(days) * 86400)) } } } }
-                    DatePicker(t("Review time", "复看时间"), selection: $date, in: Date()...)
-                    Button(t("Set reminder", "设置提醒")) { Task { await remind(date) } }
-                    Button(t("Pause without reminder", "暂缓，不设提醒")) { Task { await remind(nil) } }
-                    Button(t("Cancel pause and reminder / Resume", "取消暂缓与提醒 / 恢复征求意见")) { Task { await remind(nil, waiting: false) } }
-                    NavigationLink(t("Email reminder settings", "邮件提醒设置")) { BmbNotificationsView() }
+                    BmbActionRow(title: t("Revisit later", "等等再决定"), systemImage: "clock.arrow.circlepath",
+                                 trailingSymbol: showReminderOptions ? "chevron.up" : "chevron.down", emphasized: true) {
+                        withAnimation(.easeInOut(duration: 0.2)) { showReminderOptions.toggle() }
+                    }
+                    .accessibilityValue(t(showReminderOptions ? "Expanded" : "Collapsed", showReminderOptions ? "已展开" : "已收起"))
+                    if showReminderOptions {
+                        VStack(alignment: .leading, spacing: 11) {
+                            Text(t("Choose when to revisit this decision", "选择何时回来再看看"))
+                                .font(.caption).foregroundStyle(BmbTheme.muted)
+                            HStack(spacing: 8) {
+                                ForEach([1, 3, 7], id: \.self) { days in
+                                    Button {
+                                        Task { await remind(Date().addingTimeInterval(Double(days) * 86400)) }
+                                    } label: {
+                                        Text(t("In \(days) days", "\(days) 天后"))
+                                            .font(.subheadline.bold())
+                                            .foregroundStyle(BmbTheme.ink)
+                                            .frame(maxWidth: .infinity, minHeight: 46)
+                                            .background(BmbTheme.hero, in: RoundedRectangle(cornerRadius: 12))
+                                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(BmbTheme.ink.opacity(0.09)))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            DatePicker(t("Review time", "复看时间"), selection: $date, in: Date()...)
+                                .font(.subheadline.bold())
+                                .padding(12)
+                                .background(BmbTheme.paper, in: RoundedRectangle(cornerRadius: 12))
+                            BmbActionRow(title: t("Set reminder", "设置提醒"), systemImage: "bell.badge",
+                                         trailingSymbol: "arrow.right", emphasized: true) {
+                                Task { await remind(date) }
+                            }
+                            BmbActionRow(title: t("Pause without reminder", "暂缓，不设提醒"),
+                                         systemImage: "pause.circle", trailingSymbol: "arrow.right") {
+                                Task { await remind(nil) }
+                            }
+                            if item.IsWaiting == true {
+                                BmbActionRow(title: t("Resume asking for opinions", "取消暂缓，恢复征求意见"),
+                                             systemImage: "play.circle", trailingSymbol: "arrow.right") {
+                                    Task { await remind(nil, waiting: false) }
+                                }
+                            }
+                            NavigationLink {
+                                BmbNotificationsView(preferencesOnly: true)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "envelope.badge")
+                                    Text(t("Email reminder settings", "邮件提醒设置"))
+                                    Spacer(minLength: 8)
+                                    Image(systemName: "chevron.right").font(.caption.bold())
+                                }
+                                .font(.subheadline.bold())
+                                .foregroundStyle(BmbTheme.ink)
+                                .padding(.horizontal, 15)
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                                .background(BmbTheme.paper, in: RoundedRectangle(cornerRadius: 13))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
                 if item.IsOwner && item.Status == "open" {
                     Text(t("Record your final decision", "记录最终决定")).font(.headline)
                     TextField(t("Reason (optional, reviewed before sharing)", "最终理由（可选，审核后展示）"), text: $bodyText, axis: .vertical).textFieldStyle(.roundedBorder)
                     if item.Mode == "pick_one" { Picker(t("Purchased option", "购买选项"), selection: $selected) { Text("A").tag("a"); Text("B").tag("b") }.pickerStyle(.segmented) }
-                    HStack { ForEach(["bought","passed","switched"], id: \.self) { choice in
-                        Button(LocalizedStringKey(choice == "bought" ? "Bought" : choice == "passed" ? "Passed" : "Switched")) {
+                    HStack(spacing: 8) { ForEach(["bought", "passed", "switched"], id: \.self) { choice in
+                        Button {
                             Task { await send("/final-choice", body: ["Choice": choice, "Reason": bodyText, "SelectedOption": choice == "bought" && item.Mode == "pick_one" ? selected as Any : NSNull()]) }
+                        } label: {
+                            Label(t(choice == "bought" ? "Bought" : choice == "passed" ? "Passed" : "Switched",
+                                    choice == "bought" ? "买了" : choice == "passed" ? "放弃" : "换一款"),
+                                  systemImage: choice == "bought" ? "checkmark.circle" : choice == "passed" ? "xmark.circle" : "arrow.triangle.2.circlepath")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(BmbTheme.ink)
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                                .background(choice == "bought" ? BmbTheme.lime : choice == "passed" ? Color.orange.opacity(0.16) : BmbTheme.hero,
+                                            in: RoundedRectangle(cornerRadius: 12))
+                                .contentShape(RoundedRectangle(cornerRadius: 12))
                         }
+                        .buttonStyle(.plain)
                     } }
                 }
                 ForEach(item.Feedback ?? []) { feedback in Text(feedback.Body); if feedback.Status == "pending" { Text(t("Awaiting review", "等待审核")).font(.caption) } }
