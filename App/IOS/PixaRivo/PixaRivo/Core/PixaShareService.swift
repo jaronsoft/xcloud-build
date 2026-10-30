@@ -82,6 +82,18 @@ enum PixaShareService {
         return PixaSharePayload(items: items)
     }
 
+    static func prepareForX(title: String, imageURL: URL?) async -> PixaSharePayload? {
+        guard let request = PixaImageURLBuilder.resolve(
+            from: imageURL,
+            preset: .detail,
+            maximumPixelWidth: 1_200
+        ), let image = try? await PixaImageCache.shared.image(for: request) else {
+            return nil
+        }
+        // 未公开作品只经系统分享界面传给用户选择的应用，不改变任务的公开状态。
+        return PixaSharePayload(items: [image, makeXText(title: title, prompt: nil, tags: [])])
+    }
+
     private static func templateSampleImage(id: String) async -> UIImage? {
         guard !id.isEmpty, id.allSatisfy(\.isNumber),
               let template: StyleTemplate = try? await APIClient().get(

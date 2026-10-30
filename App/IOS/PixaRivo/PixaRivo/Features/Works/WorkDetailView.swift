@@ -27,6 +27,7 @@ struct WorkDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 artworkSection
+                if job.mediaURL != nil { xShareButton }
                 statusSection
                 if !metadataItems.isEmpty { metadataSection }
                 if let error = job.errorMessage?.nilIfEmpty {
@@ -145,6 +146,23 @@ struct WorkDetailView: View {
         .buttonStyle(.plain)
         .disabled(job.mediaURL == nil)
         .accessibilityLabel(Text("preview.open"))
+    }
+
+    private var xShareButton: some View {
+        Button {
+            Task { await share(toX: true) }
+        } label: {
+            HStack(spacing: 10) {
+                Text("𝕏").font(.title3.bold())
+                Text("invitation.share_x").font(.subheadline.bold())
+                if isPreparingShare { ProgressView().tint(.white) }
+            }
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .foregroundStyle(.white)
+            .background(.black, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(isPreparingShare || isDeleting || hasBeenDeleted)
     }
 
     private var statusSection: some View {
@@ -314,10 +332,18 @@ struct WorkDetailView: View {
     }
 
     @MainActor
-    private func share() async {
+    private func share(toX: Bool = false) async {
         guard !isPreparingShare, job.mediaURL != nil else { return }
         isPreparingShare = true
         defer { isPreparingShare = false }
+        if toX {
+            sharePayload = await PixaShareService.prepareForX(
+                title: job.title.nilIfEmpty ?? AppLanguage.localized("works.untitled"),
+                imageURL: job.mediaURL
+            )
+            showsShareError = sharePayload == nil
+            return
+        }
         sharePayload = await PixaShareService.prepare(
             title: job.title.nilIfEmpty ?? AppLanguage.localized("works.untitled"),
             description: job.shareDescription
