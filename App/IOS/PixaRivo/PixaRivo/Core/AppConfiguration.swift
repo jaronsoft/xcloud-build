@@ -26,15 +26,26 @@ enum AppConfiguration {
     }()
 
     static var apiBaseURL: URL {
-        configuredAPIBaseURL.absoluteString == "https://ais.get-free.net"
-            ? AppAPIRoutingSnapshot.baseURL
-            : configuredAPIBaseURL
+        if isLocalDevelopment { return configuredAPIBaseURL }
+        // 真机 Debug 不应把 Xcode 的 localhost 配置当作手机自身的服务地址。
+        if configuredIsLoopback || configuredAPIBaseURL.absoluteString == "https://ais.get-free.net" {
+            return AppAPIRoutingSnapshot.baseURL
+        }
+        return configuredAPIBaseURL
     }
 
-    static var isLocalDevelopment: Bool {
+    private static var configuredIsLoopback: Bool {
         configuredAPIBaseURL.host == "localhost"
             || configuredAPIBaseURL.host == "127.0.0.1"
             || configuredAPIBaseURL.host == "::1"
+    }
+
+    static var isLocalDevelopment: Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        return configuredIsLoopback
+        #else
+        return false
+        #endif
     }
 
     static var apiDisplayName: String {

@@ -187,7 +187,8 @@
 				INFOPLIST_FILE = "PixaRivo/Resources/Info-Debug.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.5.0;
-				PIXARIVO_API_BASE_URL = "http://localhost:8800";
+				PIXARIVO_API_BASE_URL = "https://ais.get-free.net";
+				"PIXARIVO_API_BASE_URL[sdk=iphonesimulator*]" = "http://localhost:8800";
 				PRODUCT_BUNDLE_IDENTIFIER = com.wekarepartners.pixarivo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;

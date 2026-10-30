@@ -261,6 +261,8 @@ actor AppAPIRouter {
         }
         didBootstrap = true
         defer { completeInitialSelection() }
+        // 模拟器本地调试只访问配置的本机 API，避免线上探测影响本地调试。
+        if AppConfiguration.isLocalDevelopment { return }
         loadCache()
         startNetworkObservation()
         if shouldRefresh {
@@ -279,6 +281,7 @@ actor AppAPIRouter {
 
     @discardableResult
     func refresh(force: Bool = false) async -> Bool {
+        guard !AppConfiguration.isLocalDevelopment else { return false }
         guard !product.isEmpty, force || shouldRefresh else { return false }
         var components = URLComponents(url: discoveryURL, resolvingAgainstBaseURL: false)!
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -324,6 +327,20 @@ actor AppAPIRouter {
     }
 
     func diagnosticResults() async -> [AppRoutingDiagnosticResult] {
+        if AppConfiguration.isLocalDevelopment {
+            let endpoint = AppRoutingEndpoint(
+                Id: "local", BaseUrl: AppConfiguration.apiBaseURL.absoluteString,
+                HealthPath: "/api/ais/runtime/ping", Enabled: true, Priority: 0,
+                FallbackEndpointIds: [], Role: "primary", DisplayName: "Local API"
+            )
+            let measurement = await Self.probeDetailed(endpoint)
+            return [AppRoutingDiagnosticResult(
+                id: endpoint.Id, role: .primary, displayName: endpoint.displayName,
+                succeeded: measurement?.succeeded == true,
+                statusCode: measurement?.statusCode,
+                latencyMilliseconds: measurement.map { Int($0.latency * 1_000) }
+            )]
+        }
         installBuiltInFallbackIfNeeded()
         guard let payload else { return [] }
         let endpoints = payload.Endpoints.filter { $0.Enabled }
@@ -519,14 +536,15 @@ actor AppAPIRouter {
             url: baseURL.appending(path: endpoint.HealthPath)
         )
         request.httpMethod = "GET"
-        request.timeoutInterval = 1.5
+        // 真实网络可能慢于 1.5 秒，健康检查不应过早误判可用节点。
+        request.timeoutInterval = 5
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("ios", forHTTPHeaderField: "X-Client-Platform")
 
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 1.5
-        configuration.timeoutIntervalForResource = 1.5
+        configuration.timeoutIntervalForRequest = 5
+        configuration.timeoutIntervalForResource = 5
         configuration.waitsForConnectivity = false
         let session = URLSession(configuration: configuration)
         defer { session.finishTasksAndInvalidate() }
