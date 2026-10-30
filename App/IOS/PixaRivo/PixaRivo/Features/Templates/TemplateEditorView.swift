@@ -1,3 +1,4 @@
+import CryptoKit
 import Observation
 import PhotosUI
 import SwiftUI
@@ -43,6 +44,8 @@ struct TemplateEditorView: View {
     @State private var showsOutputSpecsHint = false
     @State private var outputSpecsHintPulse = false
     @State private var clientRequestID: String?
+    @State private var draftOwnerID: String?
+    @State private var draftSaveTask: Task<Void, Never>?
     @State private var creationWarning: PixaCreationWarning?
     @State private var scrollTargetID: String?
     @State private var highlightedTargetID: String?
@@ -54,6 +57,7 @@ struct TemplateEditorView: View {
     @AppStorage("pixarivo.recommend_to_gallery")
     private var recommendToGallery = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     init(template: StyleTemplate) {
         self.template = template
@@ -114,6 +118,20 @@ struct TemplateEditorView: View {
                 guard let item, !activeSlotKey.isEmpty else { return }
                 Task { await loadPhoto(item, slotKey: activeSlotKey) }
             }
+            .onChange(of: selectedAspectRatio) { _, _ in scheduleDraftSave() }
+            .onChange(of: selectedResolution) { _, _ in scheduleDraftSave() }
+            .onChange(of: promoMarkEnabled) { _, _ in scheduleDraftSave() }
+            .onChange(of: recommendToGallery) { _, _ in scheduleDraftSave() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background {
+                    draftSaveTask?.cancel()
+                    saveDraft()
+                }
+            }
+            .onDisappear {
+                draftSaveTask?.cancel()
+                saveDraft()
+            }
             .onAppear(perform: showDailyOutputSpecsHintIfNeeded)
             .sheet(isPresented: $presentsAssetLibrary) {
                 PixaAssetLibraryPicker(accessToken: session.accessToken) { item in
@@ -127,6 +145,7 @@ struct TemplateEditorView: View {
                         remoteURL: item.imageURL
                     )
                     invalidateSubmission()
+                    scheduleDraftSave()
                 }
             }
             .sheet(item: $pointsCenterTab) { tab in
@@ -160,6 +179,7 @@ struct TemplateEditorView: View {
                 Text(creationWarningMessage)
             }
             .task {
+                restoreDraftIfAvailable()
                 async let outputLoad: Void = outputStore.load(token: session.accessToken)
                 async let accountLoad: Void = accountData.load(session: session)
                 async let editorOpen: Void = recordEditorOpen()
@@ -579,6 +599,7 @@ struct TemplateEditorView: View {
                 if reference != nil {
                     Button(role: .destructive) {
                         references.removeValue(forKey: slot.slotKey)
+                        scheduleDraftSave()
                         invalidateSubmission()
                     } label: {
                         Image(systemName: "trash")
@@ -1054,6 +1075,7 @@ struct TemplateEditorView: View {
             set: {
                 texts[field.fieldKey] = String($0.prefix(field.maxLength))
                 invalidateSubmission()
+                scheduleDraftSave()
             }
         )
     }
@@ -1082,6 +1104,7 @@ struct TemplateEditorView: View {
         )
         errorMessage = nil
         invalidateSubmission()
+        scheduleDraftSave()
     }
 
     private func validationMessage() -> String? {
@@ -1208,6 +1231,11 @@ struct TemplateEditorView: View {
             workActivity: workActivity,
             navigation: navigation
         )
+        draftSaveTask?.cancel()
+        if let draftOwnerID {
+            PixaTemplateDraftStorage.remove(userID: draftOwnerID, templateID: template.id)
+        }
+        self.draftOwnerID = nil
         dismiss()
         navigation.showWorks()
     }
@@ -1252,6 +1280,53 @@ struct TemplateEditorView: View {
 
     private func invalidateSubmission() {
         clientRequestID = nil
+    }
+
+    private func restoreDraftIfAvailable() {
+        guard draftOwnerID == nil, let userID = session.user?.id else { return }
+        draftOwnerID = userID
+        guard let draft = PixaTemplateDraftStorage.load(userID: userID, templateID: template.id) else { return }
+        for field in enabledTextFields {
+            if let value = draft.texts[field.fieldKey] {
+                texts[field.fieldKey] = String(value.prefix(field.maxLength))
+            }
+        }
+        let allowedSlots = Set(template.imageSlots.map(\.slotKey))
+        references = draft.references.compactMapValues { stored in
+            guard let reference = stored.reference else { return nil }
+            return reference
+        }.filter { allowedSlots.contains($0.key) }
+        selectedAspectRatio = draft.aspectRatio
+        selectedResolution = draft.resolution
+        promoMarkEnabled = draft.promoMarkEnabled
+        recommendToGallery = draft.recommendToGallery
+    }
+
+    private func scheduleDraftSave() {
+        guard draftOwnerID != nil else { return }
+        draftSaveTask?.cancel()
+        draftSaveTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            saveDraft()
+        }
+    }
+
+    private func saveDraft() {
+        guard let draftOwnerID else { return }
+        guard hasCreativeChanges else {
+            PixaTemplateDraftStorage.remove(userID: draftOwnerID, templateID: template.id)
+            return
+        }
+        let draft = PixaTemplateDraft(
+            texts: texts,
+            references: references.mapValues(PixaStoredDraftReference.init),
+            aspectRatio: selectedAspectRatio,
+            resolution: selectedResolution,
+            promoMarkEnabled: promoMarkEnabled,
+            recommendToGallery: recommendToGallery
+        )
+        PixaTemplateDraftStorage.save(draft, userID: draftOwnerID, templateID: template.id)
     }
 }
 
@@ -1330,6 +1405,87 @@ private struct PixaTemplateSlotReference {
     let mimeType: String
     var assetID: String?
     let remoteURL: URL?
+}
+
+private struct PixaStoredDraftReference: Codable {
+    let data: Data?
+    let fileExtension: String
+    let mimeType: String
+    let assetID: String?
+    let remoteURL: URL?
+
+    init(_ reference: PixaTemplateSlotReference) {
+        data = reference.data
+        fileExtension = reference.fileExtension
+        mimeType = reference.mimeType
+        assetID = reference.assetID
+        remoteURL = reference.remoteURL
+    }
+
+    var reference: PixaTemplateSlotReference? {
+        guard data != nil || assetID != nil else { return nil }
+        return PixaTemplateSlotReference(
+            image: data.flatMap(UIImage.init(data:)),
+            data: data,
+            fileExtension: fileExtension,
+            mimeType: mimeType,
+            assetID: assetID,
+            remoteURL: remoteURL
+        )
+    }
+}
+
+private struct PixaTemplateDraft: Codable {
+    let texts: [String: String]
+    let references: [String: PixaStoredDraftReference]
+    let aspectRatio: String
+    let resolution: String
+    let promoMarkEnabled: Bool
+    let recommendToGallery: Bool
+}
+
+@MainActor
+private enum PixaTemplateDraftStorage {
+    private static let fileManager = FileManager.default
+
+    private static var directory: URL {
+        fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "PixaRivoTemplateDrafts", directoryHint: .isDirectory)
+    }
+
+    private static func fileURL(userID: String, templateID: String) -> URL {
+        let key = Data("\(userID):\(templateID)".utf8)
+        let name = SHA256.hash(data: key).map { String(format: "%02x", $0) }.joined()
+        return directory.appending(path: "\(name).json")
+    }
+
+    static func load(userID: String, templateID: String) -> PixaTemplateDraft? {
+        let url = fileURL(userID: userID, templateID: templateID)
+        guard let data = try? Data(contentsOf: url),
+              let draft = try? JSONDecoder().decode(PixaTemplateDraft.self, from: data) else {
+            return nil
+        }
+        return draft
+    }
+
+    static func save(_ draft: PixaTemplateDraft, userID: String, templateID: String) {
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            var directoryURL = directory
+            var resourceValues = URLResourceValues()
+            resourceValues.isExcludedFromBackup = true
+            try directoryURL.setResourceValues(resourceValues)
+            let url = fileURL(userID: userID, templateID: templateID)
+            try JSONEncoder().encode(draft).write(to: url, options: .atomic)
+            try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
+        } catch {
+            // 草稿写入失败不应阻断当前创作。
+        }
+    }
+
+    static func remove(userID: String, templateID: String) {
+        try? fileManager.removeItem(at: fileURL(userID: userID, templateID: templateID))
+    }
 }
 
 private enum PixaAspectRatioGroup: CaseIterable {
