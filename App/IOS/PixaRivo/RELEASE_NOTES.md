@@ -19,13 +19,15 @@ Halloween templates are here! Add photos and text to create posters and social g
 
 ### 简体中文
 
-- 分享公开模板到 X 时可显示图片预览；分享案例时可附上标题、标签及模板与作品对比图，作品详情也可快捷分享图片与标题。
+- 分享公开模板到 X 时可显示图片预览；分享案例时可附上标题、标签及模板与作品对比图，作品详情底部也可快捷分享图片与标题。
 - 编辑模板时会自动保存未完成的内容，重新打开同一模板可继续创作。
+- 登录失败时会显示更准确的提示，作品图片和列表显示也更加稳定。
 
 ### English (U.S.)
 
-- Share public templates with an image preview on X, gallery creations with a title, tags, and a template-to-result comparison image, and work images directly from their detail pages.
+- Share public templates with an image preview on X, gallery creations with a title, tags, and a template-to-result comparison image, and work images with titles from a button at the bottom of each work detail page.
 - Unfinished template edits are saved automatically, so you can continue when you reopen the same template.
+- Sign-in errors now show clearer messages, and work images and lists display more reliably.
 
 ## 1.3.0 — 2026-10-26 (Build 待确认) — 已发布
 
