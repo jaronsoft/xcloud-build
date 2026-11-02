@@ -4732,6 +4732,16 @@ private struct ParentSchoolOverviewSheet: View {
         state.localizedLabel(zh: zh)
     }
 
+    private func scheduleFactState(_ facts: [ParentScheduleOfficialFactDTO]) -> SchoolProfileDataState {
+        let states = facts.compactMap { SchoolProfileDataState.explicitServerStatus($0.applicabilityStatus) }
+        if states.contains(.pendingVerification) { return .pendingVerification }
+        if states.contains(.available) { return .available }
+        if states.contains(.notApplicable) { return .notApplicable }
+        if states.contains(.notConfigured) { return .notConfigured }
+        if states.contains(.error) { return .error }
+        return .notAvailable
+    }
+
     private func sourcesAndVerificationSection(overview: ParentSchoolOverviewDTO) -> some View {
         let schedules = overview.bellSchedules ?? []
         let attendance = overview.attendance
@@ -4758,27 +4768,12 @@ private struct ParentSchoolOverviewSheet: View {
                                 detail: zh ? "此模板未返回独立官方事实。" : "No separate official facts were returned for this template."
                             )
                         } else {
-                            let states = facts.compactMap { SchoolProfileDataState.explicitServerStatus($0.applicabilityStatus) }
-                            let state: SchoolProfileDataState
-                            if states.contains(.pendingVerification) {
-                                state = .pendingVerification
-                            } else if states.contains(.available) {
-                                state = .available
-                            } else if states.contains(.notApplicable) {
-                                state = .notApplicable
-                            } else if states.contains(.notConfigured) {
-                                state = .notConfigured
-                            } else if states.contains(.error) {
-                                state = .error
-                            } else {
-                                state = .notAvailable
-                            }
                             profileStatusRow(
                                 title: zh ? "适用范围" : "Applicability",
-                                state: state,
-                                detail: states.isEmpty
-                                    ? (zh ? "API 未返回核验状态；官方事实仍保留其原始适用范围。" : "The API returned no verification status; the official fact retains its original scope.")
-                                    : (zh ? "官方事实按其日期、年级和轨道范围展示。" : "Official facts retain their returned date, grade, and track scope.")
+                                state: scheduleFactState(facts),
+                                detail: facts.contains { SchoolProfileDataState.explicitServerStatus($0.applicabilityStatus) != nil }
+                                    ? (zh ? "官方事实按其日期、年级和轨道范围展示。" : "Official facts retain their returned date, grade, and track scope.")
+                                    : (zh ? "API 未返回核验状态；官方事实仍保留其原始适用范围。" : "The API returned no verification status; the official fact retains its original scope.")
                             )
                         }
                         if let source = externalWebURL(schedule.sourceUrl) {
