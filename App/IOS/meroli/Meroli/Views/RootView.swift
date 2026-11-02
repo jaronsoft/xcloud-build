@@ -4747,7 +4747,7 @@ private struct ParentSchoolOverviewSheet: View {
                     detail: zh ? "家长 API 未返回作息模板或来源记录。" : "The parent API returned no schedule template or source record."
                 )
             } else {
-                ForEach(schedules, id: \.id) { schedule in
+                ForEach(schedules, id: \ParentBellScheduleDTO.id) { (schedule: ParentBellScheduleDTO) in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(schedule.name).font(.subheadline.weight(.medium)).foregroundStyle(MeroliColor.ink)
                         let facts = schedule.officialFacts ?? []
@@ -5591,7 +5591,7 @@ private struct ParentFullBellScheduleSheet: View {
                     Text(schoolName)
                         .font(.system(.title2, design: .serif, weight: .bold))
                         .foregroundStyle(MeroliColor.ink)
-                    ForEach(schedules, id: \.id) { schedule in
+                    ForEach(schedules, id: \ParentBellScheduleDTO.id) { (schedule: ParentBellScheduleDTO) in
                         VStack(alignment: .leading, spacing: 14) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(categoryLabel(schedule.scheduleCategory))
