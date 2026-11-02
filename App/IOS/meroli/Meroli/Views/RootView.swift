@@ -1836,7 +1836,38 @@ private struct CalendarScreen: View {
     @State private var selectedEvent: ParentEventDTO?
     @State private var showsPersonalEventEditor = false
     @AppStorage("meroli.calendar.displayMode") private var displayMode = "month"
+    let schoolId: String?
+    let schoolName: String?
+
+    init(schoolId: String? = nil, schoolName: String? = nil) {
+        self.schoolId = schoolId
+        self.schoolName = schoolName
+    }
+
     private var zh: Bool { session.usesChinese }
+    private var calendarChildren: [ChildDTO] {
+        guard let schoolId else { return session.children }
+        let currentChildIds = Set(session.enrollments
+            .filter { $0.schoolId == schoolId && $0.isCurrent }
+            .map(\.childId))
+        return session.children.filter { currentChildIds.contains($0.id) }
+    }
+
+    private var selectedSchoolYear: SchoolYearDTO? {
+        guard let schoolId, !selectedChildId.isEmpty,
+              let enrollment = session.enrollments.first(where: {
+                  $0.childId == selectedChildId && $0.schoolId == schoolId && $0.isCurrent
+              }) else { return nil }
+        return session.schoolYears.first(where: { $0.id == enrollment.schoolYearId })
+    }
+
+    private var schoolYearBounds: (Date, Date)? {
+        guard schoolId != nil, let selectedSchoolYear,
+              let start = schoolYearDate(selectedSchoolYear.startDate),
+              let end = schoolYearDate(selectedSchoolYear.endDate), start <= end else { return nil }
+        return (start, end)
+    }
+
     private var schoolCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = session.schoolTimezone(for: selectedChildId.isEmpty ? nil : selectedChildId)
@@ -1851,14 +1882,33 @@ private struct CalendarScreen: View {
         formatter.dateFormat = zh ? "yyyy年M月" : "MMMM yyyy"
         return formatter.string(from: month)
     }
-    private var range: (Date, Date) {
+    private var range: (Date, Date)? {
         let components = schoolCalendar.dateComponents([.year, .month], from: month)
         let start = schoolCalendar.date(from: components) ?? month
         var next = DateComponents()
         next.month = 1
         next.day = -1
         let end = schoolCalendar.date(byAdding: next, to: start) ?? start
+        if schoolId != nil {
+            guard let (schoolYearStart, schoolYearEnd) = schoolYearBounds else { return nil }
+            let scopedStart = max(start, schoolYearStart)
+            let scopedEnd = min(end, schoolYearEnd)
+            guard scopedStart <= scopedEnd else { return nil }
+            return (scopedStart, scopedEnd)
+        }
         return (start, end)
+    }
+
+    private var canMoveToPreviousMonth: Bool {
+        guard schoolId != nil, let (start, _) = schoolYearBounds,
+              let previous = schoolCalendar.date(byAdding: .month, value: -1, to: month) else { return true }
+        return monthStart(previous) >= monthStart(start)
+    }
+
+    private var canMoveToNextMonth: Bool {
+        guard schoolId != nil, let (_, end) = schoolYearBounds,
+              let next = schoolCalendar.date(byAdding: .month, value: 1, to: month) else { return true }
+        return monthStart(next) <= monthStart(end)
     }
 
     private var visibleCalendarEvents: [ParentEventDTO] {
@@ -1906,11 +1956,22 @@ private struct CalendarScreen: View {
                 HStack {
                     Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
                         .accessibilityLabel(zh ? "上个月" : "Previous month")
+                        .disabled(!canMoveToPreviousMonth)
                     Spacer()
-                    Text(monthTitle).font(.system(.title2, design: .serif, weight: .bold)).foregroundStyle(HomePalette.primary)
+                    VStack(spacing: 2) {
+                        Text(monthTitle).font(.system(.title2, design: .serif, weight: .bold)).foregroundStyle(HomePalette.primary)
+                        if let schoolId, let schoolName {
+                            Text(schoolName).font(.caption).foregroundStyle(MeroliColor.muted)
+                                .accessibilityLabel(zh ? "学校日历：\(schoolName)" : "School calendar: \(schoolName)")
+                            if let selectedSchoolYear {
+                                Text(selectedSchoolYear.name).font(.caption2).foregroundStyle(MeroliColor.muted)
+                            }
+                        }
+                    }
                     Spacer()
                     Button { shiftMonth(1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
                         .accessibilityLabel(zh ? "下个月" : "Next month")
+                        .disabled(!canMoveToNextMonth)
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 10)
@@ -1922,18 +1983,29 @@ private struct CalendarScreen: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal, 18)
 
-                if session.children.count > 1 {
-                    MeroliChildFilter(children: session.children, enrollments: session.enrollments, schools: session.schools, selection: $selectedChildId, zh: zh)
+                if calendarChildren.count > 1 {
+                    MeroliChildFilter(children: calendarChildren, enrollments: session.enrollments, schools: session.schools, selection: $selectedChildId, zh: zh)
                     .padding(.horizontal, 19)
                     .padding(.top, 8)
                     .onChange(of: selectedChildId) { _, _ in
                         month = monthStart(.now)
-                        selectedDate = schoolCalendar.startOfDay(for: .now)
+                        normalizeMonthToSchoolYear()
+                        selectedDate = dateWithinSchoolYear(.now)
                         Task { await load() }
                     }
                 }
 
-                if session.calendarErrorMessage != nil && !session.calendarEvents.isEmpty {
+                if schoolId != nil && calendarChildren.isEmpty {
+                    ContentUnavailableView(zh ? "没有当前在读学生" : "No current student enrollment",
+                        systemImage: "person.crop.circle.badge.questionmark",
+                        description: Text(zh ? "无法按学生和学年筛选这所学校的日历。" : "A student enrollment and school year are required to scope this calendar."))
+                        .frame(maxWidth: .infinity, minHeight: 220)
+                } else if schoolId != nil && schoolYearBounds == nil {
+                    ContentUnavailableView(zh ? "学年日期暂不可用" : "School-year dates unavailable",
+                        systemImage: "calendar.badge.exclamationmark",
+                        description: Text(zh ? "服务端尚未返回此学生当前学年的日期，日历查询未执行。" : "The current enrollment's school-year dates were not returned; no calendar query was sent."))
+                        .frame(maxWidth: .infinity, minHeight: 220)
+                } else if session.calendarErrorMessage != nil && !session.calendarEvents.isEmpty {
                     Label(zh ? "离线 · 显示上次成功加载的数据" : "Offline · showing the last successfully loaded data", systemImage: "wifi.slash")
                         .font(.caption)
                         .foregroundStyle(MeroliColor.muted)
@@ -2047,7 +2119,7 @@ private struct CalendarScreen: View {
                 Color.clear.frame(height: 12).accessibilityHidden(true)
             }
             .background(MeroliColor.canvas)
-            .navigationTitle(zh ? "日历" : "Calendar")
+            .navigationTitle(schoolId == nil ? (zh ? "日历" : "Calendar") : (zh ? "学校日历" : "School calendar"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -2057,13 +2129,17 @@ private struct CalendarScreen: View {
                         }
                         Button(zh ? "今天" : "Today") {
                             month = monthStart(.now)
-                            selectedDate = schoolCalendar.startOfDay(for: .now)
+                            normalizeMonthToSchoolYear()
+                            selectedDate = dateWithinSchoolYear(.now)
                             Task { await load() }
                         }
                     }
                 }
             }
-            .task { await load() }
+            .task {
+                prepareSchoolScope()
+                await load()
+            }
             .refreshable { await load(policy: .forceRefresh) }
             .onChange(of: scenePhase) { _, phase in handleCalendarScenePhaseChange(phase) }
             .sheet(item: $selectedEvent) { event in EventDetailSheet(event: event, zh: zh) }
@@ -2077,8 +2153,10 @@ private struct CalendarScreen: View {
                 if !selectedChildId.isEmpty && !childIds.contains(selectedChildId) {
                     selectedChildId = ""
                 }
+                prepareSchoolScope()
                 month = monthStart(.now)
-                selectedDate = schoolCalendar.startOfDay(for: .now)
+                normalizeMonthToSchoolYear()
+                selectedDate = dateWithinSchoolYear(.now)
                 Task { await load() }
             }
         }
@@ -2086,6 +2164,7 @@ private struct CalendarScreen: View {
 
     private func shiftMonth(_ amount: Int) {
         month = schoolCalendar.date(byAdding: .month, value: amount, to: month) ?? month
+        normalizeMonthToSchoolYear()
         selectedDate = monthStart(month)
         Task { await load() }
     }
@@ -2096,13 +2175,48 @@ private struct CalendarScreen: View {
     }
 
     private func load(policy: CalendarLoadPolicy = .cacheFirst) async {
-        let (start, end) = range
+        guard let (start, end) = range else { return }
         await session.loadCalendar(
             from: start,
             to: end,
             childId: selectedChildId.isEmpty ? nil : selectedChildId,
+            schoolId: schoolId,
             policy: policy
         )
+    }
+
+    private func prepareSchoolScope() {
+        guard let schoolId else { return }
+        let selectedChildIsEnrolled = session.enrollments.contains(where: {
+            $0.childId == selectedChildId && $0.schoolId == schoolId && $0.isCurrent
+        })
+        if !selectedChildIsEnrolled {
+            selectedChildId = calendarChildren.first?.id ?? ""
+        }
+        normalizeMonthToSchoolYear()
+    }
+
+    private func normalizeMonthToSchoolYear() {
+        guard let (start, end) = schoolYearBounds else { return }
+        if monthStart(month) < monthStart(start) { month = monthStart(start) }
+        if monthStart(month) > monthStart(end) { month = monthStart(end) }
+    }
+
+    private func dateWithinSchoolYear(_ value: Date) -> Date {
+        let date = schoolCalendar.startOfDay(for: value)
+        guard let (start, end) = schoolYearBounds else { return date }
+        if date < start { return schoolCalendar.startOfDay(for: start) }
+        if date > end { return schoolCalendar.startOfDay(for: end) }
+        return date
+    }
+
+    private func schoolYearDate(_ value: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.calendar = schoolCalendar
+        formatter.timeZone = schoolCalendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: String(value.prefix(10)))
     }
 
     private func monthStart(_ date: Date) -> Date {
@@ -4178,6 +4292,7 @@ private struct ParentSchoolOverviewSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showsFullBellSchedule = false
     @State private var showsFullPerformance = false
+    @State private var showsSchoolCalendar = false
     @State private var editingScheduleChild: ChildDTO?
     @State private var selectedProgramProfiles: [String: ScheduleProfileDTO] = [:]
     let schoolId: String
@@ -4231,11 +4346,11 @@ private struct ParentSchoolOverviewSheet: View {
                             Text(zh ? "今日适用的作息" : "Today's applicable schedule")
                                 .font(.headline).foregroundStyle(MeroliColor.ink)
                             if applicableChildren.isEmpty {
-                                Text(zh
-                                    ? "当前家庭没有在读孩子关联到此学校。"
-                                    : "No current child in your family is enrolled at this school.")
-                                    .font(.subheadline).foregroundStyle(MeroliColor.muted)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                profileStatusRow(
+                                    title: zh ? "学生范围" : "Student scope",
+                                    state: .notApplicable,
+                                    detail: zh ? "当前家庭没有在读孩子关联到此学校。" : "No current child in your family is enrolled at this school."
+                                )
                             } else {
                                 ForEach(applicableChildren) { child in
                                     let schedule = overview.dailySchedules?.first(where: { $0.childId == child.childId })
@@ -4262,8 +4377,11 @@ private struct ParentSchoolOverviewSheet: View {
                                                     .font(.caption).foregroundStyle(MeroliColor.muted)
                                             }
                                         } else {
-                                            Text(zh ? "适用作息暂不可用。" : "Applicable schedule details are not available.")
-                                                .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                            profileStatusRow(
+                                                title: zh ? "今日作息" : "Today's schedule",
+                                                state: .notAvailable,
+                                                detail: zh ? "Resolver 未返回此孩子的当日作息。" : "The Resolver returned no daily schedule for this child."
+                                            )
                                         }
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -4292,6 +4410,12 @@ private struct ParentSchoolOverviewSheet: View {
                                             if let profile = selectedProgramProfiles[child.childId] {
                                                 Text(selectedProgramsSummary(profile))
                                                     .font(.caption).foregroundStyle(MeroliColor.muted)
+                                                if let state = SchoolProfileDataState.programSelection(profile.selectionStatus) {
+                                                    profileStatusRow(
+                                                        title: zh ? "项目选择状态" : "Program selection status",
+                                                        state: state
+                                                    )
+                                                }
                                             }
                                             if let familyChild = session.children.first(where: { $0.id == child.childId }),
                                                session.enrollments.contains(where: { $0.childId == child.childId && $0.schoolId == schoolId && $0.isCurrent }) {
@@ -4311,26 +4435,78 @@ private struct ParentSchoolOverviewSheet: View {
                                 .background(MeroliColor.brandPale, in: RoundedRectangle(cornerRadius: 16))
                                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                             }
-                            if !bellSchedules.isEmpty {
-                                Button { showsFullBellSchedule = true } label: {
-                                    HStack {
-                                        Label(zh ? "查看完整作息表" : "View full bell schedule", systemImage: "list.bullet.rectangle")
-                                        Spacer()
-                                        Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(zh ? "完整作息表" : "Full bell schedule")
+                                    .font(.headline).foregroundStyle(MeroliColor.ink)
+                                if bellSchedules.isEmpty {
+                                    profileStatusRow(
+                                        title: zh ? "官方课表" : "Official schedule",
+                                        state: .notAvailable,
+                                        detail: zh ? "家长 API 当前没有返回作息模板。" : "The parent API returned no schedule templates."
+                                    )
+                                } else {
+                                    Button { showsFullBellSchedule = true } label: {
+                                        HStack {
+                                            Label(zh ? "查看完整作息表" : "View full bell schedule", systemImage: "list.bullet.rectangle")
+                                            Spacer()
+                                            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                                        }
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(MeroliColor.brand)
+                                        .padding(16)
+                                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                                        .background(MeroliColor.brandPale, in: RoundedRectangle(cornerRadius: 16))
+                                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                                     }
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(MeroliColor.brand)
-                                    .padding(16)
-                                    .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-                                    .background(MeroliColor.brandPale, in: RoundedRectangle(cornerRadius: 16))
-                                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityElement(children: .combine)
-                                .sheet(isPresented: $showsFullBellSchedule) {
-                                    ParentFullBellScheduleSheet(schoolName: overview.schoolName, schedules: bellSchedules)
+                                    .buttonStyle(.plain)
+                                    .accessibilityElement(children: .combine)
+                                    .sheet(isPresented: $showsFullBellSchedule) {
+                                        ParentFullBellScheduleSheet(schoolName: overview.schoolName, schedules: bellSchedules)
+                                    }
                                 }
                             }
+                            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
+
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(zh ? "学校日历" : "School calendar")
+                                    .font(.headline).foregroundStyle(MeroliColor.ink)
+                                Text(zh
+                                    ? "按孩子当前入学的学年和所选月份查看这所学校的活动。"
+                                    : "View this school's events for a selected month, scoped to the child's current enrollment and school year.")
+                                    .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if applicableChildren.isEmpty {
+                                    profileStatusRow(
+                                        title: zh ? "学生范围" : "Student scope",
+                                        state: .notApplicable,
+                                        detail: zh ? "当前没有关联到此校的在读孩子。" : "No current enrolled child is linked to this school."
+                                    )
+                                } else {
+                                    Button { showsSchoolCalendar = true } label: {
+                                        HStack {
+                                            Label(zh ? "打开学校日历" : "Open school calendar", systemImage: "calendar")
+                                            Spacer()
+                                            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                                        }
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(MeroliColor.brand)
+                                        .padding(16)
+                                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                                        .background(MeroliColor.brandPale, in: RoundedRectangle(cornerRadius: 16))
+                                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .sheet(isPresented: $showsSchoolCalendar) {
+                                        CalendarScreen(schoolId: schoolId, schoolName: overview.schoolName)
+                                    }
+                                }
+                            }
+                            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
+
                         if let attendance = overview.attendance {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text(zh ? "考勤与请假" : "Attendance and absence reporting").font(.headline).foregroundStyle(MeroliColor.ink)
@@ -4373,8 +4549,21 @@ private struct ParentSchoolOverviewSheet: View {
                             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                             .background(.white, in: RoundedRectangle(cornerRadius: 16))
                             .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
-                        }
-                        if let performance = overview.performance {
+                            } else {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(zh ? "考勤与请假" : "Attendance and absence reporting")
+                                        .font(.headline).foregroundStyle(MeroliColor.ink)
+                                    profileStatusRow(
+                                        title: zh ? "学校政策" : "School policy",
+                                        state: .notAvailable,
+                                        detail: zh ? "家长 API 未返回此校的考勤政策。" : "The parent API returned no attendance policy for this school."
+                                    )
+                                }
+                                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                                .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
+                            }
+                        if let performance = session.schoolPerformanceHistory?.cycles.first {
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack(alignment: .firstTextBaseline) {
                                     Text(zh ? "学校表现" : "School performance").font(.headline).foregroundStyle(MeroliColor.ink)
@@ -4441,20 +4630,33 @@ private struct ParentSchoolOverviewSheet: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(zh ? "学校表现" : "School performance")
                                     .font(.headline).foregroundStyle(MeroliColor.ink)
-                                Text(zh ? "官方学校表现数据暂不可用。" : "Official school performance data is not available.")
-                                    .font(.subheadline).foregroundStyle(MeroliColor.muted)
+                                if session.isLoadingSchoolPerformanceHistory {
+                                    profileStatusRow(title: zh ? "官方快照" : "Official snapshot", state: .loading)
+                                } else if session.schoolPerformanceHistoryErrorMessage != nil {
+                                    profileStatusRow(
+                                        title: zh ? "官方快照" : "Official snapshot",
+                                        state: .error,
+                                        detail: zh ? "表现数据暂时无法加载。" : "Performance data could not be loaded."
+                                    )
+                                    Button {
+                                        Task { await session.loadSchoolPerformanceHistory(schoolId: schoolId) }
+                                    } label: {
+                                        Label(zh ? "重试" : "Retry", systemImage: "arrow.clockwise")
+                                            .font(.subheadline.weight(.semibold))
+                                    }
+                                } else {
+                                    profileStatusRow(
+                                        title: zh ? "官方快照" : "Official snapshot",
+                                        state: .notAvailable,
+                                        detail: zh ? "当前没有已发布的学校表现快照。" : "No published school performance snapshot is available."
+                                    )
+                                }
                             }
                             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                             .background(.white, in: RoundedRectangle(cornerRadius: 16))
                             .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
                         }
-                        if overview.attendance == nil && overview.performance == nil {
-                            Text(zh ? "学校尚未发布考勤或表现资料。" : "The school has not published attendance or performance information yet.")
-                                .font(.subheadline).foregroundStyle(MeroliColor.muted)
-                                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                                .background(.white, in: RoundedRectangle(cornerRadius: 16))
-                                .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
-                        }
+                        sourcesAndVerificationSection(overview: overview)
                     } else if let error = session.schoolOverviewErrorMessage ?? session.errorMessage {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(zh ? "学校资料暂时无法加载" : "School information could not be loaded")
@@ -4509,6 +4711,143 @@ private struct ParentSchoolOverviewSheet: View {
             }
         }
         selectedProgramProfiles = profiles
+    }
+
+    private func profileStatusRow(title: String, state: SchoolProfileDataState, detail: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title).font(.subheadline.weight(.medium)).foregroundStyle(MeroliColor.ink)
+                Spacer(minLength: 8)
+                Text(profileStateLabel(state))
+                    .font(.caption.weight(.semibold)).foregroundStyle(state == .error ? MeroliColor.coral : MeroliColor.muted)
+            }
+            if let detail, !detail.isEmpty {
+                Text(detail).font(.caption).foregroundStyle(MeroliColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func profileStateLabel(_ state: SchoolProfileDataState) -> String {
+        state.localizedLabel(zh: zh)
+    }
+
+    private func sourcesAndVerificationSection(overview: ParentSchoolOverviewDTO) -> some View {
+        let schedules = overview.bellSchedules ?? []
+        let attendance = overview.attendance
+        let performance = session.schoolPerformanceHistory?.cycles.first
+        return VStack(alignment: .leading, spacing: 12) {
+            Text(zh ? "数据来源与核验" : "Data sources and verification")
+                .font(.headline).foregroundStyle(MeroliColor.ink)
+
+            if schedules.isEmpty {
+                profileStatusRow(
+                    title: zh ? "作息来源" : "Schedule sources",
+                    state: .notAvailable,
+                    detail: zh ? "家长 API 未返回作息模板或来源记录。" : "The parent API returned no schedule template or source record."
+                )
+            } else {
+                ForEach(schedules) { schedule in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(schedule.name).font(.subheadline.weight(.medium)).foregroundStyle(MeroliColor.ink)
+                        let facts = schedule.officialFacts ?? []
+                        if facts.isEmpty {
+                            profileStatusRow(
+                                title: zh ? "官方事实" : "Official facts",
+                                state: .notAvailable,
+                                detail: zh ? "此模板未返回独立官方事实。" : "No separate official facts were returned for this template."
+                            )
+                        } else {
+                            let states = facts.compactMap { SchoolProfileDataState.explicitServerStatus($0.applicabilityStatus) }
+                            let state: SchoolProfileDataState
+                            if states.contains(.pendingVerification) {
+                                state = .pendingVerification
+                            } else if states.contains(.available) {
+                                state = .available
+                            } else if states.contains(.notApplicable) {
+                                state = .notApplicable
+                            } else if states.contains(.notConfigured) {
+                                state = .notConfigured
+                            } else if states.contains(.error) {
+                                state = .error
+                            } else {
+                                state = .notAvailable
+                            }
+                            profileStatusRow(
+                                title: zh ? "适用范围" : "Applicability",
+                                state: state,
+                                detail: states.isEmpty
+                                    ? (zh ? "API 未返回核验状态；官方事实仍保留其原始适用范围。" : "The API returned no verification status; the official fact retains its original scope.")
+                                    : (zh ? "官方事实按其日期、年级和轨道范围展示。" : "Official facts retain their returned date, grade, and track scope.")
+                            )
+                        }
+                        if let source = externalWebURL(schedule.sourceUrl) {
+                            Link(destination: source) {
+                                Label(zh ? "打开作息官方来源" : "Open schedule source", systemImage: "arrow.up.right.square")
+                            }
+                            .font(.caption.weight(.medium))
+                        } else {
+                            Text(zh ? "API 未返回此作息的来源链接。" : "The API did not return a source URL for this schedule.")
+                                .font(.caption).foregroundStyle(MeroliColor.muted)
+                        }
+                    }
+                    if schedule.id != schedules.last?.id { Divider().overlay(MeroliColor.line) }
+                }
+            }
+
+            if let attendance {
+                VStack(alignment: .leading, spacing: 5) {
+                    profileStatusRow(
+                        title: zh ? "考勤政策核验" : "Attendance policy verification",
+                        state: .available,
+                        detail: (zh ? "最后核实：" : "Last verified: ") + String(attendance.lastVerifiedAt.prefix(10))
+                    )
+                    Text(zh ? "服务端未提供独立 Source 记录；办理链接仅用于学校请假流程。" : "The API provides no separate source record; the linked page is the school's attendance procedure.")
+                        .font(.caption).foregroundStyle(MeroliColor.muted)
+                    if let url = externalWebURL(attendance.attendanceUrl) {
+                        Link(destination: url) { Label(zh ? "打开考勤办理链接" : "Open attendance procedure", systemImage: "arrow.up.right.square") }
+                            .font(.caption.weight(.medium))
+                    }
+                }
+            } else {
+                profileStatusRow(title: zh ? "考勤来源" : "Attendance source", state: .notAvailable)
+            }
+
+            if let performance {
+                let hasPerformanceSource = !performance.sourceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || externalWebURL(performance.sourceUrl) != nil
+                VStack(alignment: .leading, spacing: 5) {
+                    profileStatusRow(
+                        title: zh ? "表现快照来源" : "Performance snapshot source",
+                        state: hasPerformanceSource ? .available : .notAvailable,
+                        detail: "\(performance.sourceName) · \(performance.reportingCycle) · \(performance.academicYear)"
+                    )
+                    if let updated = performance.lastUpdatedAt, !updated.isEmpty {
+                        Text((zh ? "数据更新：" : "Updated: ") + String(updated.prefix(10)))
+                            .font(.caption).foregroundStyle(MeroliColor.muted)
+                    }
+                    if let url = externalWebURL(performance.sourceUrl) {
+                        Link(destination: url) { Label(zh ? "查看表现官方来源" : "View performance source", systemImage: "arrow.up.right.square") }
+                            .font(.caption.weight(.medium))
+                    } else {
+                        Text(zh ? "快照未返回来源链接。" : "No source URL was returned for this snapshot.")
+                            .font(.caption).foregroundStyle(MeroliColor.muted)
+                    }
+                }
+            } else if session.isLoadingSchoolPerformanceHistory {
+                profileStatusRow(title: zh ? "表现快照来源" : "Performance snapshot source", state: .loading)
+            } else if session.schoolPerformanceHistoryErrorMessage != nil {
+                profileStatusRow(title: zh ? "表现快照来源" : "Performance snapshot source", state: .error)
+            } else {
+                profileStatusRow(title: zh ? "表现快照来源" : "Performance snapshot source", state: .notAvailable)
+            }
+
+            Text(zh ? "日历活动的来源与更新时间显示在各活动详情中。" : "Calendar event sources and update dates appear in each event's details.")
+                .font(.caption).foregroundStyle(MeroliColor.muted)
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(MeroliColor.schoolDetailLine, lineWidth: 1))
     }
 
     private func selectedProgramsSummary(_ profile: ScheduleProfileDTO) -> String {
@@ -5267,6 +5606,49 @@ private struct ParentFullBellScheduleSheet: View {
                                         .font(.caption).foregroundStyle(MeroliColor.muted)
                                 }
                             }
+                            if let facts = schedule.officialFacts, !facts.isEmpty {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(zh ? "官方作息信息" : "Official schedule facts")
+                                        .font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
+                                    ForEach(facts) { fact in
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(zh && !(fact.labelZh ?? "").isEmpty ? fact.labelZh! : (fact.labelEn ?? ""))
+                                                .font(.subheadline).foregroundStyle(MeroliColor.ink)
+                                            if let value = scheduleFactValue(fact) {
+                                                Text(value).font(.caption.monospacedDigit()).foregroundStyle(MeroliColor.muted)
+                                            }
+                                            if let scope = scheduleFactScope(fact), !scope.isEmpty {
+                                                Text(scope).font(.caption2).foregroundStyle(MeroliColor.muted)
+                                            }
+                                            if let state = SchoolProfileDataState.explicitServerStatus(fact.applicabilityStatus) {
+                                                if state != .available {
+                                                    Text(zh ? "适用范围：\(state.localizedLabel(zh: true))；不会用于推断今日课表。" : "Applicability: \(state.localizedLabel(zh: false)); it is not used to infer today's schedule.")
+                                                        .font(.caption2).foregroundStyle(MeroliColor.muted)
+                                                }
+                                            } else {
+                                                Text(zh ? "服务端未返回核验状态，不用于推断今日课表。" : "No verification status was returned; this fact is not used to infer today's schedule.")
+                                                    .font(.caption2).foregroundStyle(MeroliColor.muted)
+                                            }
+                                            if let location = fact.evidenceLocation, !location.isEmpty {
+                                                Text(location).font(.caption2).foregroundStyle(MeroliColor.muted)
+                                            }
+                                        }
+                                        .padding(.vertical, 5)
+                                        if fact.id != facts.last?.id { Divider().overlay(MeroliColor.line) }
+                                    }
+                                }
+                                .padding(13)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(MeroliColor.surface2, in: RoundedRectangle(cornerRadius: 13))
+                            }
+                            if let source = schedule.sourceUrl,
+                               let url = URL(string: source), url.scheme == "https" {
+                                Link(zh ? "查看官方作息来源" : "View official schedule source", destination: url)
+                                    .font(.caption.weight(.medium))
+                            } else {
+                                Text(zh ? "此作息没有可用的官方来源链接。" : "No usable official source link was returned for this schedule.")
+                                    .font(.caption).foregroundStyle(MeroliColor.muted)
+                            }
                             ForEach(schedule.variants) { variant in
                                 VStack(alignment: .leading, spacing: 10) {
                                     Text(variant.name).font(.subheadline.weight(.semibold)).foregroundStyle(MeroliColor.ink)
@@ -5363,6 +5745,35 @@ private struct ParentFullBellScheduleSheet: View {
         case "REGULAR": return MeroliColor.brandPale
         default: return MeroliColor.surface2
         }
+    }
+
+    private func scheduleFactValue(_ fact: ParentScheduleOfficialFactDTO) -> String? {
+        if let time = fact.time { return time }
+        if let start = fact.startTime, let end = fact.endTime { return "\(start)–\(end)" }
+        if let date = fact.date { return date }
+        if let start = fact.dateStart, let end = fact.dateEnd { return "\(start) – \(end)" }
+        return nil
+    }
+
+    private func scheduleFactScope(_ fact: ParentScheduleOfficialFactDTO) -> String? {
+        var parts: [String] = []
+        if let grades = fact.gradeScope, !grades.isEmpty {
+            parts.append((zh ? "年级 " : "Grades ") + grades.joined(separator: ", "))
+        }
+        if let weekdays = fact.weekdays, !weekdays.isEmpty {
+            let names = weekdays.map { day in
+                let en = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                let zhNames = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+                return (1...7).contains(day) ? (zh ? zhNames[day] : en[day]) : String(day)
+            }
+            parts.append(names.joined(separator: zh ? "、" : ", "))
+        }
+        if let session = fact.session, !session.isEmpty { parts.append(session) }
+        if let category = fact.scheduleCategory, !category.isEmpty { parts.append(categoryLabel(category)) }
+        if let singleDate = fact.date, !singleDate.isEmpty { parts.append(singleDate) }
+        if let start = fact.dateStart, let end = fact.dateEnd { parts.append("\(start) – \(end)") }
+        if fact.applicabilityStatus == "UNCONFIRMED" { parts.append(zh ? "适用范围待核实" : "Applicability unverified") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

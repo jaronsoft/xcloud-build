@@ -15,6 +15,7 @@
 		C20000000000000000000006 /* ParentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000010 /* ParentModels.swift */; };
 		C20000000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000011 /* Assets.xcassets */; };
 		C20000000000000000000008 /* MeroliCacheLifecyclePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000012 /* MeroliCacheLifecyclePolicy.swift */; };
+		C20000000000000000000009 /* SchoolProfileSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000013 /* SchoolProfileSupport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +31,7 @@
 		F10000000000000000000010 /* ParentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParentModels.swift; sourceTree = "<group>"; };
 		F10000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F10000000000000000000012 /* MeroliCacheLifecyclePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeroliCacheLifecycle/MeroliCacheLifecyclePolicy.swift; sourceTree = "<group>"; };
+		F10000000000000000000013 /* SchoolProfileSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/MeroliCacheLifecycle/SchoolProfileSupport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -121,6 +123,7 @@
 			isa = PBXGroup;
 			children = (
 				F10000000000000000000012 /* MeroliCacheLifecyclePolicy.swift */,
+				F10000000000000000000013 /* SchoolProfileSupport.swift */,
 			);
 			path = CacheLifecycle;
 			sourceTree = "<group>";
@@ -202,6 +205,7 @@
 				C20000000000000000000005 /* SessionStore.swift in Sources */,
 				C20000000000000000000006 /* ParentModels.swift in Sources */,
 				C20000000000000000000008 /* MeroliCacheLifecyclePolicy.swift in Sources */,
+				C20000000000000000000009 /* SchoolProfileSupport.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

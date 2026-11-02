@@ -111,6 +111,7 @@ enum HomeEventsLoadPolicy: Equatable {
 private struct CalendarSessionCacheKey: Hashable {
     let startDate: String
     let endDate: String
+    let schoolId: String?
     let childId: String?
     let language: String
     let userId: String
@@ -379,7 +380,7 @@ final class SessionStore {
     @ObservationIgnored private var futureSchedulesLoadGeneration = 0
     @ObservationIgnored private var schoolOverviewLoadGeneration = 0
     @ObservationIgnored private var performanceHistoryLoadGeneration = 0
-    @ObservationIgnored private var lastCalendarRequest: (start: Date, end: Date, childId: String?)?
+    @ObservationIgnored private var lastCalendarRequest: (start: Date, end: Date, schoolId: String?, childId: String?)?
     @ObservationIgnored private var lastHomeEventsRequest: (start: Date, end: Date, childId: String?)?
     @ObservationIgnored private var lastDailyScheduleDate: Date?
     @ObservationIgnored private var lastDailyScheduleChildId: String?
@@ -648,7 +649,7 @@ final class SessionStore {
             clearCalendarSessionCache(clearVisibleEvents: true)
             invalidateHomeEventsSessionCache(clearVisibleEvents: true)
             if let request = lastCalendarRequest {
-                await loadCalendar(from: request.start, to: request.end, childId: request.childId, policy: .forceRefresh)
+                await loadCalendar(from: request.start, to: request.end, childId: request.childId, schoolId: request.schoolId, policy: .forceRefresh)
             }
         }
     }
@@ -847,18 +848,30 @@ final class SessionStore {
         from startDate: Date,
         to endDate: Date,
         childId: String? = nil,
+        schoolId: String? = nil,
         policy: CalendarLoadPolicy = .cacheFirst
     ) async {
-        let cacheKey = calendarCacheKey(from: startDate, to: endDate, childId: childId)
-        var query = [
-            URLQueryItem(name: "start_date", value: schoolDateString(startDate, childId: childId)),
-            URLQueryItem(name: "end_date", value: schoolDateString(endDate, childId: childId))
-        ]
-        if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
-        let previousVisibleKey = lastCalendarRequest.map {
-            calendarCacheKey(from: $0.start, to: $0.end, childId: $0.childId)
+        if let schoolId, schoolId.isEmpty {
+            calendarEvents = []
+            calendarErrorMessage = usesChinese ? "学校范围无效，未发送日历请求。" : "Invalid school scope; no calendar request was sent."
+            isLoadingCalendar = false
+            isRefreshingCalendar = false
+            return
         }
-        lastCalendarRequest = (startDate, endDate, childId)
+        let cacheKey = calendarCacheKey(from: startDate, to: endDate, schoolId: schoolId, childId: childId)
+        let start = schoolDateString(startDate, childId: childId)
+        let end = schoolDateString(endDate, childId: childId)
+        var query: [URLQueryItem]
+        if let schoolId {
+            query = SchoolCalendarQuery.scopedItems(startDate: start, endDate: end, schoolId: schoolId, childId: childId)
+        } else {
+            query = [URLQueryItem(name: "start_date", value: start), URLQueryItem(name: "end_date", value: end)]
+            if let childId { query.append(URLQueryItem(name: "child_id", value: childId)) }
+        }
+        let previousVisibleKey = lastCalendarRequest.map {
+            calendarCacheKey(from: $0.start, to: $0.end, schoolId: $0.schoolId, childId: $0.childId)
+        }
+        lastCalendarRequest = (startDate, endDate, schoolId, childId)
         calendarLoadGeneration += 1
         let generation = calendarLoadGeneration
         let requestUserId = userId
@@ -937,10 +950,11 @@ final class SessionStore {
         }
     }
 
-    private func calendarCacheKey(from startDate: Date, to endDate: Date, childId: String?) -> CalendarSessionCacheKey {
+    private func calendarCacheKey(from startDate: Date, to endDate: Date, schoolId: String?, childId: String?) -> CalendarSessionCacheKey {
         CalendarSessionCacheKey(
             startDate: schoolDateString(startDate, childId: childId),
             endDate: schoolDateString(endDate, childId: childId),
+            schoolId: schoolId,
             childId: childId,
             language: language,
             userId: userId
@@ -1023,7 +1037,7 @@ final class SessionStore {
             invalidateCalendarSessionCache()
             invalidateHomeEventsSessionCache(clearVisibleEvents: false)
             if let request = lastCalendarRequest {
-                await loadCalendar(from: request.start, to: request.end, childId: request.childId, policy: .forceRefresh)
+                await loadCalendar(from: request.start, to: request.end, childId: request.childId, schoolId: request.schoolId, policy: .forceRefresh)
             }
             return true
         } catch {
@@ -2016,7 +2030,7 @@ final class SessionStore {
 
     private func reloadLocalizedContent() async {
         if let request = lastCalendarRequest {
-            await loadCalendar(from: request.start, to: request.end, childId: request.childId)
+            await loadCalendar(from: request.start, to: request.end, childId: request.childId, schoolId: request.schoolId)
         }
         if let request = lastHomeEventsRequest {
             await loadHomeEvents(from: request.start, to: request.end, childId: request.childId)

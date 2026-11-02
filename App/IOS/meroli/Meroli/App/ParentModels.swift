@@ -270,8 +270,31 @@ struct ParentBellScheduleDTO: Decodable, Identifiable {
     let scheduleCategory: String
     let effectiveFrom: String?
     let effectiveTo: String?
+    let sourceUrl: String?
     let variants: [ParentBellScheduleVariantDTO]
+    let officialFacts: [ParentScheduleOfficialFactDTO]?
     var id: String { "\(scheduleCategory)-\(name)" }
+}
+
+struct ParentScheduleOfficialFactDTO: Decodable, Identifiable {
+    let code: String?
+    let factType: String?
+    let labelEn: String?
+    let labelZh: String?
+    let time: String?
+    let startTime: String?
+    let endTime: String?
+    let gradeScope: [String]?
+    let weekdays: [Int]?
+    let session: String?
+    let scheduleCategory: String?
+    let date: String?
+    let dateStart: String?
+    let dateEnd: String?
+    let applicabilityStatus: String?
+    let evidenceLocation: String?
+    let evidenceText: String?
+    var id: String { [code, scheduleCategory, session, time, startTime, date, gradeScope?.joined(separator: ","), weekdays?.map { String($0) }.joined(separator: ",")].compactMap { $0 }.joined(separator: "-") }
 }
 
 struct ParentBellScheduleVariantDTO: Decodable, Identifiable {
