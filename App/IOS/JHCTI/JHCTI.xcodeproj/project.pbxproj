@@ -1,0 +1,958 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 71;
+	objects = {
+
+/* Begin PBXBuildFile section */
+        B6A600000000000000000001 /* ActivityRegistrationCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A600000000000000000002 /* ActivityRegistrationCard.swift */; };
+        B6A500000000000000000001 /* ActivityRegistrationFormSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A500000000000000000002 /* ActivityRegistrationFormSection.swift */; };
+        B69E00000000000000000001 /* ActivityDetailSessionSelectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69E00000000000000000002 /* ActivityDetailSessionSelectionSection.swift */; };
+        B69D00000000000000000001 /* NativeResourceBrowseMapControlsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69D00000000000000000002 /* NativeResourceBrowseMapControlsSection.swift */; };
+        B69C00000000000000000001 /* NativeResourceBrowseResultsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69C00000000000000000002 /* NativeResourceBrowseResultsSection.swift */; };
+        B69B00000000000000000001 /* NativeTicketSelectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69B00000000000000000002 /* NativeTicketSelectionSection.swift */; };
+        B69A00000000000000000001 /* NativeScenicRecoveryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69A00000000000000000002 /* NativeScenicRecoveryPanel.swift */; };
+        B69900000000000000000001 /* NativeResourceReservationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69900000000000000000002 /* NativeResourceReservationSheet.swift */; };
+        B69800000000000000000001 /* NativeTicketAttendeeFormSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69800000000000000000002 /* NativeTicketAttendeeFormSection.swift */; };
+        B69700000000000000000001 /* ActivityDetailContentSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69700000000000000000002 /* ActivityDetailContentSection.swift */; };
+        B69600000000000000000001 /* ActivityDetailSummarySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69600000000000000000002 /* ActivityDetailSummarySection.swift */; };
+        B69500000000000000000001 /* NearbyActivitySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69500000000000000000002 /* NearbyActivitySection.swift */; };
+        B69400000000000000000001 /* NativeHomeOperationComponent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69400000000000000000002 /* NativeHomeOperationComponent.swift */; };
+        B69000000000000000000001 /* NativeProfileAuthenticationForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69000000000000000000002 /* NativeProfileAuthenticationForm.swift */; };
+        B69200000000000000000001 /* DiningPublicQueuePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69200000000000000000002 /* DiningPublicQueuePanel.swift */; };
+        B69300000000000000000001 /* DiningPublicReservationPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69300000000000000000002 /* DiningPublicReservationPanel.swift */; };
+        B68900000000000000000001 /* NativeRecoveryRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68900000000000000000002 /* NativeRecoveryRecords.swift */; };
+        B68800000000000000000001 /* NativeMapViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68800000000000000000002 /* NativeMapViews.swift */; };
+        B68700000000000000000001 /* NativeGuideRouteMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68700000000000000000002 /* NativeGuideRouteMap.swift */; };
+        B68600000000000000000001 /* ResourceDetailReviewRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68600000000000000000002 /* ResourceDetailReviewRuntime.swift */; };
+        B67700000000000000000001 /* NativeResourceOverviewSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67700000000000000000002 /* NativeResourceOverviewSection.swift */; };
+        B67600000000000000000001 /* NativeHomeCatalogSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67600000000000000000002 /* NativeHomeCatalogSection.swift */; };
+        B67500000000000000000001 /* NativeHomeSupportingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67500000000000000000002 /* NativeHomeSupportingViews.swift */; };
+        B67400000000000000000001 /* NativeCachedRemoteImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67400000000000000000002 /* NativeCachedRemoteImage.swift */; };
+        B67200000000000000000001 /* ResourceDetailReviewForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67200000000000000000002 /* ResourceDetailReviewForm.swift */; };
+        B67100000000000000000001 /* NativeHomeHeroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67100000000000000000002 /* NativeHomeHeroView.swift */; };
+        B67000000000000000000001 /* NativeTicketVerificationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67000000000000000000002 /* NativeTicketVerificationView.swift */; };
+        B66F00000000000000000001 /* NativeCouponVerificationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66F00000000000000000002 /* NativeCouponVerificationView.swift */; };
+        B66E00000000000000000001 /* NativeFeaturePendingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66E00000000000000000002 /* NativeFeaturePendingView.swift */; };
+        B66D00000000000000000001 /* ResourceDetailSupportingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66D00000000000000000002 /* ResourceDetailSupportingViews.swift */; };
+        B66C00000000000000000001 /* NativeHomeRecommendationRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66C00000000000000000002 /* NativeHomeRecommendationRules.swift */; };
+        B66B00000000000000000001 /* NativeBookingPresentationRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66B00000000000000000002 /* NativeBookingPresentationRules.swift */; };
+        B64C00000000000000000001 /* HotelPublicDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64C00000000000000000002 /* HotelPublicDetailView.swift */; };
+        B64D00000000000000000001 /* NativeBookingOrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64D00000000000000000002 /* NativeBookingOrdersView.swift */; };
+        B64E00000000000000000001 /* NativeTradeCheckoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64E00000000000000000002 /* NativeTradeCheckoutView.swift */; };
+        B64F00000000000000000001 /* NativeCouponsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64F00000000000000000002 /* NativeCouponsView.swift */; };
+        B65000000000000000000001 /* TravelRouteDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65000000000000000000002 /* TravelRouteDetailView.swift */; };
+        B65200000000000000000001 /* NativeVerificationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65200000000000000000002 /* NativeVerificationViews.swift */; };
+        B65300000000000000000001 /* NativeMerchantFinancialReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65300000000000000000002 /* NativeMerchantFinancialReportView.swift */; };
+        B65400000000000000000001 /* NativeCartViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65400000000000000000002 /* NativeCartViews.swift */; };
+        B65500000000000000000001 /* NativeMerchantInventoryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65500000000000000000002 /* NativeMerchantInventoryViews.swift */; };
+        B65600000000000000000001 /* NativeMerchantStaffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65600000000000000000002 /* NativeMerchantStaffView.swift */; };
+        B65700000000000000000001 /* NativeMerchantOperationsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65700000000000000000002 /* NativeMerchantOperationsViews.swift */; };
+        B65800000000000000000001 /* NativeMerchantOrderViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65800000000000000000002 /* NativeMerchantOrderViews.swift */; };
+        B65900000000000000000001 /* NativeMerchantTicketViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65900000000000000000002 /* NativeMerchantTicketViews.swift */; };
+        B66000000000000000000001 /* NativeMerchantHotelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66000000000000000000002 /* NativeMerchantHotelsView.swift */; };
+        B66100000000000000000001 /* NativeMerchantWorkbenchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66100000000000000000002 /* NativeMerchantWorkbenchView.swift */; };
+        B66200000000000000000001 /* NativeRestaurantWorkbenchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66200000000000000000002 /* NativeRestaurantWorkbenchViews.swift */; };
+        B66300000000000000000001 /* DiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66300000000000000000002 /* DiscoverView.swift */; };
+        B66400000000000000000001 /* NativeCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66400000000000000000002 /* NativeCatalogView.swift */; };
+        B66500000000000000000001 /* HotelCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66500000000000000000002 /* HotelCatalogView.swift */; };
+        B66600000000000000000001 /* TravelRouteCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66600000000000000000002 /* TravelRouteCatalogView.swift */; };
+        B66700000000000000000001 /* ProductCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66700000000000000000002 /* ProductCatalogView.swift */; };
+        B66800000000000000000001 /* NativeProductDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66800000000000000000002 /* NativeProductDetailView.swift */; };
+        B67C00000000000000000001 /* NativeProductMediaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67C00000000000000000002 /* NativeProductMediaViews.swift */; };
+        B66900000000000000000001 /* ArticleDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66900000000000000000002 /* ArticleDetailView.swift */; };
+        B66A00000000000000000001 /* NativePageResponseRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66A00000000000000000002 /* NativePageResponseRules.swift */; };
+        B64B00000000000000000001 /* NativeJourneyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64B00000000000000000002 /* NativeJourneyView.swift */; };
+        B64A00000000000000000001 /* NativeTicketBookingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64A00000000000000000002 /* NativeTicketBookingView.swift */; };
+        B64900000000000000000001 /* NativeResourceBrowseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64900000000000000000002 /* NativeResourceBrowseView.swift */; };
+        B68A00000000000000000001 /* NativeNearbyCallbackGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68A00000000000000000002 /* NativeNearbyCallbackGate.swift */; };
+        B68000000000000000000001 /* NativeResourceBrowseLocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68000000000000000000002 /* NativeResourceBrowseLocation.swift */; };
+        B68100000000000000000001 /* TourismResourceItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68100000000000000000002 /* TourismResourceItem.swift */; };
+        B68200000000000000000001 /* NativeProfileInformationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68200000000000000000002 /* NativeProfileInformationViews.swift */; };
+        B68300000000000000000001 /* NativeProfileSummaryRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68300000000000000000002 /* NativeProfileSummaryRuntime.swift */; };
+        B6A000000000000000000001 /* NativeProfileOverviewSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A000000000000000000002 /* NativeProfileOverviewSections.swift */; };
+        B6A100000000000000000001 /* DiningPublicMenuSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A100000000000000000002 /* DiningPublicMenuSection.swift */; };
+        B6A200000000000000000001 /* DiningPublicPackagesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A200000000000000000002 /* DiningPublicPackagesSection.swift */; };
+        B6A300000000000000000001 /* ActivityRegistrationCredential.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A300000000000000000002 /* ActivityRegistrationCredential.swift */; };
+        B6A400000000000000000001 /* NativeHomeBannerDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A400000000000000000002 /* NativeHomeBannerDestination.swift */; };
+        B68400000000000000000001 /* ActivityRegistrationSelfCheckIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68400000000000000000002 /* ActivityRegistrationSelfCheckIn.swift */; };
+        B68500000000000000000001 /* NativeHomeFeaturedSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68500000000000000000002 /* NativeHomeFeaturedSection.swift */; };
+        B64800000000000000000001 /* NativeHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64800000000000000000002 /* NativeHomeView.swift */; };
+        B64600000000000000000001 /* NativeCommerceOrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64600000000000000000002 /* NativeCommerceOrdersView.swift */; };
+        B64700000000000000000001 /* NativeCommerceOrderSupportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64700000000000000000002 /* NativeCommerceOrderSupportViews.swift */; };
+        B64400000000000000000001 /* ActivityRegistrationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64400000000000000000002 /* ActivityRegistrationsView.swift */; };
+        B64500000000000000000001 /* NativeActivityQrScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64500000000000000000002 /* NativeActivityQrScanner.swift */; };
+        B64100000000000000000001 /* NativeSupportTicketsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64100000000000000000002 /* NativeSupportTicketsView.swift */; };
+        B64000000000000000000001 /* NativeMerchantOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64000000000000000000002 /* NativeMerchantOnboardingView.swift */; };
+        B63900000000000000000001 /* NativeFavoritesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63900000000000000000002 /* NativeFavoritesView.swift */; };
+        B63800000000000000000001 /* DiscoveryCategoryGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63800000000000000000002 /* DiscoveryCategoryGrid.swift */; };
+        B63700000000000000000001 /* ResourceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63700000000000000000002 /* ResourceDetailView.swift */; };
+        B63600000000000000000001 /* ActivityDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63600000000000000000002 /* ActivityDetailView.swift */; };
+        B63500000000000000000001 /* NativeDiningPackageOrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63500000000000000000002 /* NativeDiningPackageOrdersView.swift */; };
+        B63400000000000000000001 /* NativeDiningPackagePurchaseViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63400000000000000000002 /* NativeDiningPackagePurchaseViews.swift */; };
+        B63300000000000000000001 /* DiningPublicDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63300000000000000000002 /* DiningPublicDetailView.swift */; };
+        B63200000000000000000001 /* RestaurantMenuManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63200000000000000000002 /* RestaurantMenuManagementView.swift */; };
+        B63100000000000000000001 /* NativeDiningQueuePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63100000000000000000002 /* NativeDiningQueuePage.swift */; };
+        B63000000000000000000001 /* RestaurantQueueManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63000000000000000000002 /* RestaurantQueueManagementView.swift */; };
+        B62900000000000000000001 /* RestaurantReservationManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62900000000000000000002 /* RestaurantReservationManagementView.swift */; };
+        B62800000000000000000001 /* NativeIdentityConsentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62800000000000000000002 /* NativeIdentityConsentView.swift */; };
+        B62700000000000000000001 /* NativeAccountCancellationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62700000000000000000002 /* NativeAccountCancellationView.swift */; };
+        B62600000000000000000001 /* NativeTicketOrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62600000000000000000002 /* NativeTicketOrdersView.swift */; };
+        B62500000000000000000001 /* NativeProductReviewsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62500000000000000000002 /* NativeProductReviewsView.swift */; };
+        B62400000000000000000001 /* NativeMemberLedgerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62400000000000000000002 /* NativeMemberLedgerView.swift */; };
+        B62300000000000000000001 /* NativeProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62300000000000000000002 /* NativeProfileView.swift */; };
+        B62200000000000000000001 /* NativeMerchantSharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62200000000000000000002 /* NativeMerchantSharedViews.swift */; };
+        B62100000000000000000001 /* NativeMerchantReportRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62100000000000000000002 /* NativeMerchantReportRules.swift */; };
+        B62000000000000000000001 /* NativePublicCatalogRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62000000000000000000002 /* NativePublicCatalogRules.swift */; };
+        B61900000000000000000001 /* NativeBookingPaymentRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61900000000000000000002 /* NativeBookingPaymentRules.swift */; };
+        B61800000000000000000001 /* NativeHTMLContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61800000000000000000002 /* NativeHTMLContent.swift */; };
+        B61700000000000000000001 /* NativeRestaurantShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61700000000000000000002 /* NativeRestaurantShare.swift */; };
+        B61600000000000000000001 /* NativeActivityShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61600000000000000000002 /* NativeActivityShare.swift */; };
+        B61500000000000000000001 /* NativeProductShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61500000000000000000002 /* NativeProductShare.swift */; };
+        B61400000000000000000001 /* NativeImageDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61400000000000000000002 /* NativeImageDelivery.swift */; };
+        B61300000000000000000001 /* NativeMapDistance.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61300000000000000000002 /* NativeMapDistance.swift */; };
+        B61300000000000000000003 /* NativeInteractiveMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61300000000000000000004 /* NativeInteractiveMap.swift */; };
+        B61200000000000000000001 /* NativeTicketIdentityRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61200000000000000000002 /* NativeTicketIdentityRules.swift */; };
+		A00000000000000000000011 /* JHCTIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000001 /* JHCTIApp.swift */; };
+		A00000000000000000000012 /* MobileAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000002 /* MobileAPI.swift */; };
+		B67800000000000000000001 /* NativePublicCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67800000000000000000003 /* NativePublicCache.swift */; };
+		B67800000000000000000002 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67800000000000000000004 /* SessionStore.swift */; };
+		B67900000000000000000001 /* MobileAPI.Uploads.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67900000000000000000002 /* MobileAPI.Uploads.swift */; };
+		A00000000000000000000013 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000003 /* ContentView.swift */; };
+		A00000000000000000000018 /* NativeTradeQuoteSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000008 /* NativeTradeQuoteSnapshot.swift */; };
+		A00000000000000000000019 /* NativeTicketOrderSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000009 /* NativeTicketOrderSnapshot.swift */; };
+		B6C000000000000000000001 /* NativeTicketAttendeeRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C000000000000000000002 /* NativeTicketAttendeeRules.swift */; };
+		A0000000000000000000001A /* NativeActivitySignupRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000A /* NativeActivitySignupRules.swift */; };
+		A00000000000000000000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000006 /* Assets.xcassets */; };
+		A00000000000000000000016 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000007 /* LaunchScreen.storyboard */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+        B6A600000000000000000002 /* ActivityRegistrationCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationCard.swift; sourceTree = "<group>"; };
+        B6A500000000000000000002 /* ActivityRegistrationFormSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationFormSection.swift; sourceTree = "<group>"; };
+        B69E00000000000000000002 /* ActivityDetailSessionSelectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDetailSessionSelectionSection.swift; sourceTree = "<group>"; };
+        B69D00000000000000000002 /* NativeResourceBrowseMapControlsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeResourceBrowseMapControlsSection.swift; sourceTree = "<group>"; };
+        B69C00000000000000000002 /* NativeResourceBrowseResultsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeResourceBrowseResultsSection.swift; sourceTree = "<group>"; };
+        B69B00000000000000000002 /* NativeTicketSelectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketSelectionSection.swift; sourceTree = "<group>"; };
+        B69A00000000000000000002 /* NativeScenicRecoveryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeScenicRecoveryPanel.swift; sourceTree = "<group>"; };
+        B69900000000000000000002 /* NativeResourceReservationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeResourceReservationSheet.swift; sourceTree = "<group>"; };
+        B69800000000000000000002 /* NativeTicketAttendeeFormSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketAttendeeFormSection.swift; sourceTree = "<group>"; };
+        B69700000000000000000002 /* ActivityDetailContentSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDetailContentSection.swift; sourceTree = "<group>"; };
+        B69600000000000000000002 /* ActivityDetailSummarySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDetailSummarySection.swift; sourceTree = "<group>"; };
+        B69500000000000000000002 /* NearbyActivitySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyActivitySection.swift; sourceTree = "<group>"; };
+        B69400000000000000000002 /* NativeHomeOperationComponent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeOperationComponent.swift; sourceTree = "<group>"; };
+        B69000000000000000000002 /* NativeProfileAuthenticationForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProfileAuthenticationForm.swift; sourceTree = "<group>"; };
+        B69200000000000000000002 /* DiningPublicQueuePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiningPublicQueuePanel.swift; sourceTree = "<group>"; };
+        B69300000000000000000002 /* DiningPublicReservationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiningPublicReservationPanel.swift; sourceTree = "<group>"; };
+        B68900000000000000000002 /* NativeRecoveryRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRecoveryRecords.swift; sourceTree = "<group>"; };
+        B68800000000000000000002 /* NativeMapViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMapViews.swift; sourceTree = "<group>"; };
+        B68700000000000000000002 /* NativeGuideRouteMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGuideRouteMap.swift; sourceTree = "<group>"; };
+        B68600000000000000000002 /* ResourceDetailReviewRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDetailReviewRuntime.swift; sourceTree = "<group>"; };
+        B67700000000000000000002 /* NativeResourceOverviewSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeResourceOverviewSection.swift; sourceTree = "<group>"; };
+        B67600000000000000000002 /* NativeHomeCatalogSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeCatalogSection.swift; sourceTree = "<group>"; };
+        B67500000000000000000002 /* NativeHomeSupportingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeSupportingViews.swift; sourceTree = "<group>"; };
+        B67400000000000000000002 /* NativeCachedRemoteImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCachedRemoteImage.swift; sourceTree = "<group>"; };
+        B67200000000000000000002 /* ResourceDetailReviewForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDetailReviewForm.swift; sourceTree = "<group>"; };
+        B67100000000000000000002 /* NativeHomeHeroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeHeroView.swift; sourceTree = "<group>"; };
+        B67000000000000000000002 /* NativeTicketVerificationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketVerificationView.swift; sourceTree = "<group>"; };
+        B66F00000000000000000002 /* NativeCouponVerificationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCouponVerificationView.swift; sourceTree = "<group>"; };
+        B66E00000000000000000002 /* NativeFeaturePendingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeFeaturePendingView.swift; sourceTree = "<group>"; };
+        B66D00000000000000000002 /* ResourceDetailSupportingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDetailSupportingViews.swift; sourceTree = "<group>"; };
+        B66C00000000000000000002 /* NativeHomeRecommendationRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeRecommendationRules.swift; sourceTree = "<group>"; };
+        B66B00000000000000000002 /* NativeBookingPresentationRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBookingPresentationRules.swift; sourceTree = "<group>"; };
+        B64C00000000000000000002 /* HotelPublicDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotelPublicDetailView.swift; sourceTree = "<group>"; };
+        B64D00000000000000000002 /* NativeBookingOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBookingOrdersView.swift; sourceTree = "<group>"; };
+        B64E00000000000000000002 /* NativeTradeCheckoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTradeCheckoutView.swift; sourceTree = "<group>"; };
+        B64F00000000000000000002 /* NativeCouponsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCouponsView.swift; sourceTree = "<group>"; };
+        B65000000000000000000002 /* TravelRouteDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelRouteDetailView.swift; sourceTree = "<group>"; };
+        B65200000000000000000002 /* NativeVerificationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeVerificationViews.swift; sourceTree = "<group>"; };
+        B65300000000000000000002 /* NativeMerchantFinancialReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantFinancialReportView.swift; sourceTree = "<group>"; };
+        B65400000000000000000002 /* NativeCartViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCartViews.swift; sourceTree = "<group>"; };
+        B65500000000000000000002 /* NativeMerchantInventoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantInventoryViews.swift; sourceTree = "<group>"; };
+        B65600000000000000000002 /* NativeMerchantStaffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantStaffView.swift; sourceTree = "<group>"; };
+        B65700000000000000000002 /* NativeMerchantOperationsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantOperationsViews.swift; sourceTree = "<group>"; };
+        B65800000000000000000002 /* NativeMerchantOrderViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantOrderViews.swift; sourceTree = "<group>"; };
+        B65900000000000000000002 /* NativeMerchantTicketViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantTicketViews.swift; sourceTree = "<group>"; };
+        B66000000000000000000002 /* NativeMerchantHotelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantHotelsView.swift; sourceTree = "<group>"; };
+        B66100000000000000000002 /* NativeMerchantWorkbenchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantWorkbenchView.swift; sourceTree = "<group>"; };
+        B66200000000000000000002 /* NativeRestaurantWorkbenchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRestaurantWorkbenchViews.swift; sourceTree = "<group>"; };
+        B66300000000000000000002 /* DiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverView.swift; sourceTree = "<group>"; };
+        B66400000000000000000002 /* NativeCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCatalogView.swift; sourceTree = "<group>"; };
+        B66500000000000000000002 /* HotelCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotelCatalogView.swift; sourceTree = "<group>"; };
+        B66600000000000000000002 /* TravelRouteCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelRouteCatalogView.swift; sourceTree = "<group>"; };
+        B66700000000000000000002 /* ProductCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductCatalogView.swift; sourceTree = "<group>"; };
+        B66800000000000000000002 /* NativeProductDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProductDetailView.swift; sourceTree = "<group>"; };
+        B67C00000000000000000002 /* NativeProductMediaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProductMediaViews.swift; sourceTree = "<group>"; };
+        B6A300000000000000000002 /* ActivityRegistrationCredential.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationCredential.swift; sourceTree = "<group>"; };
+        B6A400000000000000000002 /* NativeHomeBannerDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeBannerDestination.swift; sourceTree = "<group>"; };
+        B66900000000000000000002 /* ArticleDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleDetailView.swift; sourceTree = "<group>"; };
+        B66A00000000000000000002 /* NativePageResponseRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePageResponseRules.swift; sourceTree = "<group>"; };
+        B64B00000000000000000002 /* NativeJourneyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeJourneyView.swift; sourceTree = "<group>"; };
+        B64A00000000000000000002 /* NativeTicketBookingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketBookingView.swift; sourceTree = "<group>"; };
+        B64900000000000000000002 /* NativeResourceBrowseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeResourceBrowseView.swift; sourceTree = "<group>"; };
+        B68A00000000000000000002 /* NativeNearbyCallbackGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNearbyCallbackGate.swift; sourceTree = "<group>"; };
+        B68000000000000000000002 /* NativeResourceBrowseLocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeResourceBrowseLocation.swift; sourceTree = "<group>"; };
+        B68100000000000000000002 /* TourismResourceItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TourismResourceItem.swift; sourceTree = "<group>"; };
+        B68200000000000000000002 /* NativeProfileInformationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProfileInformationViews.swift; sourceTree = "<group>"; };
+        B68300000000000000000002 /* NativeProfileSummaryRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProfileSummaryRuntime.swift; sourceTree = "<group>"; };
+        B6A000000000000000000002 /* NativeProfileOverviewSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProfileOverviewSections.swift; sourceTree = "<group>"; };
+        B6A100000000000000000002 /* DiningPublicMenuSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiningPublicMenuSection.swift; sourceTree = "<group>"; };
+        B6A200000000000000000002 /* DiningPublicPackagesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiningPublicPackagesSection.swift; sourceTree = "<group>"; };
+        B68400000000000000000002 /* ActivityRegistrationSelfCheckIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationSelfCheckIn.swift; sourceTree = "<group>"; };
+        B68500000000000000000002 /* NativeHomeFeaturedSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeFeaturedSection.swift; sourceTree = "<group>"; };
+        B64800000000000000000002 /* NativeHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeView.swift; sourceTree = "<group>"; };
+        B64600000000000000000002 /* NativeCommerceOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceOrdersView.swift; sourceTree = "<group>"; };
+        B64700000000000000000002 /* NativeCommerceOrderSupportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceOrderSupportViews.swift; sourceTree = "<group>"; };
+        B64400000000000000000002 /* ActivityRegistrationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationsView.swift; sourceTree = "<group>"; };
+        B64500000000000000000002 /* NativeActivityQrScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeActivityQrScanner.swift; sourceTree = "<group>"; };
+        B64100000000000000000002 /* NativeSupportTicketsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSupportTicketsView.swift; sourceTree = "<group>"; };
+        B64000000000000000000002 /* NativeMerchantOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantOnboardingView.swift; sourceTree = "<group>"; };
+        B63900000000000000000002 /* NativeFavoritesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeFavoritesView.swift; sourceTree = "<group>"; };
+        B63800000000000000000002 /* DiscoveryCategoryGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryCategoryGrid.swift; sourceTree = "<group>"; };
+        B63700000000000000000002 /* ResourceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDetailView.swift; sourceTree = "<group>"; };
+        B63600000000000000000002 /* ActivityDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDetailView.swift; sourceTree = "<group>"; };
+        B63500000000000000000002 /* NativeDiningPackageOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningPackageOrdersView.swift; sourceTree = "<group>"; };
+        B63400000000000000000002 /* NativeDiningPackagePurchaseViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningPackagePurchaseViews.swift; sourceTree = "<group>"; };
+        B63300000000000000000002 /* DiningPublicDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiningPublicDetailView.swift; sourceTree = "<group>"; };
+        B63200000000000000000002 /* RestaurantMenuManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestaurantMenuManagementView.swift; sourceTree = "<group>"; };
+        B63100000000000000000002 /* NativeDiningQueuePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningQueuePage.swift; sourceTree = "<group>"; };
+        B63000000000000000000002 /* RestaurantQueueManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestaurantQueueManagementView.swift; sourceTree = "<group>"; };
+        B62900000000000000000002 /* RestaurantReservationManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestaurantReservationManagementView.swift; sourceTree = "<group>"; };
+        B62800000000000000000002 /* NativeIdentityConsentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeIdentityConsentView.swift; sourceTree = "<group>"; };
+        B62700000000000000000002 /* NativeAccountCancellationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAccountCancellationView.swift; sourceTree = "<group>"; };
+        B62600000000000000000002 /* NativeTicketOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketOrdersView.swift; sourceTree = "<group>"; };
+        B62500000000000000000002 /* NativeProductReviewsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProductReviewsView.swift; sourceTree = "<group>"; };
+        B62400000000000000000002 /* NativeMemberLedgerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMemberLedgerView.swift; sourceTree = "<group>"; };
+        B62300000000000000000002 /* NativeProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProfileView.swift; sourceTree = "<group>"; };
+        B62200000000000000000002 /* NativeMerchantSharedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantSharedViews.swift; sourceTree = "<group>"; };
+        B62100000000000000000002 /* NativeMerchantReportRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantReportRules.swift; sourceTree = "<group>"; };
+        B62000000000000000000002 /* NativePublicCatalogRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePublicCatalogRules.swift; sourceTree = "<group>"; };
+        B61900000000000000000002 /* NativeBookingPaymentRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBookingPaymentRules.swift; sourceTree = "<group>"; };
+        B61800000000000000000002 /* NativeHTMLContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHTMLContent.swift; sourceTree = "<group>"; };
+        B61700000000000000000002 /* NativeRestaurantShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRestaurantShare.swift; sourceTree = "<group>"; };
+        B61600000000000000000002 /* NativeActivityShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeActivityShare.swift; sourceTree = "<group>"; };
+        B61500000000000000000002 /* NativeProductShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProductShare.swift; sourceTree = "<group>"; };
+        B61400000000000000000002 /* NativeImageDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeImageDelivery.swift; sourceTree = "<group>"; };
+        B61300000000000000000002 /* NativeMapDistance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMapDistance.swift; sourceTree = "<group>"; };
+        B61300000000000000000004 /* NativeInteractiveMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeInteractiveMap.swift; sourceTree = "<group>"; };
+        B61200000000000000000002 /* NativeTicketIdentityRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketIdentityRules.swift; sourceTree = "<group>"; };
+		A00000000000000000000001 /* JHCTIApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JHCTIApp.swift; sourceTree = "<group>"; };
+		A00000000000000000000002 /* MobileAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAPI.swift; sourceTree = "<group>"; };
+		B67800000000000000000003 /* NativePublicCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePublicCache.swift; sourceTree = "<group>"; };
+		B67800000000000000000004 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		B67900000000000000000002 /* MobileAPI.Uploads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAPI.Uploads.swift; sourceTree = "<group>"; };
+		A00000000000000000000003 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A00000000000000000000008 /* NativeTradeQuoteSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTradeQuoteSnapshot.swift; sourceTree = "<group>"; };
+		A00000000000000000000009 /* NativeTicketOrderSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketOrderSnapshot.swift; sourceTree = "<group>"; };
+		B6C000000000000000000002 /* NativeTicketAttendeeRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketAttendeeRules.swift; sourceTree = "<group>"; };
+		A0000000000000000000000A /* NativeActivitySignupRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeActivitySignupRules.swift; sourceTree = "<group>"; };
+		A00000000000000000000004 /* JHCTI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = JHCTI.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000006 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A00000000000000000000007 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A00000000000000000000031 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A00000000000000000000020 = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000021 /* JHCTI */,
+				A00000000000000000000022 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A00000000000000000000021 /* JHCTI */ = {
+			isa = PBXGroup;
+			children = (
+				B64C00000000000000000003 /* HotelViews */,
+				B64B00000000000000000003 /* JourneyViews */,
+				B65200000000000000000003 /* VerificationViews */,
+				B65300000000000000000003 /* ReportsViews */,
+				B65500000000000000000003 /* MerchantViews */,
+				A00000000000000000000001 /* JHCTIApp.swift */,
+				A00000000000000000000002 /* MobileAPI.swift */,
+				B67800000000000000000003 /* NativePublicCache.swift */,
+				B67800000000000000000004 /* SessionStore.swift */,
+				B67900000000000000000002 /* MobileAPI.Uploads.swift */,
+				A00000000000000000000003 /* ContentView.swift */,
+				B61800000000000000000003 /* SharedViews */,
+				B61900000000000000000003 /* BookingDomain */,
+				B6A300000000000000000003 /* ActivityDomain */,
+				B62000000000000000000003 /* CatalogDomain */,
+				B62100000000000000000003 /* ReportsDomain */,
+				B63100000000000000000003 /* RestaurantDomain */,
+				B66A00000000000000000003 /* ValidationDomain */,
+				B68900000000000000000003 /* RecoveryDomain */,
+				B62400000000000000000003 /* AccountViews */,
+				B62500000000000000000003 /* CommerceViews */,
+				B62600000000000000000003 /* BookingViews */,
+				B63600000000000000000003 /* ActivityViews */,
+				B63700000000000000000003 /* ResourceViews */,
+				B63800000000000000000003 /* DiscoveryViews */,
+				B66400000000000000000003 /* CatalogViews */,
+				B62900000000000000000003 /* RestaurantViews */,
+				B62300000000000000000003 /* ProfileViews */,
+				B64100000000000000000003 /* SupportViews */,
+				B64800000000000000000003 /* HomeViews */,
+				B66C00000000000000000003 /* HomeDomain */,
+				A00000000000000000000008 /* NativeTradeQuoteSnapshot.swift */,
+				A00000000000000000000009 /* NativeTicketOrderSnapshot.swift */,
+				B6C000000000000000000002 /* NativeTicketAttendeeRules.swift */,
+				A0000000000000000000000A /* NativeActivitySignupRules.swift */,
+                B61200000000000000000002 /* NativeTicketIdentityRules.swift */,
+                B61300000000000000000002 /* NativeMapDistance.swift */,
+                B68A00000000000000000002 /* NativeNearbyCallbackGate.swift */,
+                B61400000000000000000002 /* NativeImageDelivery.swift */,
+                B61500000000000000000002 /* NativeProductShare.swift */,
+                B61600000000000000000002 /* NativeActivityShare.swift */,
+                B61700000000000000000002 /* NativeRestaurantShare.swift */,
+                B61300000000000000000004 /* NativeInteractiveMap.swift */,
+				A00000000000000000000006 /* Assets.xcassets */,
+				A00000000000000000000007 /* LaunchScreen.storyboard */,
+			);
+			path = JHCTI;
+			sourceTree = "<group>";
+		};
+		B61800000000000000000003 /* SharedViews */ = {
+			isa = PBXGroup;
+			children = (
+				B68800000000000000000002 /* NativeMapViews.swift */,
+				B67400000000000000000002 /* NativeCachedRemoteImage.swift */,
+				B61800000000000000000002 /* NativeHTMLContent.swift */,
+				B62200000000000000000002 /* NativeMerchantSharedViews.swift */,
+				B64500000000000000000002 /* NativeActivityQrScanner.swift */,
+			);
+			path = Views/Shared;
+			sourceTree = "<group>";
+		};
+		B68900000000000000000003 /* RecoveryDomain */ = {
+			isa = PBXGroup;
+			children = (
+				B68900000000000000000002 /* NativeRecoveryRecords.swift */,
+			);
+			path = Domain/Recovery;
+			sourceTree = "<group>";
+		};
+		B61900000000000000000003 /* BookingDomain */ = {
+			isa = PBXGroup;
+			children = (
+				B61900000000000000000002 /* NativeBookingPaymentRules.swift */,
+				B66B00000000000000000002 /* NativeBookingPresentationRules.swift */,
+			);
+			path = Domain/Booking;
+			sourceTree = "<group>";
+		};
+		B62000000000000000000003 /* CatalogDomain */ = {
+			isa = PBXGroup;
+			children = (
+				B62000000000000000000002 /* NativePublicCatalogRules.swift */,
+			);
+			path = Domain/Catalog;
+			sourceTree = "<group>";
+		};
+		B6A300000000000000000003 /* ActivityDomain */ = {
+			isa = PBXGroup;
+			children = (
+				B6A300000000000000000002 /* ActivityRegistrationCredential.swift */,
+			);
+			path = Domain/Activity;
+			sourceTree = "<group>";
+		};
+		B66C00000000000000000003 /* HomeDomain */ = {
+			isa = PBXGroup;
+			children = (
+				B66C00000000000000000002 /* NativeHomeRecommendationRules.swift */,
+				B6A400000000000000000002 /* NativeHomeBannerDestination.swift */,
+			);
+			path = Domain/Home;
+			sourceTree = "<group>";
+		};
+		B62100000000000000000003 /* ReportsDomain */ = {
+			isa = PBXGroup;
+			children = (
+				B62100000000000000000002 /* NativeMerchantReportRules.swift */,
+			);
+			path = Domain/Reports;
+			sourceTree = "<group>";
+		};
+		B62300000000000000000003 /* ProfileViews */ = {
+			isa = PBXGroup;
+			children = (
+				B62300000000000000000002 /* NativeProfileView.swift */,
+				B69000000000000000000002 /* NativeProfileAuthenticationForm.swift */,
+				B68200000000000000000002 /* NativeProfileInformationViews.swift */,
+				B68300000000000000000002 /* NativeProfileSummaryRuntime.swift */,
+				B6A000000000000000000002 /* NativeProfileOverviewSections.swift */,
+				B63900000000000000000002 /* NativeFavoritesView.swift */,
+				B64000000000000000000002 /* NativeMerchantOnboardingView.swift */,
+			);
+			path = Views/Profile;
+			sourceTree = "<group>";
+		};
+		B64100000000000000000003 /* SupportViews */ = {
+			isa = PBXGroup;
+			children = (
+				B64100000000000000000002 /* NativeSupportTicketsView.swift */,
+			);
+			path = Views/Support;
+			sourceTree = "<group>";
+		};
+		B62400000000000000000003 /* AccountViews */ = {
+			isa = PBXGroup;
+			children = (
+				B62400000000000000000002 /* NativeMemberLedgerView.swift */,
+				B62700000000000000000002 /* NativeAccountCancellationView.swift */,
+				B62800000000000000000002 /* NativeIdentityConsentView.swift */,
+			);
+			path = Views/Account;
+			sourceTree = "<group>";
+		};
+		B62500000000000000000003 /* CommerceViews */ = {
+			isa = PBXGroup;
+			children = (
+				B65400000000000000000002 /* NativeCartViews.swift */,
+				B64F00000000000000000002 /* NativeCouponsView.swift */,
+				B64E00000000000000000002 /* NativeTradeCheckoutView.swift */,
+				B64600000000000000000002 /* NativeCommerceOrdersView.swift */,
+				B64700000000000000000002 /* NativeCommerceOrderSupportViews.swift */,
+				B62500000000000000000002 /* NativeProductReviewsView.swift */,
+				B66800000000000000000002 /* NativeProductDetailView.swift */,
+				B67C00000000000000000002 /* NativeProductMediaViews.swift */,
+			);
+			path = Views/Commerce;
+			sourceTree = "<group>";
+		};
+		B64800000000000000000003 /* HomeViews */ = {
+			isa = PBXGroup;
+			children = (
+				B69400000000000000000002 /* NativeHomeOperationComponent.swift */,
+				B68500000000000000000002 /* NativeHomeFeaturedSection.swift */,
+				B67600000000000000000002 /* NativeHomeCatalogSection.swift */,
+				B67500000000000000000002 /* NativeHomeSupportingViews.swift */,
+				B67100000000000000000002 /* NativeHomeHeroView.swift */,
+				B64800000000000000000002 /* NativeHomeView.swift */,
+			);
+			path = Views/Home;
+			sourceTree = "<group>";
+		};
+		B62600000000000000000003 /* BookingViews */ = {
+			isa = PBXGroup;
+			children = (
+				B69B00000000000000000002 /* NativeTicketSelectionSection.swift */,
+				B69800000000000000000002 /* NativeTicketAttendeeFormSection.swift */,
+				B64D00000000000000000002 /* NativeBookingOrdersView.swift */,
+				B64A00000000000000000002 /* NativeTicketBookingView.swift */,
+				B62600000000000000000002 /* NativeTicketOrdersView.swift */,
+			);
+			path = Views/Booking;
+			sourceTree = "<group>";
+		};
+		B64B00000000000000000003 /* JourneyViews */ = {
+			isa = PBXGroup;
+			children = (
+				B65000000000000000000002 /* TravelRouteDetailView.swift */,
+				B64B00000000000000000002 /* NativeJourneyView.swift */,
+			);
+			path = Views/Journey;
+			sourceTree = "<group>";
+		};
+		B65200000000000000000003 /* VerificationViews */ = {
+			isa = PBXGroup;
+			children = (
+				B67000000000000000000002 /* NativeTicketVerificationView.swift */,
+				B66F00000000000000000002 /* NativeCouponVerificationView.swift */,
+				B66E00000000000000000002 /* NativeFeaturePendingView.swift */,
+				B65200000000000000000002 /* NativeVerificationViews.swift */,
+			);
+			path = Views/Verification;
+			sourceTree = "<group>";
+		};
+		B65300000000000000000003 /* ReportsViews */ = {
+			isa = PBXGroup;
+			children = (
+				B65300000000000000000002 /* NativeMerchantFinancialReportView.swift */,
+			);
+			path = Views/Reports;
+			sourceTree = "<group>";
+		};
+		B65500000000000000000003 /* MerchantViews */ = {
+			isa = PBXGroup;
+			children = (
+				B65500000000000000000002 /* NativeMerchantInventoryViews.swift */,
+				B65600000000000000000002 /* NativeMerchantStaffView.swift */,
+				B65700000000000000000002 /* NativeMerchantOperationsViews.swift */,
+				B65800000000000000000002 /* NativeMerchantOrderViews.swift */,
+				B65900000000000000000002 /* NativeMerchantTicketViews.swift */,
+				B66000000000000000000002 /* NativeMerchantHotelsView.swift */,
+				B66100000000000000000002 /* NativeMerchantWorkbenchView.swift */,
+			);
+			path = Views/Merchant;
+			sourceTree = "<group>";
+		};
+		B64C00000000000000000003 /* HotelViews */ = {
+			isa = PBXGroup;
+			children = (
+				B64C00000000000000000002 /* HotelPublicDetailView.swift */,
+			);
+			path = Views/Hotel;
+			sourceTree = "<group>";
+		};
+		B63600000000000000000003 /* ActivityViews */ = {
+			isa = PBXGroup;
+			children = (
+				B6A600000000000000000002 /* ActivityRegistrationCard.swift */,
+				B6A500000000000000000002 /* ActivityRegistrationFormSection.swift */,
+				B69E00000000000000000002 /* ActivityDetailSessionSelectionSection.swift */,
+				B69700000000000000000002 /* ActivityDetailContentSection.swift */,
+				B69600000000000000000002 /* ActivityDetailSummarySection.swift */,
+				B63600000000000000000002 /* ActivityDetailView.swift */,
+				B64400000000000000000002 /* ActivityRegistrationsView.swift */,
+				B68400000000000000000002 /* ActivityRegistrationSelfCheckIn.swift */,
+			);
+			path = Views/Activity;
+			sourceTree = "<group>";
+		};
+		B63700000000000000000003 /* ResourceViews */ = {
+			isa = PBXGroup;
+			children = (
+				B69D00000000000000000002 /* NativeResourceBrowseMapControlsSection.swift */,
+				B69C00000000000000000002 /* NativeResourceBrowseResultsSection.swift */,
+				B69A00000000000000000002 /* NativeScenicRecoveryPanel.swift */,
+				B69900000000000000000002 /* NativeResourceReservationSheet.swift */,
+				B69500000000000000000002 /* NearbyActivitySection.swift */,
+				B68700000000000000000002 /* NativeGuideRouteMap.swift */,
+				B67700000000000000000002 /* NativeResourceOverviewSection.swift */,
+				B68000000000000000000002 /* NativeResourceBrowseLocation.swift */,
+				B68100000000000000000002 /* TourismResourceItem.swift */,
+				B64900000000000000000002 /* NativeResourceBrowseView.swift */,
+				B63700000000000000000002 /* ResourceDetailView.swift */,
+				B68600000000000000000002 /* ResourceDetailReviewRuntime.swift */,
+				B67200000000000000000002 /* ResourceDetailReviewForm.swift */,
+				B66D00000000000000000002 /* ResourceDetailSupportingViews.swift */,
+			);
+			path = Views/Resource;
+			sourceTree = "<group>";
+		};
+		B63800000000000000000003 /* DiscoveryViews */ = {
+			isa = PBXGroup;
+			children = (
+				B63800000000000000000002 /* DiscoveryCategoryGrid.swift */,
+				B66300000000000000000002 /* DiscoverView.swift */,
+			);
+			path = Views/Discovery;
+			sourceTree = "<group>";
+		};
+		B66400000000000000000003 /* CatalogViews */ = {
+			isa = PBXGroup;
+			children = (
+				B66400000000000000000002 /* NativeCatalogView.swift */,
+				B66500000000000000000002 /* HotelCatalogView.swift */,
+				B66600000000000000000002 /* TravelRouteCatalogView.swift */,
+				B66700000000000000000002 /* ProductCatalogView.swift */,
+				B66900000000000000000002 /* ArticleDetailView.swift */,
+			);
+			path = Views/Catalog;
+			sourceTree = "<group>";
+		};
+		B62900000000000000000003 /* RestaurantViews */ = {
+			isa = PBXGroup;
+			children = (
+				B62900000000000000000002 /* RestaurantReservationManagementView.swift */,
+				B63000000000000000000002 /* RestaurantQueueManagementView.swift */,
+				B63200000000000000000002 /* RestaurantMenuManagementView.swift */,
+				B63300000000000000000002 /* DiningPublicDetailView.swift */,
+				B6A100000000000000000002 /* DiningPublicMenuSection.swift */,
+				B6A200000000000000000002 /* DiningPublicPackagesSection.swift */,
+                B69200000000000000000002 /* DiningPublicQueuePanel.swift */,
+                B69300000000000000000002 /* DiningPublicReservationPanel.swift */,
+				B63400000000000000000002 /* NativeDiningPackagePurchaseViews.swift */,
+				B63500000000000000000002 /* NativeDiningPackageOrdersView.swift */,
+				B66200000000000000000002 /* NativeRestaurantWorkbenchViews.swift */,
+			);
+			path = Views/Restaurant;
+			sourceTree = "<group>";
+		};
+		B63100000000000000000003 /* RestaurantDomain */ = {
+			isa = PBXGroup;
+			children = (
+				B63100000000000000000002 /* NativeDiningQueuePage.swift */,
+			);
+			path = Domain/Restaurant;
+			sourceTree = "<group>";
+		};
+		B66A00000000000000000003 /* ValidationDomain */ = {
+			isa = PBXGroup;
+			children = (
+				B66A00000000000000000002 /* NativePageResponseRules.swift */,
+			);
+			path = Domain/Validation;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000022 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000004 /* JHCTI.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A00000000000000000000040 /* JHCTI */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000051 /* Build configuration list for PBXNativeTarget "JHCTI" */;
+			buildPhases = (
+				A00000000000000000000030 /* Sources */,
+				A00000000000000000000031 /* Frameworks */,
+				A00000000000000000000032 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = JHCTI;
+			productName = JHCTI;
+			productReference = A00000000000000000000004 /* JHCTI.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A00000000000000000000041 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 2710;
+				TargetAttributes = {
+					A00000000000000000000040 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = A00000000000000000000050 /* Build configuration list for PBXProject "JHCTI" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				"zh-Hans",
+				en,
+				Base,
+			);
+			mainGroup = A00000000000000000000020;
+			productRefGroup = A00000000000000000000022 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A00000000000000000000040 /* JHCTI */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A00000000000000000000032 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000015 /* Assets.xcassets in Resources */,
+				A00000000000000000000016 /* LaunchScreen.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A00000000000000000000030 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000011 /* JHCTIApp.swift in Sources */,
+				A00000000000000000000012 /* MobileAPI.swift in Sources */,
+				B68800000000000000000001 /* NativeMapViews.swift in Sources */,
+				B68700000000000000000001 /* NativeGuideRouteMap.swift in Sources */,
+				B67800000000000000000001 /* NativePublicCache.swift in Sources */,
+				B67800000000000000000002 /* SessionStore.swift in Sources */,
+				B67900000000000000000001 /* MobileAPI.Uploads.swift in Sources */,
+				A00000000000000000000013 /* ContentView.swift in Sources */,
+				B68900000000000000000001 /* NativeRecoveryRecords.swift in Sources */,
+				B62900000000000000000001 /* RestaurantReservationManagementView.swift in Sources */,
+				B63000000000000000000001 /* RestaurantQueueManagementView.swift in Sources */,
+				B63100000000000000000001 /* NativeDiningQueuePage.swift in Sources */,
+				B63200000000000000000001 /* RestaurantMenuManagementView.swift in Sources */,
+				B63300000000000000000001 /* DiningPublicDetailView.swift in Sources */,
+				B6A100000000000000000001 /* DiningPublicMenuSection.swift in Sources */,
+				B6A200000000000000000001 /* DiningPublicPackagesSection.swift in Sources */,
+                B69200000000000000000001 /* DiningPublicQueuePanel.swift in Sources */,
+                B69300000000000000000001 /* DiningPublicReservationPanel.swift in Sources */,
+				B63400000000000000000001 /* NativeDiningPackagePurchaseViews.swift in Sources */,
+				B63500000000000000000001 /* NativeDiningPackageOrdersView.swift in Sources */,
+				B66200000000000000000001 /* NativeRestaurantWorkbenchViews.swift in Sources */,
+				B63600000000000000000001 /* ActivityDetailView.swift in Sources */,
+				B6A600000000000000000001 /* ActivityRegistrationCard.swift in Sources */,
+				B6A500000000000000000001 /* ActivityRegistrationFormSection.swift in Sources */,
+				B69E00000000000000000001 /* ActivityDetailSessionSelectionSection.swift in Sources */,
+				B69700000000000000000001 /* ActivityDetailContentSection.swift in Sources */,
+				B69600000000000000000001 /* ActivityDetailSummarySection.swift in Sources */,
+				B63700000000000000000001 /* ResourceDetailView.swift in Sources */,
+				B69B00000000000000000001 /* NativeTicketSelectionSection.swift in Sources */,
+				B69A00000000000000000001 /* NativeScenicRecoveryPanel.swift in Sources */,
+				B69900000000000000000001 /* NativeResourceReservationSheet.swift in Sources */,
+				B68600000000000000000001 /* ResourceDetailReviewRuntime.swift in Sources */,
+				B67200000000000000000001 /* ResourceDetailReviewForm.swift in Sources */,
+				B67700000000000000000001 /* NativeResourceOverviewSection.swift in Sources */,
+				B66D00000000000000000001 /* ResourceDetailSupportingViews.swift in Sources */,
+				B63800000000000000000001 /* DiscoveryCategoryGrid.swift in Sources */,
+				B66300000000000000000001 /* DiscoverView.swift in Sources */,
+				B66400000000000000000001 /* NativeCatalogView.swift in Sources */,
+				B66500000000000000000001 /* HotelCatalogView.swift in Sources */,
+				B66600000000000000000001 /* TravelRouteCatalogView.swift in Sources */,
+				B66700000000000000000001 /* ProductCatalogView.swift in Sources */,
+				B66800000000000000000001 /* NativeProductDetailView.swift in Sources */,
+				B67C00000000000000000001 /* NativeProductMediaViews.swift in Sources */,
+				B66900000000000000000001 /* ArticleDetailView.swift in Sources */,
+				B66A00000000000000000001 /* NativePageResponseRules.swift in Sources */,
+				B66B00000000000000000001 /* NativeBookingPresentationRules.swift in Sources */,
+				B61800000000000000000001 /* NativeHTMLContent.swift in Sources */,
+				B61900000000000000000001 /* NativeBookingPaymentRules.swift in Sources */,
+				B62000000000000000000001 /* NativePublicCatalogRules.swift in Sources */,
+				B62100000000000000000001 /* NativeMerchantReportRules.swift in Sources */,
+				B62200000000000000000001 /* NativeMerchantSharedViews.swift in Sources */,
+				B62300000000000000000001 /* NativeProfileView.swift in Sources */,
+				B69000000000000000000001 /* NativeProfileAuthenticationForm.swift in Sources */,
+				B63900000000000000000001 /* NativeFavoritesView.swift in Sources */,
+				B64000000000000000000001 /* NativeMerchantOnboardingView.swift in Sources */,
+				B64100000000000000000001 /* NativeSupportTicketsView.swift in Sources */,
+				B64400000000000000000001 /* ActivityRegistrationsView.swift in Sources */,
+				B68400000000000000000001 /* ActivityRegistrationSelfCheckIn.swift in Sources */,
+				B6A300000000000000000001 /* ActivityRegistrationCredential.swift in Sources */,
+				B64500000000000000000001 /* NativeActivityQrScanner.swift in Sources */,
+				B64600000000000000000001 /* NativeCommerceOrdersView.swift in Sources */,
+				B64700000000000000000001 /* NativeCommerceOrderSupportViews.swift in Sources */,
+				B64800000000000000000001 /* NativeHomeView.swift in Sources */,
+				B6A400000000000000000001 /* NativeHomeBannerDestination.swift in Sources */,
+				B69400000000000000000001 /* NativeHomeOperationComponent.swift in Sources */,
+				B68500000000000000000001 /* NativeHomeFeaturedSection.swift in Sources */,
+				B64900000000000000000001 /* NativeResourceBrowseView.swift in Sources */,
+				B69D00000000000000000001 /* NativeResourceBrowseMapControlsSection.swift in Sources */,
+				B69C00000000000000000001 /* NativeResourceBrowseResultsSection.swift in Sources */,
+				B69500000000000000000001 /* NearbyActivitySection.swift in Sources */,
+                B68A00000000000000000001 /* NativeNearbyCallbackGate.swift in Sources */,
+				B68000000000000000000001 /* NativeResourceBrowseLocation.swift in Sources */,
+				B68100000000000000000001 /* TourismResourceItem.swift in Sources */,
+				B68200000000000000000001 /* NativeProfileInformationViews.swift in Sources */,
+				B68300000000000000000001 /* NativeProfileSummaryRuntime.swift in Sources */,
+				B6A000000000000000000001 /* NativeProfileOverviewSections.swift in Sources */,
+				B64A00000000000000000001 /* NativeTicketBookingView.swift in Sources */,
+				B69800000000000000000001 /* NativeTicketAttendeeFormSection.swift in Sources */,
+				B64B00000000000000000001 /* NativeJourneyView.swift in Sources */,
+				B64C00000000000000000001 /* HotelPublicDetailView.swift in Sources */,
+				B64D00000000000000000001 /* NativeBookingOrdersView.swift in Sources */,
+				B64E00000000000000000001 /* NativeTradeCheckoutView.swift in Sources */,
+				B64F00000000000000000001 /* NativeCouponsView.swift in Sources */,
+				B65000000000000000000001 /* TravelRouteDetailView.swift in Sources */,
+				B65200000000000000000001 /* NativeVerificationViews.swift in Sources */,
+				B66E00000000000000000001 /* NativeFeaturePendingView.swift in Sources */,
+				B66F00000000000000000001 /* NativeCouponVerificationView.swift in Sources */,
+				B67000000000000000000001 /* NativeTicketVerificationView.swift in Sources */,
+				B67100000000000000000001 /* NativeHomeHeroView.swift in Sources */,
+				B67500000000000000000001 /* NativeHomeSupportingViews.swift in Sources */,
+				B67600000000000000000001 /* NativeHomeCatalogSection.swift in Sources */,
+				B66C00000000000000000001 /* NativeHomeRecommendationRules.swift in Sources */,
+				B67400000000000000000001 /* NativeCachedRemoteImage.swift in Sources */,
+				B65300000000000000000001 /* NativeMerchantFinancialReportView.swift in Sources */,
+				B65400000000000000000001 /* NativeCartViews.swift in Sources */,
+				B65500000000000000000001 /* NativeMerchantInventoryViews.swift in Sources */,
+				B65600000000000000000001 /* NativeMerchantStaffView.swift in Sources */,
+				B65700000000000000000001 /* NativeMerchantOperationsViews.swift in Sources */,
+				B65800000000000000000001 /* NativeMerchantOrderViews.swift in Sources */,
+				B65900000000000000000001 /* NativeMerchantTicketViews.swift in Sources */,
+				B66000000000000000000001 /* NativeMerchantHotelsView.swift in Sources */,
+				B66100000000000000000001 /* NativeMerchantWorkbenchView.swift in Sources */,
+				B62400000000000000000001 /* NativeMemberLedgerView.swift in Sources */,
+				B62700000000000000000001 /* NativeAccountCancellationView.swift in Sources */,
+				B62800000000000000000001 /* NativeIdentityConsentView.swift in Sources */,
+				B62500000000000000000001 /* NativeProductReviewsView.swift in Sources */,
+				B62600000000000000000001 /* NativeTicketOrdersView.swift in Sources */,
+				A00000000000000000000018 /* NativeTradeQuoteSnapshot.swift in Sources */,
+				A00000000000000000000019 /* NativeTicketOrderSnapshot.swift in Sources */,
+				B6C000000000000000000001 /* NativeTicketAttendeeRules.swift in Sources */,
+				A0000000000000000000001A /* NativeActivitySignupRules.swift in Sources */,
+                B61200000000000000000001 /* NativeTicketIdentityRules.swift in Sources */,
+                B61300000000000000000001 /* NativeMapDistance.swift in Sources */,
+                B61400000000000000000001 /* NativeImageDelivery.swift in Sources */,
+                B61500000000000000000001 /* NativeProductShare.swift in Sources */,
+                B61600000000000000000001 /* NativeActivityShare.swift in Sources */,
+                B61700000000000000000001 /* NativeRestaurantShare.swift in Sources */,
+                B61300000000000000000003 /* NativeInteractiveMap.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A00000000000000000000060 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				DEVELOPMENT_TEAM = R3622MSZJ7;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A00000000000000000000061 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				DEVELOPMENT_TEAM = R3622MSZJ7;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A00000000000000000000062 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = JHCTI/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				// 真机默认连接线上，仅 Debug 模拟器使用宿主机 Development API。
+				JHCTI_API_BASE_URL = "https://jhcti.jiangdu.net";
+				"JHCTI_API_BASE_URL[sdk=iphonesimulator*]" = "http://localhost:9200";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jaronsoft.jhcti;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A00000000000000000000063 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = JHCTI/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				JHCTI_API_BASE_URL = "https://jhcti.jiangdu.net";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jaronsoft.jhcti;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A00000000000000000000050 /* Build configuration list for PBXProject "JHCTI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000060 /* Debug */,
+				A00000000000000000000061 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000051 /* Build configuration list for PBXNativeTarget "JHCTI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000062 /* Debug */,
+				A00000000000000000000063 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A00000000000000000000041 /* Project object */;
+}

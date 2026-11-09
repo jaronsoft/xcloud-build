@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="27000" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="jhcti-launch-controller">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <deployment identifier="iOS"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="27000"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+    </dependencies>
+    <scenes>
+        <scene sceneID="jhcti-launch-scene">
+            <objects>
+                <viewController id="jhcti-launch-controller" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="jhcti-launch-view">
+                        <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFill" image="SplashBackground" translatesAutoresizingMaskIntoConstraints="NO" id="jhcti-launch-background">
+                                <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                            </imageView>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="SplashLogo" translatesAutoresizingMaskIntoConstraints="NO" id="jhcti-launch-logo">
+                                <rect key="frame" x="111.5" y="278" width="170" height="170"/>
+                            </imageView>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="悦行江都" textAlignment="center" lineBreakMode="tailTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="jhcti-launch-title">
+                                <rect key="frame" x="120.5" y="450" width="152" height="46"/>
+                                <fontDescription key="fontDescription" type="system" weight="bold" pointSize="38"/>
+                                <color key="textColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="发现江都 · 乐享旅程" textAlignment="center" lineBreakMode="tailTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="jhcti-launch-subtitle">
+                                <rect key="frame" x="120.5" y="504" width="152" height="20"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="17"/>
+                                <color key="textColor" white="1" alpha="0.82" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="正在启动应用…" textAlignment="center" lineBreakMode="tailTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="jhcti-launch-loading-label">
+                                <rect key="frame" x="146.5" y="742" width="100" height="18"/>
+                                <fontDescription key="fontDescription" type="system" pointSize="12"/>
+                                <color key="textColor" white="1" alpha="0.86" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <progressView opaque="NO" contentMode="scaleToFill" progress="0.28" translatesAutoresizingMaskIntoConstraints="NO" id="jhcti-launch-progress">
+                                <rect key="frame" x="116.5" y="775" width="160" height="2"/>
+                                <color key="progressTintColor" white="1" alpha="0.94" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                                <color key="trackTintColor" white="1" alpha="0.30" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                            </progressView>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="jhcti-launch-safe-area"/>
+                        <color key="backgroundColor" red="0.031" green="0.49" blue="0.333" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <constraints>
+                            <constraint firstItem="jhcti-launch-background" firstAttribute="leading" secondItem="jhcti-launch-view" secondAttribute="leading" id="bg-leading"/>
+                            <constraint firstItem="jhcti-launch-background" firstAttribute="trailing" secondItem="jhcti-launch-view" secondAttribute="trailing" id="bg-trailing"/>
+                            <constraint firstItem="jhcti-launch-background" firstAttribute="top" secondItem="jhcti-launch-view" secondAttribute="top" id="bg-top"/>
+                            <constraint firstItem="jhcti-launch-background" firstAttribute="bottom" secondItem="jhcti-launch-view" secondAttribute="bottom" id="bg-bottom"/>
+                            <constraint firstItem="jhcti-launch-logo" firstAttribute="centerX" secondItem="jhcti-launch-view" secondAttribute="centerX" id="logo-center-x"/>
+                            <constraint firstItem="jhcti-launch-logo" firstAttribute="centerY" secondItem="jhcti-launch-view" secondAttribute="centerY" constant="-44" id="logo-center-y"/>
+                            <constraint firstItem="jhcti-launch-logo" firstAttribute="width" constant="170" id="logo-width"/>
+                            <constraint firstItem="jhcti-launch-logo" firstAttribute="height" constant="170" id="logo-height"/>
+                            <constraint firstItem="jhcti-launch-title" firstAttribute="top" secondItem="jhcti-launch-logo" secondAttribute="bottom" constant="42" id="title-top"/>
+                            <constraint firstItem="jhcti-launch-title" firstAttribute="centerX" secondItem="jhcti-launch-view" secondAttribute="centerX" id="title-center-x"/>
+                            <constraint firstItem="jhcti-launch-subtitle" firstAttribute="top" secondItem="jhcti-launch-title" secondAttribute="bottom" constant="12" id="subtitle-top"/>
+                            <constraint firstItem="jhcti-launch-subtitle" firstAttribute="centerX" secondItem="jhcti-launch-view" secondAttribute="centerX" id="subtitle-center-x"/>
+                            <constraint firstItem="jhcti-launch-loading-label" firstAttribute="centerX" secondItem="jhcti-launch-view" secondAttribute="centerX" id="loading-label-center-x"/>
+                            <constraint firstItem="jhcti-launch-progress" firstAttribute="top" secondItem="jhcti-launch-loading-label" secondAttribute="bottom" constant="10" id="loading-progress-top"/>
+                            <constraint firstItem="jhcti-launch-progress" firstAttribute="centerX" secondItem="jhcti-launch-view" secondAttribute="centerX" id="loading-progress-center-x"/>
+                            <constraint firstItem="jhcti-launch-progress" firstAttribute="width" constant="160" id="loading-progress-width"/>
+                            <constraint firstItem="jhcti-launch-progress" firstAttribute="bottom" secondItem="jhcti-launch-safe-area" secondAttribute="bottom" constant="-42" id="loading-progress-bottom"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="jhcti-launch-responder" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="SplashBackground" width="880" height="1912"/>
+        <image name="SplashLogo" width="512" height="512"/>
+    </resources>
+</document>
