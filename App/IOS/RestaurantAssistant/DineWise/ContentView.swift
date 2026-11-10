@@ -8,6 +8,10 @@ import UserNotifications
 import UniformTypeIdentifiers
 import Vision
 
+private enum DineWiseWorkspaceRequestContext {
+    @TaskLocal static var generation: Int?
+}
+
 private enum DineWiseImageRecognitionError: LocalizedError {
     case invalidImage
     case recognitionFailed
@@ -348,7 +352,7 @@ struct ContentView: View {
             .padding(.horizontal, 18)
             .padding(.top, 8)
             .padding(.bottom, 24)
-            .id("\(selectedTab):\(selectedStoreID):\(selectedRole)")
+            .id("\(selectedTab):\(selectedStoreID):\(selectedRole):\(workspaceGeneration)")
             .background(colorScheme == .dark
                 ? DineWiseTheme.page
                 : Color(red: 0.975, green: 0.969, blue: 0.948))
@@ -1453,7 +1457,8 @@ struct ContentView: View {
     }
 
     private func storeSection(token: String) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let requestedWorkspaceGeneration = workspaceGeneration
+        return VStack(alignment: .leading, spacing: 16) {
             if stores.isEmpty {
                 Text("暂无获授权门店，可先创建演示门店。")
                     .foregroundStyle(.secondary)
@@ -1578,7 +1583,8 @@ struct ContentView: View {
                     DineWiseInterviewView(store: selected, token: token, section: selectedTab,
                         onStartInterview: { selectedTab = "interview" },
                         onSaved: {
-                            if isCurrent(storeID: selected.Id, role: "marketer", token: token) {
+                            if isCurrent(storeID: selected.Id, role: "marketer", token: token,
+                                generation: requestedWorkspaceGeneration) {
                                 selectedTab = "records"
                             }
                         })
@@ -1617,13 +1623,15 @@ struct ContentView: View {
                     if selectedRole == "chef" || selectedRole == "purchaser" {
                         DineWisePreparationPlanView(store: selected, token: token,
                             role: selectedRole, userID: sessionUserID, onRecordPurchase: { plan in
-                                guard isCurrent(storeID: selected.Id, role: "purchaser", token: token) else { return }
+                                guard isCurrent(storeID: selected.Id, role: "purchaser", token: token,
+                                    generation: requestedWorkspaceGeneration) else { return }
                                 submissionPlanFilter = ""; submissionPage = 1
                                 purchasePlans = [plan] + purchasePlans.filter { $0.Id != plan.Id }
                                 purchasePlanId = plan.Id; submissionKind = "purchase"
                                 pendingSubmissionKey = nil; selectedTab = "upload"
                             }, onRecordOutcome: { plan in
-                                guard isCurrent(storeID: selected.Id, role: "chef", token: token) else { return }
+                                guard isCurrent(storeID: selected.Id, role: "chef", token: token,
+                                    generation: requestedWorkspaceGeneration) else { return }
                                 preparationPlans = [plan] + preparationPlans.filter { $0.Id != plan.Id }
                                 preparationPlanId = plan.Id; submissionDate = plan.BusinessDate
                                 submissionKind = "kitchen"; feedbackCategory = "leftover"
@@ -1638,20 +1646,24 @@ struct ContentView: View {
                 }
             }
         }
-        .task(id: "\(token):\(selectedStoreID):\(selectedRole)") {
+        .task(id: "\(token):\(selectedStoreID):\(selectedRole):\(workspaceGeneration)") {
             guard let selected = stores.first(where: { $0.Id == selectedStoreID }) else { return }
             let role = selectedRole
+            let requestGeneration = workspaceGeneration
             if role == "owner" {
                 do {
                     let result = try await api.members(storeID: selected.Id, token: token)
-                    if isCurrent(storeID: selected.Id, role: role, token: token) { members = result }
+                    if isCurrent(storeID: selected.Id, role: role, token: token,
+                        generation: requestGeneration) { members = result }
                     let pending = try await api.storeInvitations(storeID: selected.Id, token: token)
-                    if isCurrent(storeID: selected.Id, role: role, token: token) {
+                    if isCurrent(storeID: selected.Id, role: role, token: token,
+                        generation: requestGeneration) {
                         storeInvitations = pending
                     }
                 } catch is CancellationError { }
                 catch {
-                    if isCurrent(storeID: selected.Id, role: role, token: token) {
+                    if isCurrent(storeID: selected.Id, role: role, token: token,
+                        generation: requestGeneration) {
                         setMessage(error.localizedDescription, isError: true)
                     }
                 }
@@ -1661,7 +1673,8 @@ struct ContentView: View {
                     try await refreshSubmissionPage(storeID: selected.Id, token: token, role: role)
                 } catch is CancellationError { }
                 catch {
-                    if isCurrent(storeID: selected.Id, role: role, token: token) {
+                    if isCurrent(storeID: selected.Id, role: role, token: token,
+                        generation: requestGeneration) {
                         setMessage(error.localizedDescription, isError: true)
                     }
                 }
@@ -1869,6 +1882,7 @@ struct ContentView: View {
                 let requestedStoreID = selectedStoreID
                 let requestedRole = selectedRole
                 let requestedToken = token
+                let requestedWorkspaceGeneration = workspaceGeneration
                 isRecognizingImage = true
                 imageOcrMessage = ""
                 recognitionFailureCode = nil
@@ -1878,14 +1892,16 @@ struct ContentView: View {
                 Task {
                     var sourceImageData: Data?
                     defer {
-                        if isCurrent(storeID: requestedStoreID, role: requestedRole, token: requestedToken) {
+                        if isCurrent(storeID: requestedStoreID, role: requestedRole,
+                            token: requestedToken, generation: requestedWorkspaceGeneration) {
                             isRecognizingImage = false
                             selectedOcrPhoto = nil
                         }
                     }
                     do {
                         guard let data = try await selection.loadTransferable(type: Data.self) else {
-                            if isCurrent(storeID: requestedStoreID, role: requestedRole, token: requestedToken) {
+                            if isCurrent(storeID: requestedStoreID, role: requestedRole,
+                                token: requestedToken, generation: requestedWorkspaceGeneration) {
                                 recognitionFailureCode = "image_unreadable"
                                 imageOcrMessage = "图片无效或超过 10 MB，请重新选择。"
                             }
@@ -1893,7 +1909,8 @@ struct ContentView: View {
                         }
                         sourceImageData = data
                         guard data.count <= 10 * 1024 * 1024 else {
-                            if isCurrent(storeID: requestedStoreID, role: requestedRole, token: requestedToken) {
+                            if isCurrent(storeID: requestedStoreID, role: requestedRole,
+                                token: requestedToken, generation: requestedWorkspaceGeneration) {
                                 recognitionFailureCode = "image_unreadable"
                                 imageOcrMessage = "图片超过 10 MB 附件上限；请压缩后重新选择，原图不会被上传。"
                             }
@@ -1902,7 +1919,8 @@ struct ContentView: View {
                         let recognized = try await Task.detached(priority: .userInitiated) {
                             try dineWiseRecognizeImageText(data)
                         }.value.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard isCurrent(storeID: requestedStoreID, role: requestedRole, token: requestedToken) else { return }
+                        guard isCurrent(storeID: requestedStoreID, role: requestedRole,
+                            token: requestedToken, generation: requestedWorkspaceGeneration) else { return }
                         guard !recognized.isEmpty else {
                             recognitionFailureCode = "no_text_detected"
                             recognitionFailureImage = data; recognitionFailureImageName = sourceImageName
@@ -1932,14 +1950,16 @@ struct ContentView: View {
                             : "识别结果已加入原文，请核对后再提交。图片仅在本机处理。"
                         pendingSubmissionKey = nil
                     } catch let error as DineWiseImageRecognitionError {
-                        if isCurrent(storeID: requestedStoreID, role: requestedRole, token: requestedToken) {
+                        if isCurrent(storeID: requestedStoreID, role: requestedRole,
+                            token: requestedToken, generation: requestedWorkspaceGeneration) {
                             recognitionFailureCode = error == .invalidImage ? "image_unreadable" : "recognition_failed"
                             recognitionFailureImage = sourceImageData
                             recognitionFailureImageName = sourceImageData == nil ? "" : sourceImageName
                             imageOcrMessage = error.localizedDescription
                         }
                     } catch {
-                        if isCurrent(storeID: requestedStoreID, role: requestedRole, token: requestedToken) {
+                        if isCurrent(storeID: requestedStoreID, role: requestedRole,
+                            token: requestedToken, generation: requestedWorkspaceGeneration) {
                             recognitionFailureCode = "image_unreadable"
                             recognitionFailureImage = sourceImageData
                             recognitionFailureImageName = sourceImageData == nil ? "" : sourceImageName
@@ -2704,8 +2724,11 @@ struct ContentView: View {
         }
     }
 
-    private func isCurrent(storeID: String, role: String, token: String) -> Bool {
-        self.token == token && selectedStoreID == storeID && selectedRole == role
+    private func isCurrent(storeID: String, role: String, token: String,
+                           generation: Int? = nil) -> Bool {
+        let expectedGeneration = generation ?? DineWiseWorkspaceRequestContext.generation
+        return self.token == token && selectedStoreID == storeID && selectedRole == role
+            && (expectedGeneration == nil || workspaceGeneration == expectedGeneration)
     }
 
     private func refreshSubmissionPage(storeID: String, token: String, role: String,
@@ -2826,6 +2849,7 @@ struct ContentView: View {
     private func perform(_ action: @escaping () async throws -> Void) {
         requestVersion += 1
         let version = requestVersion
+        let requestedWorkspaceGeneration = workspaceGeneration
         let requestedToken = token
         let requestedStoreID = selectedStoreID
         let requestedRole = selectedRole
@@ -2833,13 +2857,20 @@ struct ContentView: View {
         setMessage("")
         Task { @MainActor in
             guard version == requestVersion && requestedToken == token &&
-                    requestedStoreID == selectedStoreID && requestedRole == selectedRole else { return }
+                    requestedStoreID == selectedStoreID && requestedRole == selectedRole &&
+                    workspaceGeneration == requestedWorkspaceGeneration else { return }
             defer { if version == requestVersion { busy = false } }
-            do { try await action() }
+            do {
+                try await DineWiseWorkspaceRequestContext.$generation
+                    .withValue(requestedWorkspaceGeneration) {
+                        try await action()
+                    }
+            }
             catch is CancellationError { }
             catch {
                 if version == requestVersion && requestedToken == token &&
-                    requestedStoreID == selectedStoreID && requestedRole == selectedRole {
+                    requestedStoreID == selectedStoreID && requestedRole == selectedRole &&
+                    workspaceGeneration == requestedWorkspaceGeneration {
                     setMessage(error.localizedDescription, isError: true)
                 }
             }
@@ -2868,6 +2899,8 @@ struct ContentView: View {
     }
 
     private func setMessage(_ value: String, isError: Bool = false) {
+        if let generation = DineWiseWorkspaceRequestContext.generation,
+           workspaceGeneration != generation { return }
         message = value
         messageIsError = isError
     }
