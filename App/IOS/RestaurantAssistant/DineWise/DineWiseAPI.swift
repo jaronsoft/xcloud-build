@@ -3,6 +3,7 @@ import Security
 
 extension Notification.Name {
     static let dineWiseSessionExpired = Notification.Name("DineWiseSessionExpired")
+    static let dineWiseOperatorSessionExpired = Notification.Name("DineWiseOperatorSessionExpired")
 }
 
 struct DineWiseBusinessHoursPeriod: Codable {
@@ -1121,6 +1122,10 @@ struct DineWiseAPI {
                 accessToken = try await DineWiseSessionStore.shared.resolve(token, base: base, force: true)
                 continue
             }
+            if let token, path.hasPrefix("/operator/"), status == 401 || envelope.status == 401,
+               !(await DineWiseSessionStore.shared.manages(token)) {
+                NotificationCenter.default.post(name: .dineWiseOperatorSessionExpired, object: token)
+            }
             let message = dineWiseFailureMessage(envelope.msg,
                 httpStatus: status, envelopeStatus: envelope.status, fallback: "请求失败")
             if status == 409 || envelope.status == 409 {
@@ -1370,6 +1375,10 @@ struct DineWiseAPI {
                 accessToken = try await DineWiseSessionStore.shared.resolve(token, base: base, force: true)
                 continue
             }
+            if status == 401 || envelope.status == 401,
+               !(await DineWiseSessionStore.shared.manages(token)) {
+                NotificationCenter.default.post(name: .dineWiseOperatorSessionExpired, object: token)
+            }
             throw DineWiseAPIError.failed(dineWiseFailureMessage(envelope.msg,
                 httpStatus: status, envelopeStatus: envelope.status, fallback: "收费凭证上传失败"))
         }
@@ -1423,6 +1432,9 @@ struct DineWiseAPI {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status),
               envelope.success, let store = envelope.response else {
+            if status == 401 || envelope.status == 401 {
+                NotificationCenter.default.post(name: .dineWiseOperatorSessionExpired, object: token)
+            }
             throw DineWiseAPIError.failed(dineWiseFailureMessage(envelope.msg,
                 httpStatus: status, envelopeStatus: envelope.status, fallback: "门店照片上传失败"))
         }

@@ -86,6 +86,14 @@ private struct DineWiseOperatorLoginView: View {
             .toolbar { ToolbarItem(placement: .topBarTrailing) {
                 Button("关闭") { password = ""; session = nil; dismiss() }
             } }
+            .onReceive(NotificationCenter.default.publisher(for: .dineWiseOperatorSessionExpired)
+                .receive(on: DispatchQueue.main)) { notification in
+                    guard let expiredToken = notification.object as? String,
+                          session?.AccessToken == expiredToken else { return }
+                    session = nil
+                    password = ""
+                    error = "运营登录已过期，请重新登录。"
+                }
         }
     }
 }
