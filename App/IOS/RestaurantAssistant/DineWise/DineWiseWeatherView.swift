@@ -169,7 +169,7 @@ struct DineWiseWeatherView: View {
                         scopeGeneration: requestScopeGeneration,
                         requestGeneration: generation) else { return }
                     guard case let DineWiseAPIError.failed(failureMessage) = error,
-                          failureMessage == "服务器暂时不可用，请稍后重试。" else { throw error }
+                          failureMessage == "该区域天气仍在获取中，请稍后再次查看。" else { throw error }
                     message = "天气服务仍在获取，5 秒后自动重试。"
                     try await Task.sleep(nanoseconds: 5_000_000_000)
                     guard isCurrentRequest(scopeKey: scopeKey,
