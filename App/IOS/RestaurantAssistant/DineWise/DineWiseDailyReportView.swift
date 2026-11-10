@@ -407,6 +407,7 @@ struct DineWiseDailyReportView: View {
                                     Text("没有可共同核对的日期，暂不汇总渠道对照金额。")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
+                                promotionBreakevenView(channel)
                                 ForEach(channel.Days) { day in
                                     HStack(alignment: .top) {
                                         VStack(alignment: .leading, spacing: 3) {
@@ -446,7 +447,7 @@ struct DineWiseDailyReportView: View {
                 if let costSummaries = monthly.ChannelDishCosts, !costSummaries.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("按渠道已录入菜品成本").font(.headline)
-                        Text("推广保本分析：暂不可计算。仅汇总已录入且成功估算的菜品成本；还需核实渠道销量是否完整、补齐菜品食材成本与包装配送等其他变动成本，并取得可追溯的推广归因收入。平台报表归因收入不等于已证明的新增收入。资料齐备前不计算保本收入或投放回报，也不对渠道排序。")
+                        Text("菜品成本只汇总已录入且成功估算的行，不代表完整渠道成本；推广保本估算单独依据渠道结算中的归因销售和可变成本核对项。")
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(costSummaries) { summary in
                             VStack(alignment: .leading, spacing: 4) {
@@ -531,6 +532,40 @@ struct DineWiseDailyReportView: View {
                 return true
             }
         }
+    }
+
+    @ViewBuilder
+    private func promotionBreakevenView(_ channel: DineWiseMonthlyChannelSummary) -> some View {
+        switch channel.PromotionBreakevenStatus ?? "incomplete" {
+        case "no_spend":
+            Text("本月没有已确认的推广费用。").font(.caption).foregroundStyle(.secondary)
+        case "ready":
+            VStack(alignment: .leading, spacing: 3) {
+                Text("推广保本归因估算：归因销售额 \(money(channel.PromotionAttributedRevenueYuan)) · 可变成本 \(money(channel.PromotionVariableCostYuan)) · 贡献率 \(percent(channel.PromotionContributionMargin))")
+                    .font(.subheadline.bold())
+                Text("已核对推广费 \(money(channel.PromotionBreakevenSpendYuan)) · 按此贡献率保本需归因销售额 \(money(channel.PromotionBreakevenRevenueYuan))")
+                Text("平台归因口径估算，不代表增量销售或投放因果效果；可变成本不含推广费。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        default:
+            VStack(alignment: .leading, spacing: 3) {
+                Text(channel.PromotionBreakevenStatus == "non_positive_margin"
+                    ? "贡献率不为正，无法计算有限的保本销售额"
+                    : channel.PromotionBreakevenStatus == "no_attributed_sales"
+                        ? "没有已核对的归因销售额，暂不可计算"
+                        : "推广资料不完整，暂不可计算")
+                    .font(.subheadline.bold())
+                ForEach(channel.PromotionBreakevenMissingReasons ?? [], id: \.self) { reason in
+                    Text(reason).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func percent(_ value: Decimal?) -> String {
+        guard let value else { return "—" }
+        let percentage = NSDecimalNumber(decimal: value * 100).doubleValue
+        return String(format: "%.1f%%", percentage)
     }
 
     @ViewBuilder

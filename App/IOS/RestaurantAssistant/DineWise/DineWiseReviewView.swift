@@ -120,6 +120,12 @@ struct DineWiseReviewView: View {
             .init(id: "platform_discount_yuan", title: "平台承担优惠", units: [("yuan", "元")]),
             .init(id: "commission_yuan", title: "平台抽点", units: [("yuan", "元")]),
             .init(id: "promotion_fee_yuan", title: "推广费", units: [("yuan", "元")]),
+            .init(id: "promotion_attributed_revenue_yuan", title: "推广归因销售额（平台口径，同营业日）", units: [("yuan", "元")]),
+            .init(id: "promotion_variable_cost_yuan", title: "推广订单对应可变成本（含食材、优惠、平台费用、配送；不含推广费）", units: [("yuan", "元")]),
+            .init(id: "promotion_sales_coverage", title: "推广归因销售覆盖（填写完整或不完整）", units: [("", "无单位")]),
+            .init(id: "promotion_cost_coverage", title: "推广订单可变成本覆盖（填写完整或不完整）", units: [("", "无单位")]),
+            .init(id: "promotion_period_coverage", title: "本月该渠道推广记录覆盖（填写完整或不完整）", units: [("", "无单位")]),
+            .init(id: "promotion_source_reference", title: "推广归因来源说明（报表名称和日期）", units: [("", "无单位")]),
             .init(id: "orders", title: "订单数", units: [("count", "单")])
         ]
         case "recipe": return [
@@ -454,7 +460,15 @@ struct DineWiseReviewView: View {
                                 Text("预计统一口径：\(jinKilogramPreview) 公斤（1 斤 = 0.5 公斤）；原核对值仍保留。")
                                     .font(.footnote).foregroundStyle(.secondary)
                             }
-                            TextField("核对值", text: $value)
+                            TextField("核对值", text: Binding(get: { value }, set: { next in
+                                value = fieldKey == "promotion_source_reference" ? String(next.prefix(500)) : next
+                            }))
+                            if ["promotion_sales_coverage", "promotion_cost_coverage", "promotion_period_coverage"].contains(fieldKey) {
+                                HStack {
+                                    Button("完整") { value = "完整" }
+                                    Button("不完整") { value = "不完整" }
+                                }
+                            }
                             Picker("单位", selection: $unit) {
                                 ForEach(options.first(where: { $0.id == fieldKey })?.units ?? [], id: \.0) { item in
                                     Text(item.1).tag(item.0)

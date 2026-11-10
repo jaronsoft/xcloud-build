@@ -784,6 +784,13 @@ struct DineWiseMonthlyChannelSummary: Decodable, Identifiable {
     let ComparableCommissionYuan: Decimal?
     let ComparablePromotionFeeYuan: Decimal?
     let ComparableOrders: Int64?
+    let PromotionBreakevenStatus: String?
+    let PromotionAttributedRevenueYuan: Decimal?
+    let PromotionVariableCostYuan: Decimal?
+    let PromotionContributionMargin: Decimal?
+    let PromotionBreakevenRevenueYuan: Decimal?
+    let PromotionBreakevenSpendYuan: Decimal?
+    let PromotionBreakevenMissingReasons: [String]?
     let Days: [DineWiseMonthlyChannelDay]
     var id: String { ChannelCode }
 }
