@@ -35,6 +35,7 @@ struct DineWiseAboutView: View {
 }
 
 private struct DineWiseOperatorLoginView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @State private var username = ""
     @State private var password = ""
@@ -51,6 +52,10 @@ private struct DineWiseOperatorLoginView: View {
                         Text(session.Username)
                         DineWiseOperatorStoreView(token: session.AccessToken)
                         Button("退出运营账号") { self.session = nil }
+                    }
+                    Section("人工服务收费") {
+                        DineWiseOperatorChargeView(token: session.AccessToken,
+                            operatorID: session.OperatorId ?? session.Username)
                     }
                 } else {
                     Section("餐有数运营登录") {
@@ -75,7 +80,7 @@ private struct DineWiseOperatorLoginView: View {
                         .disabled(busy || username.isEmpty || password.isEmpty)
                     }
                 }
-                if !error.isEmpty { Text(error).foregroundStyle(.red) }
+                if !error.isEmpty { Text(error).foregroundStyle(DineWiseTheme.danger(for: colorScheme)) }
             }
             .navigationTitle("运营入口")
             .toolbar { ToolbarItem(placement: .topBarTrailing) {

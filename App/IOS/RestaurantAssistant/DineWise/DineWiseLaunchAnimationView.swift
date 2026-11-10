@@ -34,11 +34,17 @@ struct DineWiseLaunchAnimationView: View {
             .offset(y: 260)
         }
         .task {
-            if !reduceMotion {
-                withAnimation(.easeOut(duration: 0.9)) { progress = 1 }
+            if reduceMotion {
+                progress = 1
+                try? await Task.sleep(for: .milliseconds(180))
+                onFinished()
+            } else {
+                withAnimation(.easeOut(duration: 0.9), completionCriteria: .removed) {
+                    progress = 1
+                } completion: {
+                    onFinished()
+                }
             }
-            try? await Task.sleep(for: .milliseconds(reduceMotion ? 180 : 1050))
-            onFinished()
         }
     }
 }
