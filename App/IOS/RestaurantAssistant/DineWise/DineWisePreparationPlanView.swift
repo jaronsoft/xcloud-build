@@ -544,6 +544,15 @@ struct DineWisePreparationPlanView: View {
             .joined(separator: "\u{1e}")
     }
 
+    private var purchaseInventoryIsComplete: Bool {
+        !orderItems.isEmpty && orderItems.allSatisfy { item in
+            [item.currentStock, item.inTransit, item.reserved].allSatisfy { value in
+                !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    && validOptionalInventoryQuantity(value)
+            }
+        }
+    }
+
     private func purchaseItemIsValid(quantity: Decimal, inventory: String, supplier: String,
                                      packageSpecification: String, quantityReason: String,
                                      currentStock: String, inTransit: String, reserved: String,
@@ -604,13 +613,13 @@ struct DineWisePreparationPlanView: View {
                         .font(.subheadline.bold())
                     TextField("拟订数量，可填 0", text: $item.quantity)
                         .keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
-                    Text("库存数量按本项单位填写；留空时该项不会生成试算范围。")
+                    Text("库存数量按本项单位填写；可以留空保存草稿，但全计划每项的现有、在途和预留数量都填齐后才能试算。")
                         .font(.caption).foregroundStyle(.secondary)
-                    TextField("现有库存数量（可留空）", text: $item.currentStock)
+                    TextField("现有库存数量", text: $item.currentStock)
                         .keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
-                    TextField("在途数量（可留空）", text: $item.inTransit)
+                    TextField("在途数量", text: $item.inTransit)
                         .keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
-                    TextField("预留数量（可留空）", text: $item.reserved)
+                    TextField("预留数量", text: $item.reserved)
                         .keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
                     TextField("现有、在途和预留库存核对说明", text: $item.inventory, axis: .vertical)
                         .lineLimit(2...3).textFieldStyle(.roundedBorder)
@@ -626,7 +635,11 @@ struct DineWisePreparationPlanView: View {
             }
             Button("试算采购范围") { previewPurchase() }
                 .buttonStyle(.bordered)
-                .disabled(busy || purchaseEditorHasVersionConflict)
+                .disabled(busy || purchaseEditorHasVersionConflict || !purchaseInventoryIsComplete)
+            if !purchaseInventoryIsComplete {
+                Text("补齐全部食材的库存数量后，才可试算整张采购计划。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if let preview = purchasePreview,
                preview.Version == purchaseVersion,
                purchasePreviewSignature == purchaseInventorySignature {
@@ -711,7 +724,7 @@ struct DineWisePreparationPlanView: View {
     }
 
     private func previewPurchase() {
-        guard !purchaseEditingID.isEmpty else { return }
+        guard !purchaseEditingID.isEmpty, purchaseInventoryIsComplete else { return }
         let inputs = orderItems.map { item in
             DineWisePurchaseInventoryInput(IngredientName: item.name, Unit: item.unit,
                 CurrentStockQuantity: optionalInventoryQuantity(item.currentStock),
@@ -733,7 +746,12 @@ struct DineWisePreparationPlanView: View {
                     userID: requestUserID, generation: generation),
                    purchaseEditingID == planID, purchaseVersion == currentVersion,
                    purchaseInventorySignature == requestedSignature {
-                    purchasePreview = result; purchasePreviewSignature = requestedSignature
+                    if result.Items.count != inputs.count || result.Items.contains(where: { !$0.CanCalculate }) {
+                        message = "服务端未返回完整试算结果，请刷新后重试。"
+                        messageIsError = true
+                    } else {
+                        purchasePreview = result; purchasePreviewSignature = requestedSignature
+                    }
                 }
             } catch {
                 if isCurrentRequest(storeID: storeID, token: requestToken, role: requestRole,
