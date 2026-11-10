@@ -1402,6 +1402,7 @@ struct ContentView: View {
             }
             DineWisePushRegistration.shared.clearDeviceToken()
         }
+        workspaceGeneration += 1
         requestVersion += 1
         storeRequestVersion += 1
         busy = false
