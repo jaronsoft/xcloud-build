@@ -1181,33 +1181,44 @@ struct ContentView: View {
             Text(pushAuthorizationSummary).font(.footnote).foregroundStyle(.secondary)
             HStack {
                 Button("开启或刷新系统提醒") {
+                    guard !token.isEmpty, !sessionUserID.isEmpty else { return }
+                    let requestedToken = token
+                    let requestedUserID = sessionUserID
                     Task {
+                        guard isCurrentPushSession(requestedToken, userID: requestedUserID) else { return }
                         do {
                             let granted = try await DineWisePushRegistration.shared.requestAuthorization()
+                            guard isCurrentPushSession(requestedToken, userID: requestedUserID) else { return }
                             if granted {
-                                UserDefaults.standard.set(true, forKey: pushEnabledKey(sessionUserID))
+                                UserDefaults.standard.set(true, forKey: pushEnabledKey(requestedUserID))
                                 pushAuthorizationSummary = "系统通知已允许，正在登记此设备。"
                                 let deviceToken = DineWisePushRegistration.shared.deviceToken
                                 if !deviceToken.isEmpty {
-                                    await registerPushDevice(deviceToken, accessToken: token)
+                                    await registerPushDevice(deviceToken, accessToken: requestedToken)
                                 }
                             } else {
-                                UserDefaults.standard.set(false, forKey: pushEnabledKey(sessionUserID))
+                                UserDefaults.standard.set(false, forKey: pushEnabledKey(requestedUserID))
                                 pushSystemAuthorizationDenied = true
-                                let revoked = await revokeSavedPushDevice(accessToken: token,
-                                    userID: sessionUserID)
+                                let revoked = await revokeSavedPushDevice(accessToken: requestedToken,
+                                    userID: requestedUserID)
+                                guard isCurrentPushSession(requestedToken, userID: requestedUserID) else { return }
                                 pushAuthorizationSummary = revoked
                                     ? "尚未允许通知，可在 iPhone 设置中为餐有数开启。"
                                     : "尚未允许通知；服务端登记撤销失败，联网后返回应用会重试。"
                             }
                         } catch {
-                            pushAuthorizationSummary = "系统通知设置未完成，请稍后重试。"
+                            if isCurrentPushSession(requestedToken, userID: requestedUserID) {
+                                pushAuthorizationSummary = "系统通知设置未完成，请稍后重试。"
+                            }
                         }
                     }
                 }
                 .buttonStyle(.bordered)
                 Button("停用此设备", role: .destructive) {
-                    Task { await revokePushDevice(accessToken: token) }
+                    guard !token.isEmpty, !sessionUserID.isEmpty else { return }
+                    let accessToken = token
+                    let requestedUserID = sessionUserID
+                    Task { await revokePushDevice(accessToken: accessToken, userID: requestedUserID) }
                 }
                 .buttonStyle(.bordered)
             }
@@ -1226,13 +1237,17 @@ struct ContentView: View {
 
     @MainActor
     private func refreshPushAuthorizationSummary() async {
+        let requestedToken = token
+        let requestedUserID = sessionUserID
         let settings = await UNUserNotificationCenter.current().notificationSettings()
-        guard isPushEnabled(sessionUserID) else {
-            var revoked = UserDefaults.standard.string(forKey: pushDeviceKey(sessionUserID)) == nil
-            if let accessToken = token, !sessionUserID.isEmpty {
+        guard isCurrentPushSession(requestedToken, userID: requestedUserID) else { return }
+        guard isPushEnabled(requestedUserID) else {
+            var revoked = UserDefaults.standard.string(forKey: pushDeviceKey(requestedUserID)) == nil
+            if let accessToken = requestedToken, !requestedUserID.isEmpty {
                 revoked = await revokeSavedPushDevice(accessToken: accessToken,
-                    userID: sessionUserID)
+                    userID: requestedUserID)
             }
+            guard isCurrentPushSession(requestedToken, userID: requestedUserID) else { return }
             pushSystemAuthorizationDenied = settings.authorizationStatus == .denied
             pushAuthorizationSummary = revoked
                 ? "此设备的系统任务提醒已停用。"
@@ -1242,18 +1257,18 @@ struct ContentView: View {
         switch settings.authorizationStatus {
         case .authorized, .provisional, .ephemeral:
             pushSystemAuthorizationDenied = false
-            let savedDeviceID = UserDefaults.standard.string(forKey: pushDeviceKey(sessionUserID))
+            let savedDeviceID = UserDefaults.standard.string(forKey: pushDeviceKey(requestedUserID))
             pushAuthorizationSummary = savedDeviceID == nil
                 ? "系统通知已允许；此设备将在收到 APNs 令牌后登记。"
                 : "系统通知已授权，设备登记完成；提醒送达还取决于服务端推送配置。"
         case .denied:
-            pushSystemAuthorizationDenied = true
-            let accessToken = token
-            if let accessToken, !sessionUserID.isEmpty {
-                _ = await revokeSavedPushDevice(accessToken: accessToken, userID: sessionUserID)
+            if let accessToken = requestedToken, !requestedUserID.isEmpty {
+                _ = await revokeSavedPushDevice(accessToken: accessToken, userID: requestedUserID)
             }
+            guard isCurrentPushSession(requestedToken, userID: requestedUserID) else { return }
+            pushSystemAuthorizationDenied = true
             pushAuthorizationSummary = UserDefaults.standard.string(
-                forKey: pushDeviceKey(sessionUserID)) == nil
+                forKey: pushDeviceKey(requestedUserID)) == nil
                 ? "系统通知未允许；应用内启用偏好已保留，重新允许后会恢复登记。"
                 : "系统通知未允许；服务端登记撤销失败，联网后返回应用会重试。"
         case .notDetermined:
@@ -1316,19 +1331,28 @@ struct ContentView: View {
             UserDefaults.standard.set(device.Id, forKey: pushDeviceKey(userID))
             pushAuthorizationSummary = "系统通知已授权，设备登记完成；提醒送达还取决于服务端推送配置。"
         } catch {
-            pushAuthorizationSummary = "设备登记失败；站内提醒仍可在任务页查看。"
+            if self.token == accessToken, sessionUserID == userID {
+                pushAuthorizationSummary = "设备登记失败；站内提醒仍可在任务页查看。"
+            }
         }
     }
 
     @MainActor
-    private func revokePushDevice(accessToken: String) async {
-        UserDefaults.standard.set(false, forKey: pushEnabledKey(sessionUserID))
-        if !(await revokeSavedPushDevice(accessToken: accessToken, userID: sessionUserID)) {
+    private func revokePushDevice(accessToken: String, userID: String) async {
+        guard isCurrentPushSession(accessToken, userID: userID) else { return }
+        UserDefaults.standard.set(false, forKey: pushEnabledKey(userID))
+        if !(await revokeSavedPushDevice(accessToken: accessToken, userID: userID)) {
+            guard isCurrentPushSession(accessToken, userID: userID) else { return }
             pushAuthorizationSummary = "设备停用失败，请联网后重试。"
             return
         }
+        guard isCurrentPushSession(accessToken, userID: userID) else { return }
         DineWisePushRegistration.shared.clearDeviceToken()
         pushAuthorizationSummary = "此设备已停用系统任务提醒。"
+    }
+
+    private func isCurrentPushSession(_ accessToken: String?, userID: String) -> Bool {
+        token == accessToken && sessionUserID == userID
     }
 
     @MainActor
