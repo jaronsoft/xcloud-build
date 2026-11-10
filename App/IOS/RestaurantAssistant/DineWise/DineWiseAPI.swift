@@ -1048,12 +1048,14 @@ private func dineWiseStoredJSONLength(_ value: Any) throws -> Int {
 enum DineWiseAPIError: LocalizedError {
     case invalidURL
     case failed(String)
+    case conflict(String)
     case sessionExpired
 
     var errorDescription: String? {
         switch self {
         case .invalidURL: "API 地址无效，请检查应用配置。"
         case let .failed(message): message
+        case let .conflict(message): message
         case .sessionExpired: "登录已过期，请重新登录。"
         }
     }
@@ -1119,8 +1121,12 @@ struct DineWiseAPI {
                 accessToken = try await DineWiseSessionStore.shared.resolve(token, base: base, force: true)
                 continue
             }
-            throw DineWiseAPIError.failed(dineWiseFailureMessage(envelope.msg,
-                httpStatus: status, envelopeStatus: envelope.status, fallback: "请求失败"))
+            let message = dineWiseFailureMessage(envelope.msg,
+                httpStatus: status, envelopeStatus: envelope.status, fallback: "请求失败")
+            if status == 409 || envelope.status == 409 {
+                throw DineWiseAPIError.conflict(message)
+            }
+            throw DineWiseAPIError.failed(message)
         }
         throw DineWiseAPIError.failed("请求失败，请重试。")
     }

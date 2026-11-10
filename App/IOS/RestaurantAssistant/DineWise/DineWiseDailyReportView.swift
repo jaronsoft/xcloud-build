@@ -842,7 +842,27 @@ struct DineWiseDailyReportView: View {
             } catch {
                 if isCurrentRequest(storeID: storeID, token: requestToken, date: date,
                     period: "daily", generation: generation) {
-                    message = error.localizedDescription
+                    if case DineWiseAPIError.conflict = error {
+                        report = nil
+                        do {
+                            let refreshed = try await api.dailyReport(storeID: storeID,
+                                businessDate: date, token: requestToken)
+                            guard refreshed.StoreId == storeID, refreshed.Mode == store.Mode,
+                                  refreshed.BusinessDate == date else {
+                                throw DineWiseReportScopeError.mismatch
+                            }
+                            if isCurrentRequest(storeID: storeID, token: requestToken, date: date,
+                                period: "daily", generation: generation) {
+                                report = refreshed
+                                message = "经营资料已变化，日报已刷新，请核对后重新保存。"
+                            }
+                        } catch {
+                            if isCurrentRequest(storeID: storeID, token: requestToken, date: date,
+                                period: "daily", generation: generation) {
+                                message = error.localizedDescription
+                            }
+                        }
+                    } else { message = error.localizedDescription }
                 }
             }
             if isCurrentRequest(storeID: storeID, token: requestToken, date: date,
