@@ -22,6 +22,7 @@ struct DineWiseCustomerConsentView: View {
 
     @State private var items: [DineWiseCustomerConsent] = []
     @State private var nextBeforeID: String?
+    @State private var todayNewAuthorizedCount = 0
     @State private var loading = false
     @State private var loadingMore = false
     @State private var saving = false
@@ -61,6 +62,18 @@ struct DineWiseCustomerConsentView: View {
         [birthdayEnabled ? "birthday" : nil,
          reengagementEnabled ? "reengagement" : nil,
          effectTrackingEnabled ? "effect_tracking" : nil].compactMap { $0 }
+    }
+
+    private var touchGuidance: [String] {
+        let action = touchChannel == "phone" ? "拨打电话"
+            : touchChannel == "sms" ? "发送短信"
+            : touchChannel == "enterprise_wechat" ? "在企业微信联系"
+            : touchChannel == "wechat" ? "在微信联系" : "通过已选人工渠道联系"
+        return [
+            "先核对授权用途、会员引用号和草稿内容，只使用顾客已同意的信息。",
+            "离开餐有数后自行打开对应渠道，确认联系对象与门店会员记录一致，再人工\(action)。",
+            "完成后回到本页按实际情况自报；应用不代发，也不验证平台送达。"
+        ]
     }
 
     private var canSave: Bool {
@@ -132,6 +145,14 @@ struct DineWiseCustomerConsentView: View {
                 .font(.headline).foregroundStyle(DineWiseTheme.accent(for: colorScheme))
             Text(consentNotice).font(.subheadline).foregroundStyle(.secondary)
             Text("仅录入门店会员引用号，不要填写姓名、手机号、邮箱或支付资料。生日仅保存月日；每项用途分别确认。经营效果记录限 POS 小票号或平台核销编号，老板需独立核对。保存期限必须按门店已取得的许可约定填写，本页不会自动设定期限。")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline) {
+                Text("今日新增授权登记").font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(todayNewAuthorizedCount) 位").font(.headline)
+                    .foregroundStyle(DineWiseTheme.accent(for: colorScheme))
+            }
+            Text("按本店营业日统计当前仍有效的授权；不代表新增好友、到店或成交。")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(16)
@@ -361,6 +382,13 @@ struct DineWiseCustomerConsentView: View {
                 Text("短信").tag("sms")
                 Text("其他人工方式").tag("other_manual")
             }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("操作步骤（人工） · \(touchChannelTitle(touchChannel))")
+                    .font(.caption.weight(.semibold))
+                ForEach(Array(touchGuidance.enumerated()), id: \.offset) { index, step in
+                    Text("\(index + 1). \(step)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
             TextField("拟发送内容", text: $touchContent, axis: .vertical)
                 .lineLimit(3...6)
                 .textFieldStyle(.roundedBorder)
@@ -510,6 +538,7 @@ struct DineWiseCustomerConsentView: View {
             let knownIDs = Set(items.map(\.Id))
             items.append(contentsOf: page.Items.filter { !knownIDs.contains($0.Id) })
             nextBeforeID = page.NextBeforeId
+            todayNewAuthorizedCount = page.TodayNewAuthorizedCount ?? 0
             error = ""
         } catch {
             guard isCurrent(storeID: requestedStoreID, mode: requestedMode,

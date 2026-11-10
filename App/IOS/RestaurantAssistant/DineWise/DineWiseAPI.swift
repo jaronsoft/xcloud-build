@@ -122,6 +122,7 @@ struct DineWiseStore: Decodable, Identifiable {
 struct DineWiseCustomerConsentPage: Decodable {
     let Items: [DineWiseCustomerConsent]
     let NextBeforeId: String?
+    let TodayNewAuthorizedCount: Int?
 }
 
 struct DineWiseCustomerTouchDraftPage: Decodable {
