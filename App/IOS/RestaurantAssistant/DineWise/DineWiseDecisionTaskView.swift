@@ -578,6 +578,22 @@ struct DineWiseDecisionTaskView: View {
                         Text("直接记录会议交办，不需要先创建经营建议。未指定个人时，所选岗位的授权成员都能接收并由首位开始执行的人接单。")
                             .font(.footnote).foregroundStyle(.secondary)
                         DatePicker("会议日期", selection: $meetingDate, displayedComponents: .date)
+                        HStack(spacing: 8) {
+                            Button("店长 · 周末排班") {
+                                meetingTargetRole = "manager"
+                                meetingAssignee = ""
+                                meetingTitle = "确认周末排班方案"
+                                meetingSteps = "检查周末各时段人员安排，确认关键岗位覆盖，并说明需要调整的班次。"
+                            }
+                            .buttonStyle(.bordered)
+                            Button("采购 · 供应商报价") {
+                                meetingTargetRole = "purchaser"
+                                meetingAssignee = ""
+                                meetingTitle = "核对两家供应商报价"
+                                meetingSteps = "核对主要食材规格、含税价格和供货日期，记录差异并附报价来源。"
+                            }
+                            .buttonStyle(.bordered)
+                        }
                         TextField("事项标题", text: $meetingTitle).textFieldStyle(.roundedBorder)
                         TextField("完成标准与说明", text: $meetingSteps, axis: .vertical)
                             .lineLimit(3...6).textFieldStyle(.roundedBorder)

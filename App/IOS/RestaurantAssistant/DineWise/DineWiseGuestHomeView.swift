@@ -172,6 +172,20 @@ struct DineWiseGuestHomeView: View {
                 }
                 .font(.caption.weight(.medium))
                 .foregroundStyle(red)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("本周会议事项").font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text("1/3 已完成").font(.caption.weight(.semibold)).foregroundStyle(green)
+                    }
+                    Text("构造示例 · 老板可查看岗位执行进度")
+                        .font(.caption2).foregroundStyle(readableSecondary)
+                    meetingTask("已完成", role: "店长", title: "确认周末排班方案", color: green)
+                    meetingTask("执行中", role: "采购", title: "核对两家供应商报价", color: gold)
+                    meetingTask("待接单", role: "店长", title: "更新门店营业时段", color: readableSecondary)
+                }
+                .padding(12)
+                .background(softSurface, in: RoundedRectangle(cornerRadius: 14))
             }
             .cardStyle()
 
@@ -425,6 +439,19 @@ struct DineWiseGuestHomeView: View {
             .frame(height: 4)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func meetingTask(_ status: String, role: String, title: String, color: Color) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(status).font(.caption2.weight(.semibold)).foregroundStyle(color)
+                .frame(width: 48, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.caption.weight(.medium)).foregroundStyle(.primary)
+                Text(role).font(.caption2).foregroundStyle(readableSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

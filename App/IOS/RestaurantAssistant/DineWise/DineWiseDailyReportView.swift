@@ -452,9 +452,14 @@ struct DineWiseDailyReportView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(channelName(summary.ChannelCode ?? ""))
                                     .font(.subheadline.bold())
-                                Text("有记录 (summary.RecordedBusinessDayCount) 个营业日 · 销量来源 (summary.RecordedSalesSourceCount) 份 · 菜品行 (summary.RecordedDishRowCount) 条")
-                                Text("已估算 (summary.EstimatedDishRowCount) 条 · 未估算 (summary.UnestimatedDishRowCount) 条 · 已估算小计 (money(summary.RecordedIngredientCostSubtotalYuan))")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                if summary.RecordedDishRowCount == 0 {
+                                    Text("暂无该渠道菜品销量记录，无法形成成本小计。")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                } else {
+                                    Text("有记录 \(summary.RecordedBusinessDayCount) 个营业日 · 销量来源 \(summary.RecordedSalesSourceCount) 份 · 菜品行 \(summary.RecordedDishRowCount) 条")
+                                    Text("已估算 \(summary.EstimatedDishRowCount) 条 · 未估算 \(summary.UnestimatedDishRowCount) 条 · 已估算小计 \(money(summary.RecordedIngredientCostSubtotalYuan))")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(10)
