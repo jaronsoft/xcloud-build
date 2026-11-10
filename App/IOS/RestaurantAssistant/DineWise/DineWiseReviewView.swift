@@ -133,7 +133,8 @@ struct DineWiseReviewView: View {
         ]
         case "dish_sales": return [
             .init(id: "dish_name", title: "菜品名称", units: [("", "无单位")]),
-            .init(id: "sold_portions", title: "售出份数", units: [("portion", "份")])
+            .init(id: "sold_portions", title: "售出份数", units: [("portion", "份")]),
+            .init(id: "channel_code", title: "渠道（堂食/美团/抖音/私域会员/其他，可选）", units: [("", "无单位")])
         ]
         case "purchase":
             var fields: [DineWiseReviewOption] = [

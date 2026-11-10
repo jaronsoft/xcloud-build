@@ -716,6 +716,7 @@ struct DineWiseMonthlyReport: Decodable {
 struct DineWiseMonthlyDishCost: Decodable, Identifiable {
     let BusinessDate: String
     let DishName: String
+    let ChannelCode: String?
     let RecipeVersion: String?
     let SoldPortions: Int64?
     let SalesSourceId: String?
@@ -729,7 +730,7 @@ struct DineWiseMonthlyDishCost: Decodable, Identifiable {
     let RegionalScenarioImpactYuan: Decimal?
     let RegionalScenarioMissingReasons: [String]
     let MissingReasons: [String]
-    var id: String { "\(BusinessDate)-\(DishName)" }
+    var id: String { "\(BusinessDate)-\(DishName)-\(ChannelCode ?? "unassigned")" }
 }
 
 struct DineWiseMonthlyIngredientCostLine: Decodable, Identifiable {

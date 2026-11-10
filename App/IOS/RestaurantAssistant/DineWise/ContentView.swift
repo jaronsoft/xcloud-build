@@ -1728,7 +1728,7 @@ struct ContentView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if kind == "dish_sales" {
-                Text("按营业日和菜品录入已核对的售出份数，每个菜品每天一条。月报会在唯一销量、当日有效配方和近 90 天最近唯一同规格公斤进价齐备时估算逐菜食材成本；重复或资料不全时不计算。估算不代表全店耗用或毛利。")
+                Text("按营业日和菜品录入已核对的售出份数；需要做渠道分析时可选渠道，每个渠道每天分别记录。未区分渠道的旧资料单独显示，不会分摊到平台。月报仅在唯一销量、当日有效配方和近 90 天最近唯一同规格公斤进价齐备时估算逐菜食材成本；重复或资料不全时不计算。估算不代表全店耗用或毛利。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if kind == "purchase" && selectedRole == "purchaser" {

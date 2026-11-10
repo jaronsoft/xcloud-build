@@ -301,7 +301,7 @@ struct DineWiseDailyReportView: View {
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(dishCosts) { dish in
                             VStack(alignment: .leading, spacing: 5) {
-                                Text("\(dish.BusinessDate) · \(dish.DishName) · 配方 \(dish.RecipeVersion ?? "未确定")")
+                                Text("\(dish.BusinessDate) · \(dish.DishName) · \(channelName(dish.ChannelCode ?? "")) · 配方 \(dish.RecipeVersion ?? "未确定")")
                                     .font(.subheadline.bold())
                                 Text(dish.EstimatedIngredientCostYuan.map { "估算食材成本 \(money($0))" } ?? "成本暂不可估算")
                                 if monthly.PriceScenarioRegion != nil {
@@ -804,7 +804,8 @@ struct DineWiseDailyReportView: View {
     }
 
     private func channelName(_ code: String) -> String {
-        switch code {
+        guard !code.isEmpty else { return "未区分渠道" }
+        return switch code {
         case "dine_in": "堂食"
         case "meituan": "美团"
         case "douyin": "抖音"
