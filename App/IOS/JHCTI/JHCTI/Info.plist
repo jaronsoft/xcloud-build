@@ -49,6 +49,8 @@
     <true/>
     <key>UIUserInterfaceStyle</key>
     <string>Light</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
