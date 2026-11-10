@@ -622,7 +622,7 @@ struct DineWiseCustomerConsentView: View {
         do {
             let revoked = try await api.revokeCustomerConsent(storeID: requestedStoreID,
                 consentID: item.Id, token: requestedToken, role: requestedRole,
-                version: item.Version, reason: "顾客撤回营销用途许可")
+                version: item.Version, reasonCode: "customer_withdrew_consent")
             try Task.checkCancellation()
             guard isCurrent(storeID: requestedStoreID, mode: requestedMode,
                 token: requestedToken, role: requestedRole, generation: generation),

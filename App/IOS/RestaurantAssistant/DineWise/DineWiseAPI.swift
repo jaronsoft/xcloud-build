@@ -1164,10 +1164,10 @@ struct DineWiseAPI {
     }
 
     func revokeCustomerConsent(storeID: String, consentID: String, token: String,
-                               role: String, version: Int, reason: String) async throws
+                               role: String, version: Int, reasonCode: String) async throws
         -> DineWiseCustomerConsent {
         try await request("/stores/\(storeID)/private-domain/customers/\(consentID)/revoke",
-            method: "POST", body: ["Version": version, "Reason": reason],
+            method: "POST", body: ["Version": version, "Reason": reasonCode],
             token: token, role: role)
     }
 
