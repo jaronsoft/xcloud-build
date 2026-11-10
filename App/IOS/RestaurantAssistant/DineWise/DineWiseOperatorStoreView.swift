@@ -12,6 +12,61 @@ private struct DineWiseOperatorBusinessHoursPeriod: Identifiable {
     var closesAt: Date
 }
 
+func decodeDineWiseStorePhoto(_ source: Data) throws -> UIImage {
+    guard let imageSource = CGImageSourceCreateWithData(source as CFData, nil),
+          let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 2200,
+            kCGImageSourceCreateThumbnailWithTransform: true
+          ] as CFDictionary) else {
+        throw DineWiseAPIError.failed("无法读取所选门店照片。")
+    }
+    return UIImage(cgImage: cgImage)
+}
+
+func compressedDineWiseStorePhotoData(_ image: UIImage) throws -> Data {
+    let sourceWidth = Int(image.size.width * image.scale)
+    let sourceHeight = Int(image.size.height * image.scale)
+    guard sourceWidth > 0, sourceHeight > 0 else {
+        throw DineWiseAPIError.failed("门店照片尺寸无效。")
+    }
+
+    var maxDimension = max(sourceWidth, sourceHeight)
+    var outputImage = image
+    let rendererFormat = UIGraphicsImageRendererFormat.default()
+    rendererFormat.scale = 1
+    rendererFormat.opaque = true
+    while true {
+        let scale = min(1, 2200.0 / Double(maxDimension))
+        let width = max(1, Int(Double(sourceWidth) * scale))
+        let height = max(1, Int(Double(sourceHeight) * scale))
+        if outputImage === image || outputImage.cgImage?.width != width
+            || outputImage.cgImage?.height != height {
+            outputImage = UIGraphicsImageRenderer(
+                size: CGSize(width: CGFloat(width), height: CGFloat(height)), format: rendererFormat
+            ).image { _ in image.draw(in: CGRect(x: 0, y: 0,
+                width: CGFloat(width), height: CGFloat(height))) }
+        }
+
+        var quality: CGFloat = 0.88
+        while true {
+            guard let data = outputImage.jpegData(compressionQuality: quality) else {
+                throw DineWiseAPIError.failed("门店照片无法转换为 JPEG。")
+            }
+            if data.count <= 5 * 1024 * 1024 { return data }
+            if quality > 0.4 {
+                quality = max(0.4, quality - 0.08)
+                continue
+            }
+            guard maxDimension > 640 else {
+                throw DineWiseAPIError.failed("门店照片压缩后仍超过 5 MB，请选择较小的图片。")
+            }
+            maxDimension = max(640, Int(Double(maxDimension) * 0.75))
+            break
+        }
+    }
+}
+
 struct DineWiseOperatorStoreView: View {
     @Environment(\.colorScheme) private var colorScheme
     let token: String
@@ -289,10 +344,12 @@ struct DineWiseOperatorStoreView: View {
                 let generation = tokenGeneration
                 Task {
                     if let data = try? await item.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data),
+                       let image = try? decodeDineWiseStorePhoto(data),
                        isCurrentToken(requestToken, generation: generation) {
                         photo = image
                         resetDraftKey()
+                    } else if isCurrentToken(requestToken, generation: generation) {
+                        error = "无法读取所选门店照片。"
                     }
                 }
             }
@@ -442,9 +499,7 @@ struct DineWiseOperatorStoreView: View {
 
     private func uploadPhotoAndRefresh(_ image: UIImage, storeID: String,
                                       token requestToken: String) async throws -> [DineWiseOperatorStore] {
-        guard let data = image.jpegData(compressionQuality: 0.8) else {
-            throw DineWiseAPIError.failed("照片无法转换为 JPEG。")
-        }
+        let data = try compressedDineWiseStorePhotoData(image)
         _ = try await api.operatorUploadPhoto(token: requestToken, storeID: storeID, data: data)
         return try await api.operatorStores(token: requestToken)
     }

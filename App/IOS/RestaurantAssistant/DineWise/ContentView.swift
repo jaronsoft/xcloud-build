@@ -3184,14 +3184,17 @@ private struct DineWiseStoreProfileEditor: View {
                     .onChange(of: selectedPhoto) { _, selection in
                         guard let selection else { return }
                         Task {
-                            guard let data = try? await selection.loadTransferable(type: Data.self),
-                                  let image = UIImage(data: data),
-                                  let jpeg = image.jpegData(compressionQuality: 0.82),
-                                  jpeg.count <= 5 * 1024 * 1024 else {
-                                message = "请选择有效图片，压缩后不超过 5 MB。"; messageIsError = true
-                                photoData = nil; return
+                            do {
+                                guard let data = try await selection.loadTransferable(type: Data.self) else {
+                                    throw DineWiseAPIError.failed("无法读取所选门店照片。")
+                                }
+                                let image = try decodeDineWiseStorePhoto(data)
+                                let jpeg = try compressedDineWiseStorePhotoData(image)
+                                photoData = jpeg; message = "照片已校正方向并压缩。"; messageIsError = false
+                            } catch {
+                                message = error.localizedDescription; messageIsError = true
+                                photoData = nil
                             }
-                            photoData = jpeg; message = "照片已选择。"; messageIsError = false
                         }
                     }
                     if photoData != nil {
