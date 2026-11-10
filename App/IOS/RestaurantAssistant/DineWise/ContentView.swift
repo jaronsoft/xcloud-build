@@ -399,6 +399,7 @@ struct ContentView: View {
             if let token {
                 let reviewStoreID = selectedStoreID
                 let reviewRole = selectedRole
+                let reviewWorkspaceGeneration = workspaceGeneration
                 let reviewTimeZone = stores.first(where: { $0.Id == reviewStoreID })?.TimeZone
                 DineWiseReviewView(storeID: reviewStoreID, submission: item, token: token,
                     timeZone: reviewTimeZone, role: reviewRole, userID: sessionUserID,
@@ -406,7 +407,8 @@ struct ContentView: View {
                         do {
                             let files = try await api.files(storeID: reviewStoreID,
                                 submissionID: item.Id, token: token, role: reviewRole)
-                            guard isCurrent(storeID: reviewStoreID, role: reviewRole, token: token) else {
+                            guard isCurrent(storeID: reviewStoreID, role: reviewRole, token: token,
+                                generation: reviewWorkspaceGeneration) else {
                                 return false
                             }
                             filesBySubmission[item.Id] = files
@@ -417,7 +419,8 @@ struct ContentView: View {
                     }) {
                     do {
                         try await refreshSubmissionPage(storeID: reviewStoreID,
-                            token: token, role: reviewRole)
+                            token: token, role: reviewRole,
+                            workspaceGeneration: reviewWorkspaceGeneration)
                         return true
                     } catch {
                         return false
@@ -434,15 +437,20 @@ struct ContentView: View {
             }
             await openPendingPushRoute()
         }
-        .task(id: "\(token ?? ""):\(selectedStoreID):\(selectedRole):\(selectedTab)") {
+        .task(id: "\(token ?? ""):\(selectedStoreID):\(selectedRole):\(selectedTab):\(workspaceGeneration)") {
             guard let token, !selectedStoreID.isEmpty,
                   ["owner", "manager", "purchaser"].contains(selectedRole) else {
                 unreadMeetingTaskCount = 0
                 return
             }
+            let requestStoreID = selectedStoreID
+            let requestRole = selectedRole
+            let requestGeneration = workspaceGeneration
             while !Task.isCancelled {
-                if let notifications = try? await api.taskNotifications(storeID: selectedStoreID,
-                    token: token, role: selectedRole, size: 21), !Task.isCancelled {
+                if let notifications = try? await api.taskNotifications(storeID: requestStoreID,
+                    token: token, role: requestRole, size: 21), !Task.isCancelled,
+                   isCurrent(storeID: requestStoreID, role: requestRole, token: token,
+                       generation: requestGeneration) {
                     unreadMeetingTaskCount = notifications.filter { !$0.IsRead }.count
                 }
                 try? await Task.sleep(for: .seconds(30))
@@ -461,14 +469,16 @@ struct ContentView: View {
                 }
             }
         }
-        .task(id: "\(selectedTab):\(selectedStoreID):\(selectedRole)") {
+        .task(id: "\(selectedTab):\(selectedStoreID):\(selectedRole):\(workspaceGeneration)") {
+            let requestGeneration = workspaceGeneration
             speechTranscriber.stop()
             let listTab = selectedRole == "owner" ? "materials" : "upload"
             if (!submissionPlanFilter.isEmpty || !submissionStatusFilter.isEmpty)
                 && selectedTab != listTab, let token {
                 submissionPlanFilter = ""; submissionStatusFilter = ""; submissionPage = 1
                 try? await refreshSubmissionPage(storeID: selectedStoreID,
-                    token: token, role: selectedRole)
+                    token: token, role: selectedRole,
+                    workspaceGeneration: requestGeneration)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dineWiseSessionExpired)) { _ in
@@ -1364,17 +1374,20 @@ struct ContentView: View {
         }
         DineWisePushRegistration.shared.clearPendingRoute()
         switchWorkspace(storeID: store.Id, role: route.role)
+        let routeWorkspaceGeneration = workspaceGeneration
         selectedTab = route.role == "owner" ? "suggestions" : "tasks"
         pushTaskFocusID = route.taskID
         do {
             _ = try await api.markTaskNotificationRead(storeID: store.Id,
                 notificationID: route.notificationID, token: accessToken, role: route.role)
             if token == accessToken, selectedStoreID == store.Id, selectedRole == route.role,
+               workspaceGeneration == routeWorkspaceGeneration,
                unreadMeetingTaskCount <= 20 {
                 unreadMeetingTaskCount = max(0, unreadMeetingTaskCount - 1)
             }
         } catch {
-            if token == accessToken, selectedStoreID == store.Id, selectedRole == route.role {
+            if token == accessToken, selectedStoreID == store.Id, selectedRole == route.role,
+               workspaceGeneration == routeWorkspaceGeneration {
                 setMessage(error.localizedDescription, isError: true)
             }
         }
@@ -1670,7 +1683,10 @@ struct ContentView: View {
             }
             if !submissionKinds(for: role).isEmpty {
                 do {
-                    try await refreshSubmissionPage(storeID: selected.Id, token: token, role: role)
+                    guard isCurrent(storeID: selected.Id, role: role, token: token,
+                        generation: requestGeneration) else { return }
+                    try await refreshSubmissionPage(storeID: selected.Id, token: token, role: role,
+                        workspaceGeneration: requestGeneration)
                 } catch is CancellationError { }
                 catch {
                     if isCurrent(storeID: selected.Id, role: role, token: token,
@@ -2285,16 +2301,19 @@ struct ContentView: View {
         }
         .padding()
         .background(DineWiseTheme.card, in: RoundedRectangle(cornerRadius: 16))
-        .task(id: "\(store.Id):\(selectedRole):\(token)") {
+        .task(id: "\(store.Id):\(selectedRole):\(token):\(workspaceGeneration)") {
+            let requestGeneration = workspaceGeneration
             if selectedRole == "chef" {
                 let plans = try? await api.preparationPlans(storeID: store.Id, token: token, role: "chef")
-                if let plans, isCurrent(storeID: store.Id, role: "chef", token: token) {
+                if let plans, isCurrent(storeID: store.Id, role: "chef", token: token,
+                    generation: requestGeneration) {
                     preparationPlans = plans
                 }
             }
             guard selectedRole == "purchaser" else { return }
             let plans = try? await api.purchasePlans(storeID: store.Id, token: token, role: "purchaser")
-            if let plans, isCurrent(storeID: store.Id, role: "purchaser", token: token) {
+            if let plans, isCurrent(storeID: store.Id, role: "purchaser", token: token,
+                generation: requestGeneration) {
                 purchasePlans = plans
             }
         }
@@ -2732,14 +2751,18 @@ struct ContentView: View {
     }
 
     private func refreshSubmissionPage(storeID: String, token: String, role: String,
-                                       focusID: String? = nil) async throws {
+                                       focusID: String? = nil,
+                                       workspaceGeneration requestGeneration: Int? = nil) async throws {
+        let expectedWorkspaceGeneration = requestGeneration
+            ?? DineWiseWorkspaceRequestContext.generation ?? workspaceGeneration
         submissionRequestVersion += 1
         let requestVersion = submissionRequestVersion
         let planID = submissionPlanFilter
         let planKind = submissionPlanFilterKind
         let statusFilter = submissionStatusFilter
         let page = submissionPage
-        if isCurrent(storeID: storeID, role: role, token: token) {
+        if isCurrent(storeID: storeID, role: role, token: token,
+            generation: expectedWorkspaceGeneration) {
             submissionLoadState = "loading"
         }
         do {
@@ -2748,7 +2771,8 @@ struct ContentView: View {
                 preparationPlanID: planKind == "preparation" ? planID : "",
                 status: statusFilter, focusID: focusID)
             if requestVersion == submissionRequestVersion
-                && isCurrent(storeID: storeID, role: role, token: token)
+                && isCurrent(storeID: storeID, role: role, token: token,
+                    generation: expectedWorkspaceGeneration)
                 && submissionPlanFilter == planID && submissionPlanFilterKind == planKind
                 && submissionStatusFilter == statusFilter
                 && submissionPage == page {
@@ -2758,7 +2782,8 @@ struct ContentView: View {
             }
         } catch {
             if requestVersion == submissionRequestVersion
-                && isCurrent(storeID: storeID, role: role, token: token)
+                && isCurrent(storeID: storeID, role: role, token: token,
+                    generation: expectedWorkspaceGeneration)
                 && submissionPlanFilter == planID && submissionPlanFilterKind == planKind
                 && submissionStatusFilter == statusFilter && submissionPage == page {
                 submissionLoadState = "error"
