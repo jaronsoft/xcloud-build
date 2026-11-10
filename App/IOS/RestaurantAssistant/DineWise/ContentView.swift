@@ -214,6 +214,7 @@ struct ContentView: View {
     @State private var stores: [DineWiseStore] = []
     @State private var selectedStoreID = ""
     @State private var selectedRole = ""
+    @State private var workspaceGeneration = 0
     @State private var unreadMeetingTaskCount = 0
     @State private var pushTaskFocusID = ""
     @State private var pushAuthorizationSummary = "正在读取系统通知权限。"
@@ -1051,13 +1052,17 @@ struct ContentView: View {
                let selected = stores.first(where: { $0.Id == selectedStoreID }) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("当前门店 · \(selected.Name)").font(.headline)
+                    let requestedWorkspaceGeneration = workspaceGeneration
                     DineWiseStoreProfileEditor(store: selected, token: token,
-                        isCurrent: { isCurrent(storeID: selected.Id, role: "owner", token: token) }) { updated in
+                        isCurrent: {
+                            isCurrent(storeID: selected.Id, role: "owner", token: token)
+                                && workspaceGeneration == requestedWorkspaceGeneration
+                        }) { updated in
                         if isCurrent(storeID: selected.Id, role: "owner", token: token) {
                             stores = stores.map { $0.Id == updated.Id ? updated : $0 }
                         }
                     }
-                    .id(selected.Id)
+                    .id("\(selected.Id):\(workspaceGeneration)")
                 }
                 .padding(14)
                 .background(DineWiseTheme.inset,
@@ -2763,6 +2768,7 @@ struct ContentView: View {
     private func switchWorkspace(storeID: String, role: String) {
         todayFocus = nil
         guard selectedStoreID != storeID || selectedRole != role else { return }
+        workspaceGeneration += 1
         pushTaskFocusID = ""
         requestVersion += 1
         submissionRequestVersion += 1
