@@ -152,6 +152,7 @@ struct DineWiseCustomerTouchDraft: Decodable, Identifiable {
     let Id: String
     let ConsentId: String
     let Purpose: String
+    let Channel: String?
     let Content: String
     let Status: String
     let Version: Int
@@ -1156,9 +1157,10 @@ struct DineWiseAPI {
 
     func createCustomerTouchDraft(storeID: String, consentID: String, token: String,
                                   role: String, purpose: String, content: String,
+                                  channel: String,
                                   idempotencyKey: String) async throws -> DineWiseCustomerTouchDraft {
         try await request("/stores/\(storeID)/private-domain/customers/\(consentID)/touch-drafts",
-            method: "POST", body: ["Purpose": purpose, "Content": content], token: token,
+            method: "POST", body: ["Purpose": purpose, "Channel": channel, "Content": content], token: token,
             idempotencyKey: idempotencyKey, role: role)
     }
 

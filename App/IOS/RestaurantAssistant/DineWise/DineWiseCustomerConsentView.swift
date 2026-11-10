@@ -44,6 +44,7 @@ struct DineWiseCustomerConsentView: View {
     @State private var touchConsentID: String?
     @State private var touchDrafts: [DineWiseCustomerTouchDraft] = []
     @State private var touchPurpose = "birthday"
+    @State private var touchChannel = "enterprise_wechat"
     @State private var touchContent = ""
     @State private var touchSaving = false
     @State private var editingTouchID: String?
@@ -353,6 +354,13 @@ struct DineWiseCustomerConsentView: View {
                 }
             }
             .pickerStyle(.segmented)
+            Picker("人工渠道", selection: $touchChannel) {
+                Text("企业微信").tag("enterprise_wechat")
+                Text("微信").tag("wechat")
+                Text("电话").tag("phone")
+                Text("短信").tag("sms")
+                Text("其他人工方式").tag("other_manual")
+            }
             TextField("拟发送内容", text: $touchContent, axis: .vertical)
                 .lineLimit(3...6)
                 .textFieldStyle(.roundedBorder)
@@ -367,7 +375,7 @@ struct DineWiseCustomerConsentView: View {
             }
             ForEach(touchDrafts) { draft in
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("\(draft.Purpose == "birthday" ? "生日关怀" : "久未到店关怀") · \(draft.Status == "draft" ? "待人工执行" : "员工自报已执行")")
+                    Text("\(draft.Purpose == "birthday" ? "生日关怀" : "久未到店关怀") · \(touchChannelTitle(draft.Channel)) · \(draft.Status == "draft" ? "待人工执行" : "员工自报已执行")")
                         .font(.caption.weight(.semibold))
                     if editingTouchID == draft.Id {
                         TextField("修改草稿内容", text: $editingTouchContent, axis: .vertical)
@@ -623,6 +631,7 @@ struct DineWiseCustomerConsentView: View {
         outcomeEvidenceReference = ""
         outcomeBusy = false
         touchPurpose = ["birthday", "reengagement"].first(where: consent.Purposes.contains) ?? ""
+        touchChannel = "enterprise_wechat"
         editingTouchID = nil
         error = ""
         touchSaving = true
@@ -661,15 +670,16 @@ struct DineWiseCustomerConsentView: View {
         guard !content.isEmpty, consent.Purposes.contains(touchPurpose), !touchSaving else { return }
         let generation = requestGeneration
         let purpose = touchPurpose
+        let channel = touchChannel
         let retry = pendingWriteRetryKey(scope: "\(userID):\(store.Id):\(role):\(consent.Id):customer-touch",
-            payload: ["Purpose": purpose, "Content": content])
+            payload: ["Purpose": purpose, "Channel": channel, "Content": content])
         touchSaving = true; error = ""; message = ""
         defer { if isCurrent(storeID: store.Id, mode: store.Mode, token: token,
             role: role, generation: generation) { touchSaving = false } }
         do {
             let created = try await api.createCustomerTouchDraft(storeID: store.Id,
                 consentID: consent.Id, token: token, role: role, purpose: purpose,
-                content: content, idempotencyKey: retry.key)
+                content: content, channel: channel, idempotencyKey: retry.key)
             clearPendingWriteRetryKey(retry)
             try Task.checkCancellation()
             guard isCurrent(storeID: store.Id, mode: store.Mode, token: token,
@@ -892,6 +902,17 @@ struct DineWiseCustomerConsentView: View {
 
     private func sourceName(_ value: String) -> String {
         ["in_person": "当面告知", "written_form": "纸面记录", "digital_form": "数字表单"][value] ?? "其他"
+    }
+
+    private func touchChannelTitle(_ value: String?) -> String {
+        switch value {
+        case "enterprise_wechat": "企业微信"
+        case "wechat": "微信"
+        case "phone": "电话"
+        case "sms": "短信"
+        case "manual": "人工（未细分）"
+        default: "其他人工方式"
+        }
     }
 
     private func formattedTime(_ value: String) -> String {
