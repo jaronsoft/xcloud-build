@@ -122,6 +122,18 @@ struct DineWiseReviewView: View {
             .init(id: "promotion_fee_yuan", title: "推广费", units: [("yuan", "元")]),
             .init(id: "orders", title: "订单数", units: [("count", "单")])
         ]
+        case "recipe": return [
+            .init(id: "dish_name", title: "菜品名称", units: [("", "无单位")]),
+            .init(id: "recipe_version", title: "配方版本（同一版本的各食材行请填写相同值）", units: [("", "无单位")]),
+            .init(id: "ingredient_name", title: "食材名称", units: [("", "无单位")]),
+            .init(id: "ingredient_specification", title: "食材规格（需与采购资料一致）", units: [("", "无单位")]),
+            .init(id: "recipe_quantity_per_serving", title: "单份用量", units: [("kg", "公斤"), ("g", "克"), ("jin", "斤"), ("piece", "个")]),
+            .init(id: "trim_loss_percent", title: "备料损耗率", units: [("percent", "%")])
+        ]
+        case "dish_sales": return [
+            .init(id: "dish_name", title: "菜品名称", units: [("", "无单位")]),
+            .init(id: "sold_portions", title: "售出份数", units: [("portion", "份")])
+        ]
         case "purchase":
             var fields: [DineWiseReviewOption] = [
                 .init(id: "ingredient_name", title: "食材名称", units: [("", "无单位")]),
@@ -161,6 +173,9 @@ struct DineWiseReviewView: View {
         case "channel_settlement": return ["channel_code", "gross_sales_yuan", "refunds_yuan",
             "merchant_discount_yuan", "platform_discount_yuan", "commission_yuan",
             "promotion_fee_yuan", "orders"]
+        case "recipe": return ["dish_name", "recipe_version", "ingredient_name",
+            "ingredient_specification", "recipe_quantity_per_serving", "trim_loss_percent"]
+        case "dish_sales": return ["dish_name", "sold_portions"]
         case "purchase" where submission.PurchasePlanId != nil && purchaseQuantityUnit != "piece":
             return ["ingredient_name", "ingredient_specification", "purchase_quantity",
              "unit_price_yuan_per_kg", "supplier_name"]

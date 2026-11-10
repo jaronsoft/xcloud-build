@@ -277,10 +277,83 @@ struct DineWiseDailyReportView: View {
                     .padding(12)
                     .background(DineWiseTheme.card, in: RoundedRectangle(cornerRadius: 12))
                 }
+                if let dishCosts = monthly.DishCosts, !dishCosts.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("逐菜食材成本估算").font(.headline)
+                        Text("仅对唯一已确认销量、当日生效的唯一配方版本及近 90 天内最近唯一同规格公斤进价齐备的菜品计算。公式：可用单份用量 ÷（1 − 损耗率）× 最近进价 × 售出份数。此估算不含盘点库存、报损、赠送等，不代表全店耗用、毛利或利润。")
+                            .font(.caption).foregroundStyle(.secondary)
+                        ForEach(dishCosts) { dish in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("\(dish.BusinessDate) · \(dish.DishName) · 配方 \(dish.RecipeVersion ?? "未确定")")
+                                    .font(.subheadline.bold())
+                                Text(dish.EstimatedIngredientCostYuan.map { "估算食材成本 \(money($0))" } ?? "成本暂不可估算")
+                                Text("售出 \(dish.SoldPortions.map(String.init) ?? "未核对") 份 · 单份估算 \(money(dish.EstimatedIngredientCostPerServingYuan))")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                if let source = dish.SalesSourceId {
+                                    Button("打开销量来源 \(source)") {
+                                        openSource(source, expectedVersion: dish.SalesSourceVersion,
+                                                   expectedBusinessDate: dish.BusinessDate)
+                                    }
+                                    .font(.caption).buttonStyle(.bordered).disabled(busy)
+                                }
+                                duplicateSources(dish.SalesSources, businessDate: dish.BusinessDate)
+                                ForEach(dish.RecipeSources) { source in
+                                    Button("打开配方来源 \(source.SourceSubmissionId) · 版本 \(source.SourceVersion)") {
+                                        openSource(source.SourceSubmissionId,
+                                            expectedVersion: source.SourceVersion,
+                                            expectedBusinessDate: dish.BusinessDate,
+                                            submittedRole: source.SubmittedRole)
+                                    }
+                                    .font(.caption).buttonStyle(.bordered).disabled(busy)
+                                }
+                                ForEach(dish.Ingredients) { line in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("\(line.IngredientName ?? "食材未核对")\(line.IngredientSpecification.map { " · \($0)" } ?? "")")
+                                        Text(line.IsPieceQuantity ? "单份计件用量"
+                                            : "单份可用量 \(decimalText(line.UsableQuantityKgPerServing)) 公斤 · 损耗 \(decimalText(line.TrimLossPercent))% · 最近进价 \(decimalText(line.UnitPriceYuanPerKg)) 元/公斤")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                        if let amount = line.EstimatedCostYuan {
+                                            Text("该食材估算 \(money(amount)) · 单份 \(money(line.EstimatedCostPerServingYuan))")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Button("打开配方行 \(line.RecipeSourceId) · 版本 \(line.RecipeSourceVersion)") {
+                                            openSource(line.RecipeSourceId,
+                                                expectedVersion: line.RecipeSourceVersion,
+                                                expectedBusinessDate: dish.BusinessDate)
+                                        }
+                                        .font(.caption).buttonStyle(.bordered).disabled(busy)
+                                        if let source = line.PurchaseSourceId {
+                                            Button("打开进价来源 \(source) · \(line.PurchaseBusinessDate ?? "日期未知")") {
+                                                openSource(source,
+                                                    expectedVersion: line.PurchaseSourceVersion,
+                                                    expectedBusinessDate: line.PurchaseBusinessDate)
+                                            }
+                                            .font(.caption).buttonStyle(.bordered).disabled(busy)
+                                        }
+                                        ForEach(line.MissingReasons, id: \.self) { reason in
+                                            Text(reason).font(.caption).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .padding(8)
+                                    .background(DineWiseTheme.card, in: RoundedRectangle(cornerRadius: 10))
+                                }
+                                ForEach(dish.MissingReasons, id: \.self) { reason in
+                                    Text(reason).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(DineWiseTheme.card, in: RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(DineWiseTheme.card, in: RoundedRectangle(cornerRadius: 14))
+                }
                 if let channels = monthly.Channels, !channels.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("渠道结算对照").font(.headline)
-                        Text("只使用已确认资料，金额按字段分别对照，不推导毛利或利润。渠道间仅统计所有已录入渠道都有唯一完整来源的共同日期；未录入渠道和日期不按零处理。")
+                        Text("仅用已确认资料。估算销售额 = 优惠前成交 − 退款 − 商家承担优惠；再扣抽点和推广费为“扣已列渠道费用后余额”。假设平台承担优惠由平台承担；余额未扣食材及其他成本，不是毛利或利润。仅比较已录入渠道都有唯一完整来源的共同日期，缺失渠道和日期不按零处理。")
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(channels) { channel in
                             VStack(alignment: .leading, spacing: 5) {
@@ -292,6 +365,8 @@ struct DineWiseDailyReportView: View {
                                     Text("共同日期 \(channel.ComparableBusinessDays) 天 · 优惠前成交 \(money(channel.ComparableGrossSalesYuan))")
                                     Text("退款 \(money(channel.ComparableRefundsYuan)) · 商家优惠 \(money(channel.ComparableMerchantDiscountYuan)) · 平台优惠 \(money(channel.ComparablePlatformDiscountYuan))")
                                     Text("平台抽点 \(money(channel.ComparableCommissionYuan)) · 推广费 \(money(channel.ComparablePromotionFeeYuan)) · 订单 \(channel.ComparableOrders.map(String.init) ?? "—")")
+                                    Text("估算销售额 \(money(channel.ComparableMerchantSalesYuan)) · 扣已列渠道费用后余额 \(money(channel.ComparableAfterChannelFeesYuan))")
+                                        .font(.subheadline.bold())
                                 } else {
                                     Text("没有可共同核对的日期，暂不汇总渠道对照金额。")
                                         .font(.caption).foregroundStyle(.secondary)

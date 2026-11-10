@@ -1710,6 +1710,14 @@ struct ContentView: View {
                 Text("每个渠道、每个营业日单独提交；按平台或收银结算单填写原文并上传凭证。退款、优惠承担方和费用需逐项核对，确认后才进入月报。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
+            if kind == "recipe" {
+                Text("每条资料记录一道菜的一种食材。相同菜品和配方版本请对每种食材分别提交，并填写生效营业日；用量按单份填写，包含备料损耗率。当前只收集已核对的配方资料，月报成本计算尚未启用。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            if kind == "dish_sales" {
+                Text("按营业日和菜品分别录入 POS 或已核对销售报表中的售出份数。每个菜品每天一条；重复或遗漏需先核对，当前仅采集资料，尚不用于菜品成本或毛利计算。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
             if kind == "purchase" && selectedRole == "purchaser" {
                 Picker("关联订货计划", selection: $purchasePlanId) {
                     Text("不关联计划").tag("")
@@ -2328,9 +2336,9 @@ struct ContentView: View {
 
     private func submissionKinds(for role: String) -> [String] {
         switch role {
-        case "owner": ["operating", "channel_settlement", "purchase"]
-        case "manager": ["operating", "kitchen", "operations"]
-        case "chef": ["kitchen"]
+        case "owner": ["operating", "channel_settlement", "dish_sales", "recipe", "purchase"]
+        case "manager": ["operating", "dish_sales", "kitchen", "operations"]
+        case "chef": ["kitchen", "recipe"]
         case "purchaser": ["purchase"]
         case "operator": ["operations"]
         default: []
@@ -2341,6 +2349,8 @@ struct ContentView: View {
         switch kind {
         case "operating": "经营资料"
         case "channel_settlement": "渠道结算"
+        case "recipe": "菜品配方"
+        case "dish_sales": "菜品销量"
         case "purchase": "采购资料"
         case "kitchen": "后厨反馈"
         case "operations": "运营反馈"

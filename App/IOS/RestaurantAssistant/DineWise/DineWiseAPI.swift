@@ -647,8 +647,43 @@ struct DineWiseMonthlyReport: Decodable {
     let ConfirmedPurchaseAmountSubtotalYuan: Decimal
     let Purchases: [DineWiseMonthlyPurchaseItem]
     let Channels: [DineWiseMonthlyChannelSummary]?
+    let DishCosts: [DineWiseMonthlyDishCost]?
     let Days: [DineWiseWeeklyReportDay]
     let MissingReasons: [String]
+}
+
+struct DineWiseMonthlyDishCost: Decodable, Identifiable {
+    let BusinessDate: String
+    let DishName: String
+    let RecipeVersion: String?
+    let SoldPortions: Int64?
+    let SalesSourceId: String?
+    let SalesSourceVersion: Int?
+    let SalesSources: [DineWiseReportSourceCandidate]
+    let RecipeSources: [DineWiseReportSourceCandidate]
+    let Ingredients: [DineWiseMonthlyIngredientCostLine]
+    let EstimatedIngredientCostYuan: Decimal?
+    let EstimatedIngredientCostPerServingYuan: Decimal?
+    let MissingReasons: [String]
+    var id: String { "\(BusinessDate)-\(DishName)" }
+}
+
+struct DineWiseMonthlyIngredientCostLine: Decodable, Identifiable {
+    let IngredientName: String?
+    let IngredientSpecification: String?
+    let RecipeSourceId: String
+    let RecipeSourceVersion: Int
+    let UsableQuantityKgPerServing: Decimal?
+    let IsPieceQuantity: Bool
+    let TrimLossPercent: Decimal?
+    let PurchaseBusinessDate: String?
+    let PurchaseSourceId: String?
+    let PurchaseSourceVersion: Int?
+    let UnitPriceYuanPerKg: Decimal?
+    let EstimatedCostPerServingYuan: Decimal?
+    let EstimatedCostYuan: Decimal?
+    let MissingReasons: [String]
+    var id: String { RecipeSourceId }
 }
 
 struct DineWiseMonthlyChannelSummary: Decodable, Identifiable {
@@ -658,6 +693,8 @@ struct DineWiseMonthlyChannelSummary: Decodable, Identifiable {
     let DuplicateDays: Int
     let ComparableBusinessDays: Int
     let ComparableGrossSalesYuan: Decimal?
+    let ComparableMerchantSalesYuan: Decimal?
+    let ComparableAfterChannelFeesYuan: Decimal?
     let ComparableRefundsYuan: Decimal?
     let ComparableMerchantDiscountYuan: Decimal?
     let ComparablePlatformDiscountYuan: Decimal?
