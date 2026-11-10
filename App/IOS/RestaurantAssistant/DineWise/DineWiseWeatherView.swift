@@ -160,8 +160,24 @@ struct DineWiseWeatherView: View {
                                     requestGeneration: generation) { loading = false }
             }
             do {
-                let result = try await api.weather(token: requestToken,
-                    latitude: latitude, longitude: longitude)
+                let result: DineWiseWeatherForecast
+                do {
+                    result = try await api.weather(token: requestToken,
+                        latitude: latitude, longitude: longitude)
+                } catch {
+                    guard isCurrentRequest(scopeKey: scopeKey,
+                        scopeGeneration: requestScopeGeneration,
+                        requestGeneration: generation) else { return }
+                    guard case let DineWiseAPIError.failed(failureMessage) = error,
+                          failureMessage == "服务器暂时不可用，请稍后重试。" else { throw error }
+                    message = "天气服务仍在获取，5 秒后自动重试。"
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
+                    guard isCurrentRequest(scopeKey: scopeKey,
+                        scopeGeneration: requestScopeGeneration,
+                        requestGeneration: generation) else { return }
+                    result = try await api.weather(token: requestToken,
+                        latitude: latitude, longitude: longitude)
+                }
                 guard isCurrentRequest(scopeKey: scopeKey, scopeGeneration: requestScopeGeneration,
                                        requestGeneration: generation) else { return }
                 forecast = result
