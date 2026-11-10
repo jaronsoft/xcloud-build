@@ -13,6 +13,7 @@ struct DineWiseDailyReportView: View {
     let store: DineWiseStore
     let token: String
     let userID: String
+    let isWorkspaceCurrent: () -> Bool
 
     @State private var businessDate = ""
     @State private var datePickerDate = Date.now
@@ -875,6 +876,7 @@ struct DineWiseDailyReportView: View {
                                   generation: Int) -> Bool {
         store.Id == storeID && token == requestToken && businessDate == date
             && period == requestedPeriod && requestGeneration == generation
+            && isWorkspaceCurrent()
     }
 
     private func money(_ value: Decimal?) -> String {

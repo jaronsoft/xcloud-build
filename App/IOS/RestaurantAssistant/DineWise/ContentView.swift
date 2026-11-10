@@ -1567,8 +1567,14 @@ struct ContentView: View {
                             })
                             .id("\(token):\(selected.Id):owner:tasks")
                     } else if selectedTab == "report" {
-                        DineWiseDailyReportView(store: selected, token: token, userID: sessionUserID)
-                            .id("\(token):\(selected.Id):owner:report")
+                        let requestedWorkspaceGeneration = workspaceGeneration
+                        DineWiseDailyReportView(store: selected, token: token, userID: sessionUserID,
+                            isWorkspaceCurrent: {
+                                isCurrent(storeID: selected.Id, role: "owner", token: token,
+                                    generation: requestedWorkspaceGeneration)
+                                    && workspaceGeneration == requestedWorkspaceGeneration
+                            })
+                            .id("\(token):\(selected.Id):owner:report:\(workspaceGeneration)")
                     } else if selectedTab == "materials" {
                         submissionSection(store: selected, token: token)
                         DineWisePreparationPlanView(store: selected, token: token,
