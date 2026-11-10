@@ -1051,7 +1051,8 @@ struct ContentView: View {
                let selected = stores.first(where: { $0.Id == selectedStoreID }) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("当前门店 · \(selected.Name)").font(.headline)
-                    DineWiseStoreProfileEditor(store: selected, token: token) { updated in
+                    DineWiseStoreProfileEditor(store: selected, token: token,
+                        isCurrent: { isCurrent(storeID: selected.Id, role: "owner", token: token) }) { updated in
                         if isCurrent(storeID: selected.Id, role: "owner", token: token) {
                             stores = stores.map { $0.Id == updated.Id ? updated : $0 }
                         }
@@ -2903,6 +2904,7 @@ private struct DineWiseStoreProfileEditor: View {
     @Environment(\.colorScheme) private var colorScheme
     let store: DineWiseStore
     let token: String
+    let isCurrent: () -> Bool
     let onSaved: (DineWiseStore) -> Void
     @State private var name: String
     @State private var businessType: String
@@ -2925,8 +2927,9 @@ private struct DineWiseStoreProfileEditor: View {
     private let paymentOptions = ["wechat_pay": "微信支付", "alipay": "支付宝",
         "cash": "现金", "bank_card": "银行卡", "other": "其他"]
 
-    init(store: DineWiseStore, token: String, onSaved: @escaping (DineWiseStore) -> Void) {
-        self.store = store; self.token = token; self.onSaved = onSaved
+    init(store: DineWiseStore, token: String, isCurrent: @escaping () -> Bool,
+         onSaved: @escaping (DineWiseStore) -> Void) {
+        self.store = store; self.token = token; self.isCurrent = isCurrent; self.onSaved = onSaved
         _name = State(initialValue: store.Name)
         _businessType = State(initialValue: store.BusinessType ?? "")
         _address = State(initialValue: store.Address ?? "")
@@ -3486,10 +3489,17 @@ private struct DineWiseStoreProfileEditor: View {
                     paymentMethods: paymentMethods,
                     timeZone: timeZoneID, cutoffMinutes: minutes,
                     businessHours: hours, token: token)
+                guard isCurrent() else { return }
                 saveSectionForNextVersion = section
                 onSaved(updated); message = "已保存。"; messageIsError = false
-            } catch { message = error.localizedDescription; messageIsError = true }
-            saving = false
+            } catch is CancellationError {
+                if isCurrent() { saving = false }
+                return
+            } catch {
+                guard isCurrent() else { return }
+                message = error.localizedDescription; messageIsError = true
+            }
+            if isCurrent() { saving = false }
         }
     }
 
@@ -3523,11 +3533,18 @@ private struct DineWiseStoreProfileEditor: View {
             do {
                 let updated = try await DineWiseAPI().uploadStorePhoto(store: store,
                     data: photoData, token: token)
+                guard isCurrent() else { return }
                 saveSectionForNextVersion = .photo
                 onSaved(updated); self.photoData = nil; selectedPhoto = nil
                 message = "门店照片已更新。"; messageIsError = false
-            } catch { message = error.localizedDescription; messageIsError = true }
-            saving = false
+            } catch is CancellationError {
+                if isCurrent() { saving = false }
+                return
+            } catch {
+                guard isCurrent() else { return }
+                message = error.localizedDescription; messageIsError = true
+            }
+            if isCurrent() { saving = false }
         }
     }
 
@@ -3536,10 +3553,17 @@ private struct DineWiseStoreProfileEditor: View {
         Task {
             do {
                 let updated = try await DineWiseAPI().deleteStorePhoto(store: store, token: token)
+                guard isCurrent() else { return }
                 saveSectionForNextVersion = .photo
                 onSaved(updated); message = "门店照片已删除。"; messageIsError = false
-            } catch { message = error.localizedDescription; messageIsError = true }
-            saving = false
+            } catch is CancellationError {
+                if isCurrent() { saving = false }
+                return
+            } catch {
+                guard isCurrent() else { return }
+                message = error.localizedDescription; messageIsError = true
+            }
+            if isCurrent() { saving = false }
         }
     }
 }
