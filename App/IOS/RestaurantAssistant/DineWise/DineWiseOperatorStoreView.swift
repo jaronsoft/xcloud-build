@@ -357,7 +357,12 @@ struct DineWiseOperatorStoreView: View {
                 .disabled(busy || name.trimmingCharacters(in: .whitespaces).isEmpty
                     || businessType.trimmingCharacters(in: .whitespaces).isEmpty
                     || ownerEmail.trimmingCharacters(in: .whitespaces).isEmpty
-                    || address.trimmingCharacters(in: .whitespaces).isEmpty || payments.isEmpty)
+                    || address.trimmingCharacters(in: .whitespaces).isEmpty || payments.isEmpty
+                    || (createdStoreID != nil && photo != nil))
+            if createdStoreID != nil && photo != nil {
+                Text("请先为已创建门店完成照片上传，再开设下一家门店。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
             if let createdStoreID, let photo {
                 Button("为已创建门店上传照片") { uploadPhoto(photo, storeID: createdStoreID) }
                     .disabled(busy)
@@ -417,7 +422,6 @@ struct DineWiseOperatorStoreView: View {
 
     private func resetRequest() {
         creationKey = nil
-        createdStoreID = nil
     }
 
     private func resetDraftKey() {
@@ -447,6 +451,7 @@ struct DineWiseOperatorStoreView: View {
         let requestPayments = Array(payments).sorted()
         let requestLocation = authorizedLocation
         let requestCutoffMinutes = cutoffMinutes
+        let requestPhoto = photo
         Task {
             defer { if isCurrentToken(requestToken, generation: generation) { busy = false } }
             let store: DineWiseOperatorStore
@@ -466,11 +471,14 @@ struct DineWiseOperatorStoreView: View {
             guard isCurrentToken(requestToken, generation: generation) else { return }
             createdStoreID = store.Id
             notice = "门店已创建并绑定老板。"
-            if let photo {
+            if let requestPhoto {
                 do {
-                    let data = try compressedDineWiseStorePhotoData(photo)
+                    let data = try compressedDineWiseStorePhotoData(requestPhoto)
                     _ = try await api.operatorUploadPhoto(token: requestToken,
                         storeID: store.Id, data: data)
+                    createdStoreID = nil
+                    self.photo = nil
+                    photoItem = nil
                 } catch {
                     guard isCurrentToken(requestToken, generation: generation) else { return }
                     self.error = "门店已创建并绑定老板，但照片上传失败；可点击“为已创建门店上传照片”重试。\(error.localizedDescription)"
@@ -483,10 +491,10 @@ struct DineWiseOperatorStoreView: View {
                 guard isCurrentToken(requestToken, generation: generation) else { return }
                 stores = refreshedStores
                 hasOlderStores = refreshedStores.count >= 100
-                notice = photo == nil ? "门店已创建并绑定老板。" : "门店与照片已保存。"
+                notice = requestPhoto == nil ? "门店已创建并绑定老板。" : "门店与照片已保存。"
             } catch {
                 guard isCurrentToken(requestToken, generation: generation) else { return }
-                self.error = "门店已创建\(photo == nil ? "" : "，照片已上传")，但列表刷新失败；可点击“刷新门店列表”重试。\(error.localizedDescription)"
+                self.error = "门店已创建\(requestPhoto == nil ? "" : "，照片已上传")，但列表刷新失败；可点击“刷新门店列表”重试。\(error.localizedDescription)"
             }
         }
     }
@@ -503,6 +511,11 @@ struct DineWiseOperatorStoreView: View {
                 _ = try await api.operatorUploadPhoto(token: requestToken,
                     storeID: storeID, data: data)
                 guard isCurrentToken(requestToken, generation: generation) else { return }
+                if createdStoreID == storeID {
+                    createdStoreID = nil
+                    photo = nil
+                    photoItem = nil
+                }
                 notice = "门店照片已上传。"
                 do {
                     let refreshedStores = try await api.operatorStores(token: requestToken)
