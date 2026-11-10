@@ -719,6 +719,7 @@ struct DineWiseMonthlyChannelDishCostSummary: Decodable, Identifiable {
     let RecordedBusinessDayCount: Int
     let RecordedSalesSourceCount: Int
     let RecordedDishRowCount: Int
+    let SettlementDaysWithoutDishSalesCount: Int?
     let EstimatedDishRowCount: Int
     let UnestimatedDishRowCount: Int
     let RecordedIngredientCostSubtotalYuan: Decimal?

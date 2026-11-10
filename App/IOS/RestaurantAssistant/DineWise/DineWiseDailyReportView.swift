@@ -460,6 +460,10 @@ struct DineWiseDailyReportView: View {
                                     Text("已估算 \(summary.EstimatedDishRowCount) 条 · 未估算 \(summary.UnestimatedDishRowCount) 条 · 已估算小计 \(money(summary.RecordedIngredientCostSubtotalYuan))")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
+                                if let uncoveredDays = summary.SettlementDaysWithoutDishSalesCount {
+                                    Text("结算资料完整但无菜品销量记录：\(uncoveredDays) 天")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(10)
