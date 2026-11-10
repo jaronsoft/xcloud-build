@@ -708,9 +708,21 @@ struct DineWiseMonthlyReport: Decodable {
     let Purchases: [DineWiseMonthlyPurchaseItem]
     let Channels: [DineWiseMonthlyChannelSummary]?
     let DishCosts: [DineWiseMonthlyDishCost]?
+    let ChannelDishCosts: [DineWiseMonthlyChannelDishCostSummary]?
     let PriceScenarioRegion: String?
     let Days: [DineWiseWeeklyReportDay]
     let MissingReasons: [String]
+}
+
+struct DineWiseMonthlyChannelDishCostSummary: Decodable, Identifiable {
+    let ChannelCode: String?
+    let RecordedBusinessDayCount: Int
+    let RecordedSalesSourceCount: Int
+    let RecordedDishRowCount: Int
+    let EstimatedDishRowCount: Int
+    let UnestimatedDishRowCount: Int
+    let RecordedIngredientCostSubtotalYuan: Decimal?
+    var id: String { ChannelCode ?? "unassigned" }
 }
 
 struct DineWiseMonthlyDishCost: Decodable, Identifiable {

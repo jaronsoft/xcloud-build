@@ -41,6 +41,7 @@ private enum DineWiseDecisionTaskScopeError: LocalizedError {
 
 struct DineWiseDecisionTaskView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     let store: DineWiseStore
     let token: String
     let role: String
@@ -996,11 +997,15 @@ struct DineWiseDecisionTaskView: View {
             listLoadFailed = false
             refresh()
         }
-        .task(id: requestScopeKey) {
+        .task(id: "\(requestScopeKey):\(scenePhase)") {
+            guard scenePhase == .active else { return }
             while !Task.isCancelled {
+                await reloadTaskNotifications()
+                if role == "owner", focus == nil, !busy {
+                    await refreshMeetingProgress(preservingCurrent: true)
+                }
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
                 guard !Task.isCancelled else { return }
-                await reloadTaskNotifications()
             }
         }
         .onChange(of: submissions.map { "\($0.Id):\($0.Version)" }.joined(separator: ",")) { _, _ in
@@ -1388,32 +1393,45 @@ struct DineWiseDecisionTaskView: View {
         return formatter.date(from: value)
     }
 
-    private func loadMeetingProgress() {
+    private func loadMeetingProgress(preservingCurrent: Bool = false) {
+        Task { await refreshMeetingProgress(preservingCurrent: preservingCurrent) }
+    }
+
+    private func refreshMeetingProgress(preservingCurrent: Bool = false) async {
         guard role == "owner" else { return }
         let weekStart = selectedMeetingWeekStart
         let requestedWorkspace = requestScopeKey
-        meetingTasks = []
-        hasOlderMeetingTasks = false
-            meetingTaskFilter = "all"
-        Task {
-            async let summaryRequest = api.meetingProgress(storeID: store.Id, token: token,
-                role: role, weekStartOn: weekStart)
-            async let tasksRequest = api.tasks(storeID: store.Id, token: token, role: role,
-                size: 101, meetingWeekStartOn: weekStart)
-            let summary = try? await summaryRequest
-            let weekTasks = try? await tasksRequest
-            guard isCurrentWorkspace(requestedWorkspace, token: token),
-                  selectedMeetingWeekStart == weekStart else { return }
-            meetingProgress = summary
-            guard let weekTasks,
-                  weekTasks.allSatisfy({ $0.StoreId == store.Id && $0.Mode == store.Mode }) else {
+        let requestedLoad = loadVersion
+        if !preservingCurrent {
+            meetingProgress = nil
+            meetingTasks = []
+            hasOlderMeetingTasks = false
+        }
+        async let summaryRequest = api.meetingProgress(storeID: store.Id, token: token,
+            role: role, weekStartOn: weekStart)
+        async let tasksRequest = api.tasks(storeID: store.Id, token: token, role: role,
+            size: 101, meetingWeekStartOn: weekStart)
+        let summary = try? await summaryRequest
+        let weekTasks = try? await tasksRequest
+        guard !Task.isCancelled,
+              isCurrentWorkspace(requestedWorkspace, token: token),
+              selectedMeetingWeekStart == weekStart, loadVersion == requestedLoad,
+              !preservingCurrent || !busy else { return }
+        guard let summary, let weekTasks,
+              weekTasks.allSatisfy({ $0.StoreId == store.Id && $0.Mode == store.Mode }) else {
+            if !preservingCurrent {
+                meetingProgress = nil
                 meetingTasks = []
                 hasOlderMeetingTasks = false
-                return
             }
-            meetingTasks = Array(weekTasks.prefix(100))
-            hasOlderMeetingTasks = weekTasks.count > 100
+            return
         }
+        let refreshed = Array(weekTasks.prefix(100))
+        let refreshedIDs = Set(refreshed.map(\.Id))
+        let previouslyLoadedOlder = meetingTasks.filter { !refreshedIDs.contains($0.Id) }
+        meetingProgress = summary
+        meetingTasks = refreshed + previouslyLoadedOlder
+        hasOlderMeetingTasks = weekTasks.count > 100 || !previouslyLoadedOlder.isEmpty
     }
 
     private func reload(onFailure: (Error) -> Void) async -> Bool {
@@ -1453,13 +1471,15 @@ struct DineWiseDecisionTaskView: View {
                     token: requestToken, role: requestRole, weekStartOn: weekStart)
                 async let weekTasks = api.tasks(storeID: requestStoreID, token: requestToken,
                     role: requestRole, size: 101, meetingWeekStartOn: weekStart)
-                loadedMeetingProgress = try? await summary
+                let loadedSummary = try? await summary
                 let loadedMeetingTasks = try? await weekTasks
-                if let loadedMeetingTasks,
+                if let loadedSummary, let loadedMeetingTasks,
                    loadedMeetingTasks.allSatisfy({ $0.StoreId == requestStoreID && $0.Mode == store.Mode }) {
+                    loadedMeetingProgress = loadedSummary
                     meetingTasks = Array(loadedMeetingTasks.prefix(100))
                     hasOlderMeetingTasks = loadedMeetingTasks.count > 100
                 } else {
+                    loadedMeetingProgress = nil
                     meetingTasks = []
                     hasOlderMeetingTasks = false
                 }

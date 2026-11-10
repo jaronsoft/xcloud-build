@@ -443,6 +443,28 @@ struct DineWiseDailyReportView: View {
                     .padding(14)
                     .background(DineWiseTheme.card, in: RoundedRectangle(cornerRadius: 14))
                 }
+                if let costSummaries = monthly.ChannelDishCosts, !costSummaries.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("按渠道已录入菜品成本").font(.headline)
+                        Text("仅汇总有销量记录且已成功估算的菜品行；未估算行单独计数。未确认该渠道销量是否录全，也未覆盖其他可变成本，因此不是渠道总成本、贡献率或推广保本结论。")
+                            .font(.caption).foregroundStyle(.secondary)
+                        ForEach(costSummaries) { summary in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(channelName(summary.ChannelCode ?? ""))
+                                    .font(.subheadline.bold())
+                                Text("有记录 (summary.RecordedBusinessDayCount) 个营业日 · 销量来源 (summary.RecordedSalesSourceCount) 份 · 菜品行 (summary.RecordedDishRowCount) 条")
+                                Text("已估算 (summary.EstimatedDishRowCount) 条 · 未估算 (summary.UnestimatedDishRowCount) 条 · 已估算小计 (money(summary.RecordedIngredientCostSubtotalYuan))")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(DineWiseTheme.card, in: RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(DineWiseTheme.card, in: RoundedRectangle(cornerRadius: 14))
+                }
                 ForEach(monthly.MissingReasons, id: \.self) { reason in
                     Text(reason).font(.footnote).foregroundStyle(.secondary)
                 }
