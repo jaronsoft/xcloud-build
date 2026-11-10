@@ -648,6 +648,7 @@ struct DineWiseMonthlyReport: Decodable {
     let Purchases: [DineWiseMonthlyPurchaseItem]
     let Channels: [DineWiseMonthlyChannelSummary]?
     let DishCosts: [DineWiseMonthlyDishCost]?
+    let PriceScenarioRegion: String?
     let Days: [DineWiseWeeklyReportDay]
     let MissingReasons: [String]
 }
@@ -664,12 +665,16 @@ struct DineWiseMonthlyDishCost: Decodable, Identifiable {
     let Ingredients: [DineWiseMonthlyIngredientCostLine]
     let EstimatedIngredientCostYuan: Decimal?
     let EstimatedIngredientCostPerServingYuan: Decimal?
+    let RegionalScenarioCostYuan: Decimal?
+    let RegionalScenarioImpactYuan: Decimal?
+    let RegionalScenarioMissingReasons: [String]
     let MissingReasons: [String]
     var id: String { "\(BusinessDate)-\(DishName)" }
 }
 
 struct DineWiseMonthlyIngredientCostLine: Decodable, Identifiable {
     let IngredientName: String?
+    let IngredientCategory: String?
     let IngredientSpecification: String?
     let RecipeSourceId: String
     let RecipeSourceVersion: Int
@@ -683,6 +688,10 @@ struct DineWiseMonthlyIngredientCostLine: Decodable, Identifiable {
     let EstimatedCostPerServingYuan: Decimal?
     let EstimatedCostYuan: Decimal?
     let MissingReasons: [String]
+    let RegionalPriceReference: DineWisePublicPriceReference?
+    let RegionalScenarioCostYuan: Decimal?
+    let RegionalScenarioImpactYuan: Decimal?
+    let RegionalScenarioMissingReason: String?
     var id: String { RecipeSourceId }
 }
 
@@ -1517,10 +1526,15 @@ struct DineWiseAPI {
                           token: token, role: "owner")
     }
 
-    func monthlyReport(storeID: String, month: String,
+    func monthlyReport(storeID: String, month: String, region: String? = nil,
                        token: String) async throws -> DineWiseMonthlyReport {
-        try await request("/stores/\(storeID)/reports/monthly?month=\(month)",
-                          token: token, role: "owner")
+        let encodedRegion = region?.addingPercentEncoding(withAllowedCharacters:
+            CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=+#?")))
+        let regionQuery = encodedRegion.map { "&region=\($0)" } ?? ""
+        let result: DineWiseMonthlyReport = try await request(
+            "/stores/\(storeID)/reports/monthly?month=\(month)\(regionQuery)",
+            token: token, role: "owner")
+        return result
     }
 
     func weeklyProblems(storeID: String, weekStart: String,

@@ -126,6 +126,7 @@ struct DineWiseReviewView: View {
             .init(id: "dish_name", title: "菜品名称", units: [("", "无单位")]),
             .init(id: "recipe_version", title: "配方版本（同一版本的各食材行请填写相同值）", units: [("", "无单位")]),
             .init(id: "ingredient_name", title: "食材名称", units: [("", "无单位")]),
+            .init(id: "ingredient_category", title: "食材类别（区域价格情景匹配用，可选）", units: [("", "无单位")]),
             .init(id: "ingredient_specification", title: "食材规格（需与采购资料一致）", units: [("", "无单位")]),
             .init(id: "recipe_quantity_per_serving", title: "单份用量", units: [("kg", "公斤"), ("g", "克"), ("jin", "斤"), ("piece", "个")]),
             .init(id: "trim_loss_percent", title: "备料损耗率", units: [("percent", "%")])

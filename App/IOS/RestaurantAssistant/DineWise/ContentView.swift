@@ -1711,11 +1711,11 @@ struct ContentView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if kind == "recipe" {
-                Text("每条资料记录一道菜的一种食材。相同菜品和配方版本请对每种食材分别提交，并填写生效营业日；用量按单份填写，包含备料损耗率。当前只收集已核对的配方资料，月报成本计算尚未启用。")
+                Text("每条资料记录一道菜的一种食材；同一配方版本须逐种食材提交并填写生效营业日。确认后，月报仅在配方、唯一销量和近 90 天最近唯一同规格公斤进价齐备时估算逐菜食材成本；资料重复或不全时不计算。估算不代表全店耗用或毛利。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if kind == "dish_sales" {
-                Text("按营业日和菜品分别录入 POS 或已核对销售报表中的售出份数。每个菜品每天一条；重复或遗漏需先核对，当前仅采集资料，尚不用于菜品成本或毛利计算。")
+                Text("按营业日和菜品录入已核对的售出份数，每个菜品每天一条。月报会在唯一销量、当日有效配方和近 90 天最近唯一同规格公斤进价齐备时估算逐菜食材成本；重复或资料不全时不计算。估算不代表全店耗用或毛利。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if kind == "purchase" && selectedRole == "purchaser" {

@@ -23,6 +23,7 @@ struct DineWiseDailyReportView: View {
     @State private var openDaysMask = 127
     @State private var pendingCalendarKey: String?
     @State private var period = "daily"
+    @State private var priceScenarioRegion = ""
     @State private var message = ""
     @State private var busy = false
     @State private var focusedSource: DineWiseSubmission?
@@ -56,17 +57,29 @@ struct DineWiseDailyReportView: View {
                     displayedComponents: .date, calendar: businessCalendar,
                     timeZone: businessTimeZone)
             }
-                .onChange(of: datePickerDate) { _, date in
-                    let selectedDate = formatBusinessDate(date)
-                    if businessDate != selectedDate { businessDate = selectedDate }
+            .onChange(of: datePickerDate) { _, date in
+                let selectedDate = formatBusinessDate(date)
+                if businessDate != selectedDate { businessDate = selectedDate }
+            }
+            .onChange(of: businessDate) { _, _ in
+                if let date = parseBusinessDate(businessDate) {
+                    datePickerDate = date
                 }
-                .onChange(of: businessDate) { _, _ in
-                    if let date = parseBusinessDate(businessDate) {
-                        datePickerDate = date
-                    }
-                    requestGeneration += 1; busy = false; report = nil; weekly = nil
-                    monthly = nil; calendar = nil; focusedSource = nil; pendingCalendarKey = nil
+                requestGeneration += 1; busy = false; report = nil; weekly = nil
+                monthly = nil; calendar = nil; focusedSource = nil; pendingCalendarKey = nil
+            }
+            if period == "monthly" {
+                DineWisePlaceholderField("区域参考价地区（选填）", accessibilityLabel: "价格情景地区",
+                                         isEmpty: priceScenarioRegion.isEmpty) {
+                    TextField("", text: $priceScenarioRegion)
+                        .textFieldStyle(.plain)
+                        .onChange(of: priceScenarioRegion) { _, _ in
+                            requestGeneration += 1; busy = false; monthly = nil
+                        }
                 }
+                Text("仅按当前有效且已核验的同类别、名称、规格和公斤参考价计算；不会自动使用门店地址。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Button(period == "daily" ? "查看日报" : period == "weekly" ? "查看本周阶段摘要" : "查看本月报告") { load() }
                 .buttonStyle(.borderedProminent)
                 .disabled(busy || businessDate.isEmpty)
@@ -192,6 +205,10 @@ struct DineWiseDailyReportView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("\(monthly.MonthStart) 至 \(monthly.MonthEnd) · \(monthly.Mode == "demo" ? "演示数据" : "试用门店")")
                         .font(.caption).foregroundStyle(.white.opacity(0.75))
+                    if let region = monthly.PriceScenarioRegion {
+                        Text("\(region) 当前区域价格情景：将当前有效参考价替换最近实际进价，假设本月销量不变。差额不是本月已发生金额、毛利或利润。")
+                            .font(.caption).foregroundStyle(.white.opacity(0.8))
+                    }
                     Text(monthly.RevenueCoveredDays == 0 ? "暂无已核对营业额" :
                         money(monthly.CompleteMonthRevenueYuan ?? monthly.ConfirmedRevenueSubtotalYuan))
                         .font(.largeTitle.bold()).foregroundStyle(Color(red: 0.91, green: 0.73, blue: 0.38))
@@ -287,6 +304,14 @@ struct DineWiseDailyReportView: View {
                                 Text("\(dish.BusinessDate) · \(dish.DishName) · 配方 \(dish.RecipeVersion ?? "未确定")")
                                     .font(.subheadline.bold())
                                 Text(dish.EstimatedIngredientCostYuan.map { "估算食材成本 \(money($0))" } ?? "成本暂不可估算")
+                                if monthly.PriceScenarioRegion != nil {
+                                    Text(dish.RegionalScenarioCostYuan.map {
+                                        "区域参考价情景成本 \(money($0)) · 与最近实际进价差额 \(money(dish.RegionalScenarioImpactYuan))"
+                                    } ?? "区域价格情景暂不可计算")
+                                    ForEach(dish.RegionalScenarioMissingReasons, id: \.self) { reason in
+                                        Text(reason).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
                                 Text("售出 \(dish.SoldPortions.map(String.init) ?? "未核对") 份 · 单份估算 \(money(dish.EstimatedIngredientCostPerServingYuan))")
                                     .font(.caption).foregroundStyle(.secondary)
                                 if let source = dish.SalesSourceId {
@@ -315,6 +340,17 @@ struct DineWiseDailyReportView: View {
                                         if let amount = line.EstimatedCostYuan {
                                             Text("该食材估算 \(money(amount)) · 单份 \(money(line.EstimatedCostPerServingYuan))")
                                                 .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        if let reference = line.RegionalPriceReference {
+                                            Text("\(reference.RegionName)参考价 \(reference.Category) · \(money(reference.PriceYuan))/\(reference.Unit)")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                            if let url = reference.SourceUrl, let sourceURL = URL(string: url) {
+                                                Link("来源：\(reference.SourceName)", destination: sourceURL)
+                                                    .font(.caption)
+                                            }
+                                        }
+                                        if let reason = line.RegionalScenarioMissingReason {
+                                            Text(reason).font(.caption).foregroundStyle(.secondary)
                                         }
                                         Button("打开配方行 \(line.RecipeSourceId) · 版本 \(line.RecipeSourceVersion)") {
                                             openSource(line.RecipeSourceId,
@@ -444,12 +480,14 @@ struct DineWiseDailyReportView: View {
         .background(DineWiseTheme.card, in: RoundedRectangle(cornerRadius: 16))
         .onChange(of: store.Id) { _, _ in
             requestGeneration += 1; busy = false; businessDate = ""; report = nil
+            priceScenarioRegion = ""
             datePickerDate = .now
             weekly = nil; monthly = nil; calendar = nil; pendingCalendarKey = nil; message = ""
             focusedSource = nil
         }
         .onChange(of: token) { _, _ in
             requestGeneration += 1; busy = false; businessDate = ""; report = nil
+            priceScenarioRegion = ""
             datePickerDate = .now
             weekly = nil; monthly = nil; calendar = nil; pendingCalendarKey = nil; message = ""
             focusedSource = nil
@@ -628,12 +666,15 @@ struct DineWiseDailyReportView: View {
                         }
                         return
                     }
+                    let selectedRegion = priceScenarioRegion.trimmingCharacters(in: .whitespacesAndNewlines)
                     let result = try await api.monthlyReport(storeID: storeID,
-                        month: String(date.prefix(7)), token: requestToken)
+                        month: String(date.prefix(7)), region: selectedRegion.isEmpty ? nil : selectedRegion,
+                        token: requestToken)
                     let monthStart = "\(date.prefix(7))-01"
                     guard result.StoreId == storeID, result.Mode == store.Mode,
                           result.MonthStart == monthStart,
-                          result.MonthEnd == monthEnd(for: monthStart) else {
+                          result.MonthEnd == monthEnd(for: monthStart),
+                          result.PriceScenarioRegion == (selectedRegion.isEmpty ? nil : selectedRegion) else {
                         throw DineWiseReportScopeError.mismatch
                     }
                     if isCurrentRequest(storeID: storeID, token: requestToken, date: date,
