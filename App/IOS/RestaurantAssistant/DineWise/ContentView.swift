@@ -2984,6 +2984,7 @@ private struct DineWiseStoreProfileEditor: View {
     @State private var expandedEditorSection: DineWiseStoreProfileSection?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var photoData: Data?
+    @State private var photoSelectionGeneration: UInt64 = 0
     @State private var saving = false
     @State private var message = ""
     @State private var messageIsError = false
@@ -3245,13 +3246,23 @@ private struct DineWiseStoreProfileEditor: View {
             if expandedEditorSection == .photo {
                 VStack(alignment: .leading, spacing: 10) {
                     if store.HasPhoto == true {
-                        DineWiseStorePhotoPreview(store: store, token: token)
+                        DineWiseStorePhotoPreview(store: store, token: token,
+                                                  isCurrent: isCurrent)
                     }
                     PhotosPicker(selection: $selectedPhoto, matching: .images) {
                         Label("选择门店照片", systemImage: "photo")
                     }
                     .onChange(of: selectedPhoto) { _, selection in
-                        guard let selection else { return }
+                        photoSelectionGeneration &+= 1
+                        let requestGeneration = photoSelectionGeneration
+                        guard isCurrent() else { return }
+                        guard let selection else {
+                            photoData = nil
+                            return
+                        }
+                        photoData = nil
+                        message = "正在读取门店照片…"
+                        messageIsError = false
                         Task {
                             do {
                                 guard let data = try await selection.loadTransferable(type: Data.self) else {
@@ -3259,8 +3270,10 @@ private struct DineWiseStoreProfileEditor: View {
                                 }
                                 let image = try decodeDineWiseStorePhoto(data)
                                 let jpeg = try compressedDineWiseStorePhotoData(image)
+                                guard isCurrent(), requestGeneration == photoSelectionGeneration else { return }
                                 photoData = jpeg; message = "照片已校正方向并压缩。"; messageIsError = false
                             } catch {
+                                guard isCurrent(), requestGeneration == photoSelectionGeneration else { return }
                                 message = error.localizedDescription; messageIsError = true
                                 photoData = nil
                             }
@@ -3636,6 +3649,7 @@ private struct DineWiseStoreProfileEditor: View {
 private struct DineWiseStorePhotoPreview: View {
     let store: DineWiseStore
     let token: String
+    let isCurrent: () -> Bool
     @State private var photo: UIImage?
     @State private var message = ""
 
@@ -3652,15 +3666,16 @@ private struct DineWiseStorePhotoPreview: View {
         }
         .task(id: "\(store.Id):\(store.ProfileVersion ?? 1)") {
             photo = nil; message = ""
+            guard isCurrent() else { return }
             do {
                 let data = try await DineWiseAPI().storePhoto(storeID: store.Id, token: token)
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, isCurrent() else { return }
                 guard let image = UIImage(data: data) else {
                     message = "门店照片格式暂时无法显示。"; return
                 }
                 photo = image
             } catch {
-                if !Task.isCancelled { message = error.localizedDescription }
+                if !Task.isCancelled, isCurrent() { message = error.localizedDescription }
             }
         }
     }
