@@ -446,7 +446,7 @@ struct DineWiseDailyReportView: View {
                 if let costSummaries = monthly.ChannelDishCosts, !costSummaries.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("按渠道已录入菜品成本").font(.headline)
-                        Text("仅汇总有销量记录且已成功估算的菜品行；未估算行单独计数。未确认该渠道销量是否录全，也未覆盖其他可变成本，因此不是渠道总成本、贡献率或推广保本结论。")
+                        Text("推广保本分析：暂不可计算。仅汇总已录入且成功估算的菜品成本；还需核实渠道销量是否完整、补齐菜品食材成本与包装配送等其他变动成本，并取得可追溯的推广归因收入。平台报表归因收入不等于已证明的新增收入。资料齐备前不计算保本收入或投放回报，也不对渠道排序。")
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(costSummaries) { summary in
                             VStack(alignment: .leading, spacing: 4) {
