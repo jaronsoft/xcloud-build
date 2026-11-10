@@ -366,8 +366,13 @@ struct DineWiseOperatorStoreView: View {
             if !notice.isEmpty {
                 Text(notice).foregroundStyle(DineWiseTheme.accent(for: colorScheme))
             }
-            if !stores.isEmpty {
+            HStack {
                 Text("我开设的门店").font(.headline)
+                Spacer()
+                Button("刷新门店列表") { refreshStores() }
+                    .disabled(busy)
+            }
+            if !stores.isEmpty {
                 ForEach(stores) { store in
                     VStack(alignment: .leading, spacing: 3) {
                         Text(store.Name).font(.subheadline.bold())
@@ -444,33 +449,44 @@ struct DineWiseOperatorStoreView: View {
         let requestCutoffMinutes = cutoffMinutes
         Task {
             defer { if isCurrentToken(requestToken, generation: generation) { busy = false } }
+            let store: DineWiseOperatorStore
             do {
-                let store = try await api.operatorCreateStore(
+                store = try await api.operatorCreateStore(
                     token: requestToken, name: requestName, businessType: requestBusinessType,
                     ownerEmail: requestOwnerEmail, address: requestAddress,
                     introduction: requestIntroduction, paymentMethods: requestPayments,
                     latitude: requestLocation?.latitude, longitude: requestLocation?.longitude,
                     businessHours: hours, cutoffMinutes: requestCutoffMinutes,
                     idempotencyKey: key)
+            } catch {
                 guard isCurrentToken(requestToken, generation: generation) else { return }
-                createdStoreID = store.Id
+                self.error = "创建门店失败：\(error.localizedDescription)"
+                return
+            }
+            guard isCurrentToken(requestToken, generation: generation) else { return }
+            createdStoreID = store.Id
+            notice = "门店已创建并绑定老板。"
+            if let photo {
+                do {
+                    let data = try compressedDineWiseStorePhotoData(photo)
+                    _ = try await api.operatorUploadPhoto(token: requestToken,
+                        storeID: store.Id, data: data)
+                } catch {
+                    guard isCurrentToken(requestToken, generation: generation) else { return }
+                    self.error = "门店已创建并绑定老板，但照片上传失败；可点击“为已创建门店上传照片”重试。\(error.localizedDescription)"
+                    return
+                }
+                guard isCurrentToken(requestToken, generation: generation) else { return }
+            }
+            do {
                 let refreshedStores = try await api.operatorStores(token: requestToken)
                 guard isCurrentToken(requestToken, generation: generation) else { return }
                 stores = refreshedStores
                 hasOlderStores = refreshedStores.count >= 100
-                if let photo {
-                    let storesWithPhoto = try await uploadPhotoAndRefresh(photo, storeID: store.Id,
-                        token: requestToken)
-                    guard isCurrentToken(requestToken, generation: generation) else { return }
-                    stores = storesWithPhoto
-                    hasOlderStores = storesWithPhoto.count >= 100
-                    notice = "门店与照片已保存。"
-                } else {
-                    notice = "门店已创建并绑定老板，可继续上传照片。"
-                }
+                notice = photo == nil ? "门店已创建并绑定老板。" : "门店与照片已保存。"
             } catch {
                 guard isCurrentToken(requestToken, generation: generation) else { return }
-                self.error = error.localizedDescription
+                self.error = "门店已创建\(photo == nil ? "" : "，照片已上传")，但列表刷新失败；可点击“刷新门店列表”重试。\(error.localizedDescription)"
             }
         }
     }
@@ -483,25 +499,48 @@ struct DineWiseOperatorStoreView: View {
         Task {
             defer { if isCurrentToken(requestToken, generation: generation) { busy = false } }
             do {
-                let refreshedStores = try await uploadPhotoAndRefresh(image, storeID: storeID,
-                    token: requestToken)
+                let data = try compressedDineWiseStorePhotoData(image)
+                _ = try await api.operatorUploadPhoto(token: requestToken,
+                    storeID: storeID, data: data)
                 guard isCurrentToken(requestToken, generation: generation) else { return }
-                stores = refreshedStores
-                hasOlderStores = refreshedStores.count >= 100
-                notice = "门店与照片已保存。"
-                error = ""
+                notice = "门店照片已上传。"
+                do {
+                    let refreshedStores = try await api.operatorStores(token: requestToken)
+                    guard isCurrentToken(requestToken, generation: generation) else { return }
+                    stores = refreshedStores
+                    hasOlderStores = refreshedStores.count >= 100
+                    notice = "门店与照片已保存。"
+                    error = ""
+                } catch {
+                    guard isCurrentToken(requestToken, generation: generation) else { return }
+                    self.error = "照片已上传，但门店列表刷新失败；可点击“刷新门店列表”重试。\(error.localizedDescription)"
+                }
             } catch {
                 guard isCurrentToken(requestToken, generation: generation) else { return }
-                self.error = error.localizedDescription
+                self.error = "门店照片上传失败：\(error.localizedDescription)"
             }
         }
     }
 
-    private func uploadPhotoAndRefresh(_ image: UIImage, storeID: String,
-                                      token requestToken: String) async throws -> [DineWiseOperatorStore] {
-        let data = try compressedDineWiseStorePhotoData(image)
-        _ = try await api.operatorUploadPhoto(token: requestToken, storeID: storeID, data: data)
-        return try await api.operatorStores(token: requestToken)
+    private func refreshStores() {
+        guard !busy else { return }
+        let requestToken = token
+        let generation = tokenGeneration
+        busy = true
+        error = ""
+        Task {
+            defer { if isCurrentToken(requestToken, generation: generation) { busy = false } }
+            do {
+                let refreshedStores = try await api.operatorStores(token: requestToken)
+                guard isCurrentToken(requestToken, generation: generation) else { return }
+                stores = refreshedStores
+                hasOlderStores = refreshedStores.count >= 100
+                notice = "门店列表已刷新。"
+            } catch {
+                guard isCurrentToken(requestToken, generation: generation) else { return }
+                self.error = "门店列表刷新失败：\(error.localizedDescription)"
+            }
+        }
     }
 
     private func loadOlderStores() {

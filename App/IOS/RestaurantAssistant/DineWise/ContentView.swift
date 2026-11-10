@@ -2778,6 +2778,7 @@ struct ContentView: View {
         storeInvitations = []
         submissions = []
         submissionPlanFilter = ""
+        submissionPlanFilterKind = "purchase"
         submissionPage = 1
         submissionTotal = 0
         submissionLoadState = "idle"
