@@ -13,7 +13,7 @@ struct DineWiseAboutView: View {
     @State private var tapCount = 0
     @State private var lastTapAt = Date.distantPast
     @State private var showOperatorLogin = false
-    private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+    private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.0"
 
     var body: some View {
         List {

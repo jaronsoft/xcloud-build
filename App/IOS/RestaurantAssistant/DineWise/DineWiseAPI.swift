@@ -119,6 +119,64 @@ struct DineWiseStore: Decodable, Identifiable {
     var id: String { Id }
 }
 
+struct DineWiseCustomerConsentPage: Decodable {
+    let Items: [DineWiseCustomerConsent]
+    let NextBeforeId: String?
+}
+
+struct DineWiseCustomerTouchDraftPage: Decodable {
+    let Items: [DineWiseCustomerTouchDraft]
+}
+
+struct DineWiseCustomerTouchOutcomePage: Decodable {
+    let Items: [DineWiseCustomerTouchOutcome]
+}
+
+struct DineWiseCustomerTouchOutcome: Decodable, Identifiable {
+    let Id: String
+    let TouchDraftId: String
+    let OutcomeType: String
+    let OccurredBusinessDate: String
+    let EvidenceKind: String
+    let EvidenceReference: String
+    let Status: String
+    let ReviewReasonCode: String?
+    let Version: Int
+    let CreatedAtUtc: String
+    let ReviewedAtUtc: String?
+
+    var id: String { Id }
+}
+
+struct DineWiseCustomerTouchDraft: Decodable, Identifiable {
+    let Id: String
+    let ConsentId: String
+    let Purpose: String
+    let Content: String
+    let Status: String
+    let Version: Int
+    let CreatedAtUtc: String
+    let ReportedSentAtUtc: String?
+
+    var id: String { Id }
+}
+
+struct DineWiseCustomerConsent: Decodable, Identifiable {
+    let Id: String
+    let CustomerReference: String
+    let Purposes: [String]
+    let ConsentNoticeVersion: String
+    let ConsentSource: String
+    let ConsentedAtUtc: String
+    let BirthdayMonthDay: String?
+    let LastVisitBusinessDate: String?
+    let RetainUntilBusinessDate: String
+    let Status: String
+    let Version: Int
+
+    var id: String { Id }
+}
+
 struct DineWiseWeatherForecast: Decodable {
     let Area: String
     let UpdatedAtUtc: String
@@ -1042,6 +1100,110 @@ struct DineWiseAPI {
                 httpStatus: status, envelopeStatus: envelope.status, fallback: "请求失败"))
         }
         throw DineWiseAPIError.failed("请求失败，请重试。")
+    }
+
+    func customerConsents(storeID: String, token: String, role: String,
+                          beforeID: String? = nil, size: Int = 50,
+                          purpose: String? = nil, birthdayFrom: String? = nil,
+                          birthdayTo: String? = nil,
+                          lastVisitBeforeBusinessDate: String? = nil) async throws
+        -> DineWiseCustomerConsentPage {
+        var query = ["size=\(min(max(size, 1), 100))"]
+        if let beforeID { query.append("beforeId=\(beforeID)") }
+        if let purpose { query.append("purpose=\(purpose)") }
+        if let birthdayFrom { query.append("birthdayFrom=\(birthdayFrom)") }
+        if let birthdayTo { query.append("birthdayTo=\(birthdayTo)") }
+        if let lastVisitBeforeBusinessDate {
+            query.append("lastVisitBeforeBusinessDate=\(lastVisitBeforeBusinessDate)")
+        }
+        return try await request("/stores/\(storeID)/private-domain/customers?\(query.joined(separator: "&"))",
+                                 token: token, role: role)
+    }
+
+    func createCustomerConsent(storeID: String, token: String, role: String,
+                               customerReference: String, purposes: [String],
+                               noticeVersion: String, consentSource: String,
+                               birthdayMonthDay: String?, lastVisitBusinessDate: String?,
+                               retainUntilBusinessDate: String,
+                               idempotencyKey: String) async throws -> DineWiseCustomerConsent {
+        var body: [String: Any] = [
+            "CustomerReference": customerReference,
+            "CustomerHasConsented": true,
+            "Purposes": purposes,
+            "ConsentNoticeVersion": noticeVersion,
+            "ConsentSource": consentSource,
+            "RetainUntilBusinessDate": retainUntilBusinessDate
+        ]
+        if let birthdayMonthDay { body["BirthdayMonthDay"] = birthdayMonthDay }
+        if let lastVisitBusinessDate { body["LastVisitBusinessDate"] = lastVisitBusinessDate }
+        return try await request("/stores/\(storeID)/private-domain/customers", method: "POST",
+            body: body, token: token, idempotencyKey: idempotencyKey, role: role)
+    }
+
+    func revokeCustomerConsent(storeID: String, consentID: String, token: String,
+                               role: String, version: Int, reason: String) async throws
+        -> DineWiseCustomerConsent {
+        try await request("/stores/\(storeID)/private-domain/customers/\(consentID)/revoke",
+            method: "POST", body: ["Version": version, "Reason": reason],
+            token: token, role: role)
+    }
+
+    func customerTouchDrafts(storeID: String, consentID: String, token: String,
+                             role: String) async throws -> DineWiseCustomerTouchDraftPage {
+        try await request("/stores/\(storeID)/private-domain/customers/\(consentID)/touch-drafts",
+            token: token, role: role)
+    }
+
+    func createCustomerTouchDraft(storeID: String, consentID: String, token: String,
+                                  role: String, purpose: String, content: String,
+                                  idempotencyKey: String) async throws -> DineWiseCustomerTouchDraft {
+        try await request("/stores/\(storeID)/private-domain/customers/\(consentID)/touch-drafts",
+            method: "POST", body: ["Purpose": purpose, "Content": content], token: token,
+            idempotencyKey: idempotencyKey, role: role)
+    }
+
+    func updateCustomerTouchDraft(storeID: String, consentID: String, draftID: String,
+                                  token: String, role: String, version: Int,
+                                  content: String) async throws -> DineWiseCustomerTouchDraft {
+        try await request("/stores/\(storeID)/private-domain/customers/\(consentID)/touch-drafts/\(draftID)",
+            method: "PUT", body: ["Version": version, "Content": content], token: token, role: role)
+    }
+
+    func actOnCustomerTouchDraft(storeID: String, consentID: String, draftID: String,
+                                 action: String, token: String, role: String,
+                                 version: Int) async throws -> DineWiseCustomerTouchDraft {
+        try await request("/stores/\(storeID)/private-domain/customers/\(consentID)/touch-drafts/\(draftID)/\(action)",
+            method: "POST", body: ["Version": version], token: token, role: role)
+    }
+
+    func customerTouchOutcomes(storeID: String, consentID: String, draftID: String,
+                               token: String, role: String) async throws
+        -> DineWiseCustomerTouchOutcomePage {
+        try await request("/stores/\(storeID)/private-domain/customers/\(consentID)/touch-drafts/\(draftID)/outcomes",
+            token: token, role: role)
+    }
+
+    func createCustomerTouchOutcome(storeID: String, consentID: String, draftID: String,
+                                    token: String, role: String, outcomeType: String,
+                                    occurredBusinessDate: String, evidenceReference: String,
+                                    idempotencyKey: String) async throws -> DineWiseCustomerTouchOutcome {
+        let evidenceKind = outcomeType == "visit" ? "pos_order" : "platform_voucher"
+        return try await request("/stores/\(storeID)/private-domain/customers/\(consentID)/touch-drafts/\(draftID)/outcomes",
+            method: "POST", body: ["OutcomeType": outcomeType,
+                "OccurredBusinessDate": occurredBusinessDate, "EvidenceKind": evidenceKind,
+                "EvidenceReference": evidenceReference], token: token,
+            idempotencyKey: idempotencyKey, role: role)
+    }
+
+    func reviewCustomerTouchOutcome(storeID: String, consentID: String, draftID: String,
+                                    outcomeID: String, token: String, version: Int,
+                                    action: String, reasonCode: String? = nil) async throws
+        -> DineWiseCustomerTouchOutcome {
+        var body: [String: Any] = ["Version": version, "Action": action,
+                                   "EvidenceChecked": action == "verified"]
+        if let reasonCode { body["ReasonCode"] = reasonCode }
+        return try await request("/stores/\(storeID)/private-domain/customers/\(consentID)/touch-drafts/\(draftID)/outcomes/\(outcomeID)/review",
+            method: "POST", body: body, token: token, role: "owner")
     }
 
     func sendCode(email: String) async throws {

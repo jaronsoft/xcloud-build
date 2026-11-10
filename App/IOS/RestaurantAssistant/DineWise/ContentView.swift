@@ -781,6 +781,11 @@ struct ContentView: View {
                 tabButton("演示", symbol: "play.rectangle", value: "demo")
                 tabButton("访谈", symbol: "mic", value: "interview")
                 tabButton("记录", symbol: "doc.text", value: "records")
+            } else if selectedRole == "operator" {
+                tabButton("任务", symbol: "checkmark.square", value: "tasks")
+                tabButton("上传", symbol: "square.and.arrow.up", value: "upload")
+                tabButton("私域", symbol: "person.2", value: "private")
+                tabButton("消息", symbol: "bubble.left", value: "messages")
             } else if !selectedRole.isEmpty {
                 tabButton("任务", symbol: "checkmark.square", value: "tasks")
                 tabButton("上传", symbol: "square.and.arrow.up", value: "upload")
@@ -840,6 +845,7 @@ struct ContentView: View {
         case "tasks": "任务"
         case "upload": "上传"
         case "messages": "消息"
+        case "private": "私域"
         case "demo": "演示"
         case "interview": "访谈"
         case "records": "记录"
@@ -1527,6 +1533,9 @@ struct ContentView: View {
                             })
                             .id("\(token):\(selected.Id):owner:preparation")
                         memberSection(store: selected, token: token)
+                        DineWiseCustomerConsentView(store: selected, token: token,
+                            role: "owner", userID: sessionUserID)
+                            .id("\(token):\(selected.Id):owner:customer-consents")
                     } else {
                         DineWiseOwnerTodayView(store: selected, token: token) { tab, focus, statusFilter in
                             todayFocus = focus
@@ -1567,6 +1576,10 @@ struct ContentView: View {
                             }
                         })
                     .id("\(token):\(selected.Id):marketer")
+                } else if selectedRole == "operator" && selectedTab == "private" {
+                    DineWiseCustomerConsentView(store: selected, token: token,
+                        role: selectedRole, userID: sessionUserID)
+                        .id("\(token):\(selected.Id):operator:customer-consents")
                 } else if selectedTab == "upload" {
                     submissionSection(store: selected, token: token)
                 } else if selectedTab == "messages" {
