@@ -770,6 +770,8 @@ struct ContentView: View {
         username = session.Username ?? ""
         if isPushEnabled(session.UserId) {
             await registerPushIfEnabled(accessToken: session.AccessToken, userID: session.UserId)
+        } else {
+            Task { await retryQueuedPushRevocations(accessToken: session.AccessToken, userID: session.UserId) }
         }
         let pending = (try? await api.invitations(token: session.AccessToken)) ?? []
         if token == session.AccessToken {
@@ -1284,6 +1286,9 @@ struct ContentView: View {
     private func registerPushIfEnabled(accessToken: String, userID: String) async {
         guard token == accessToken, sessionUserID == userID,
               isPushEnabled(userID) else { return }
+        await retryQueuedPushRevocations(accessToken: accessToken, userID: userID)
+        guard token == accessToken, sessionUserID == userID,
+              isPushEnabled(userID) else { return }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard token == accessToken, sessionUserID == userID,
               isPushEnabled(userID),
@@ -1320,15 +1325,17 @@ struct ContentView: View {
                   isPushEnabled(userID) else {
                 do {
                     try await api.revokePushDevice(id: device.Id, accessToken: accessToken)
-                    if UserDefaults.standard.string(forKey: pushDeviceKey(userID)) == device.Id {
-                        UserDefaults.standard.removeObject(forKey: pushDeviceKey(userID))
-                    }
                 } catch {
-                    UserDefaults.standard.set(device.Id, forKey: pushDeviceKey(userID))
+                    enqueuePushRevocation(device.Id, userID: userID)
                 }
                 return
             }
+            let previousDeviceID = UserDefaults.standard.string(forKey: pushDeviceKey(userID))
             UserDefaults.standard.set(device.Id, forKey: pushDeviceKey(userID))
+            if let previousDeviceID, previousDeviceID != device.Id {
+                enqueuePushRevocation(previousDeviceID, userID: userID)
+                Task { await retryQueuedPushRevocations(accessToken: accessToken, userID: userID) }
+            }
             pushAuthorizationSummary = "系统通知已授权，设备登记完成；提醒送达还取决于服务端推送配置。"
         } catch {
             if self.token == accessToken, sessionUserID == userID {
@@ -1358,16 +1365,56 @@ struct ContentView: View {
     @MainActor
     private func revokeSavedPushDevice(accessToken: String, userID: String) async -> Bool {
         let key = pushDeviceKey(userID)
-        guard let deviceID = UserDefaults.standard.string(forKey: key) else { return true }
-        do {
-            try await api.revokePushDevice(id: deviceID, accessToken: accessToken)
-            if UserDefaults.standard.string(forKey: key) == deviceID {
-                UserDefaults.standard.removeObject(forKey: key)
-            }
-            return true
-        } catch {
-            return false
+        if let deviceID = UserDefaults.standard.string(forKey: key) {
+            enqueuePushRevocation(deviceID, userID: userID)
         }
+        let pending = queuedPushRevocations(userID: userID)
+        guard !pending.isEmpty else { return true }
+        var allRevoked = true
+        for deviceID in pending {
+            do {
+                try await api.revokePushDevice(id: deviceID, accessToken: accessToken)
+                clearQueuedPushRevocation(deviceID, userID: userID)
+                if UserDefaults.standard.string(forKey: key) == deviceID {
+                    UserDefaults.standard.removeObject(forKey: key)
+                }
+            } catch {
+                allRevoked = false
+            }
+        }
+        return allRevoked
+    }
+
+    private func queuedPushRevocations(userID: String) -> [String] {
+        guard !userID.isEmpty else { return [] }
+        return UserDefaults.standard.stringArray(forKey: pushRevocationQueueKey(userID)) ?? []
+    }
+
+    private func enqueuePushRevocation(_ deviceID: String, userID: String) {
+        guard !userID.isEmpty, !deviceID.isEmpty else { return }
+        let key = pushRevocationQueueKey(userID)
+        var pending = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+        pending.insert(deviceID)
+        UserDefaults.standard.set(pending.sorted(), forKey: key)
+    }
+
+    private func clearQueuedPushRevocation(_ deviceID: String, userID: String) {
+        let key = pushRevocationQueueKey(userID)
+        let pending = queuedPushRevocations(userID: userID).filter { $0 != deviceID }
+        if pending.isEmpty {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else {
+            UserDefaults.standard.set(pending, forKey: key)
+        }
+    }
+
+    private func pushRevocationQueueKey(_ userID: String) -> String {
+        "DineWise.PushRevocations.\(userID)"
+    }
+
+    private func retryQueuedPushRevocations(accessToken: String, userID: String) async {
+        guard !queuedPushRevocations(userID: userID).isEmpty else { return }
+        _ = await revokeSavedPushDevice(accessToken: accessToken, userID: userID)
     }
 
     private func pushDeviceKey(_ userID: String) -> String {
@@ -1431,14 +1478,11 @@ struct ContentView: View {
     private func signOut() {
         if let token {
             let userID = sessionUserID
+            if let deviceID = UserDefaults.standard.string(forKey: pushDeviceKey(userID)) {
+                enqueuePushRevocation(deviceID, userID: userID)
+            }
             Task {
-                let key = pushDeviceKey(userID)
-                if let deviceID = UserDefaults.standard.string(forKey: key) {
-                    do {
-                        try await api.revokePushDevice(id: deviceID, accessToken: token)
-                        UserDefaults.standard.removeObject(forKey: key)
-                    } catch { }
-                }
+                await retryQueuedPushRevocations(accessToken: token, userID: userID)
                 await api.logout(token: token)
             }
             DineWisePushRegistration.shared.clearDeviceToken()
