@@ -166,56 +166,60 @@ struct HotelPublicDetailView: View {
                     let trimmedHotelName = (detail["Name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     let normalizedHotelName = trimmedHotelName.isEmpty ? "江都住宿" : trimmedHotelName
                     let shareTitle = trimmedHotelName.isEmpty ? normalizedHotelName : "\(trimmedHotelName)｜江都文旅"
+                    let shareStayQuery = bookingEnabled
+                        ? "&checkIn=\(checkInText)&checkOut=\(checkOutText)&guests=\(guestCount)" : ""
                     ShareLink(
-                        item: "https://travel.jiangdu.net/subpackages/hotel/index?id=\(id)&checkIn=\(checkInText)&checkOut=\(checkOutText)&guests=\(guestCount)",
+                        item: "https://travel.jiangdu.net/subpackages/hotel/index?id=\(id)\(shareStayQuery)",
                         subject: Text(shareTitle),
                         message: Text("查看住宿：\(normalizedHotelName)")
                     ) {
-                        Label("分享住宿与当前查询条件", systemImage: "square.and.arrow.up")
+                        Label(bookingEnabled ? "分享住宿与当前查询条件" : "分享住宿", systemImage: "square.and.arrow.up")
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                             .foregroundStyle(Brand.primary)
                             .background(Brand.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         Text("查询房态与价格").font(.headline).foregroundStyle(Brand.ink)
-                        HotelDateField(title: "入住日期", selection: $checkIn,
-                            range: HotelBusinessDate.offset(0)...HotelBusinessDate.offset(365))
-                            .onChange(of: checkIn) { _, value in
-                                pointsByRoom = [:]
-                                if value >= checkOut {
-                                    checkOut = HotelBusinessDate.offset(1, from: value)
-                                } else if (HotelBusinessDate.calendar.dateComponents([.day], from: value, to: checkOut).day ?? 0) > 30 {
-                                    checkOut = HotelBusinessDate.offset(30, from: value)
+                        if bookingEnabled {
+                            HotelDateField(title: "入住日期", selection: $checkIn,
+                                range: HotelBusinessDate.offset(0)...HotelBusinessDate.offset(365))
+                                .onChange(of: checkIn) { _, value in
+                                    pointsByRoom = [:]
+                                    if value >= checkOut {
+                                        checkOut = HotelBusinessDate.offset(1, from: value)
+                                    } else if (HotelBusinessDate.calendar.dateComponents([.day], from: value, to: checkOut).day ?? 0) > 30 {
+                                        checkOut = HotelBusinessDate.offset(30, from: value)
+                                    }
+                                    revision += 1
                                 }
-                                revision += 1
+                            HotelDateField(title: "离店日期", selection: $checkOut,
+                                range: HotelBusinessDate.offset(1, from: checkIn)...HotelBusinessDate.offset(30, from: checkIn))
+                                .onChange(of: checkOut) { _, _ in pointsByRoom = [:]; revision += 1 }
+                            HStack(spacing: 10) {
+                                Text("入住人数").foregroundStyle(Brand.ink).lineLimit(1).minimumScaleFactor(0.8)
+                                Spacer(minLength: 8)
+                                Button { guestCount = max(1, guestCount - 1); pointsByRoom = [:] } label: {
+                                    Image(systemName: "minus").frame(width: 36, height: 36)
+                                }
+                                .buttonStyle(.bordered).disabled(guestCount <= 1)
+                                Text("\(guestCount) 位").monospacedDigit().frame(minWidth: 42)
+                                Button { guestCount = min(20, guestCount + 1); pointsByRoom = [:] } label: {
+                                    Image(systemName: "plus").frame(width: 36, height: 36)
+                                }
+                                .buttonStyle(.bordered).disabled(guestCount >= 20)
                             }
-                        HotelDateField(title: "离店日期", selection: $checkOut,
-                            range: HotelBusinessDate.offset(1, from: checkIn)...HotelBusinessDate.offset(30, from: checkIn))
-                            .onChange(of: checkOut) { _, _ in pointsByRoom = [:]; revision += 1 }
-                        HStack(spacing: 10) {
-                            Text("入住人数").foregroundStyle(Brand.ink).lineLimit(1).minimumScaleFactor(0.8)
-                            Spacer(minLength: 8)
-                            Button { guestCount = max(1, guestCount - 1); pointsByRoom = [:] } label: {
-                                Image(systemName: "minus").frame(width: 36, height: 36)
-                            }
-                            .buttonStyle(.bordered).disabled(guestCount <= 1)
-                            Text("\(guestCount) 位").monospacedDigit().frame(minWidth: 42)
-                            Button { guestCount = min(20, guestCount + 1); pointsByRoom = [:] } label: {
-                                Image(systemName: "plus").frame(width: 36, height: 36)
-                            }
-                            .buttonStyle(.bordered).disabled(guestCount >= 20)
-                        }
                             .onChange(of: guestCount) { _, _ in pointsByRoom = [:]; revision += 1 }
-                        Button(loading ? "正在查询…" : "查询所选日期") { revision += 1 }
-                            .buttonStyle(.borderedProminent).tint(Brand.primary).disabled(loading || !bookingEnabled)
-                        if store.session == nil {
-                            Text("请先在个人中心登录并完成手机号验证，再提交预订。")
-                                .font(.caption).foregroundStyle(.secondary)
-                        } else if bookingEnabled {
-                            TextField("入住联系人姓名", text: $contactName).textContentType(.name)
-                                .textFieldStyle(.roundedBorder).disabled(pendingIdempotencyKey != nil)
-                            TextField("联系电话（可含 + 国际区号）", text: $contactPhone).textContentType(.telephoneNumber)
-                                .keyboardType(.phonePad).textFieldStyle(.roundedBorder).disabled(pendingIdempotencyKey != nil)
+                            Button(loading ? "正在查询…" : "查询所选日期") { revision += 1 }
+                                .buttonStyle(.borderedProminent).tint(Brand.primary).disabled(loading)
+                            if store.session == nil {
+                                Text("请先在个人中心登录并完成手机号验证，再提交预订。")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                TextField("入住联系人姓名", text: $contactName).textContentType(.name)
+                                    .textFieldStyle(.roundedBorder).disabled(pendingIdempotencyKey != nil)
+                                TextField("联系电话（可含 + 国际区号）", text: $contactPhone).textContentType(.telephoneNumber)
+                                    .keyboardType(.phonePad).textFieldStyle(.roundedBorder).disabled(pendingIdempotencyKey != nil)
+                            }
                         } else {
                             Text("酒店预订暂未开放；仍可浏览住宿资料。")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -287,17 +291,19 @@ struct HotelPublicDetailView: View {
                                 let estimatedStayPrice = stayPrice.flatMap { perRoom in
                                     nativeMoneyCents(perRoom * Double(roomCount)).map { Double($0) / 100 }
                                 }
-                                if available <= 0 {
-                                    Text("所选日期暂无可订房间").font(.caption).foregroundStyle(.secondary)
-                                } else {
-                                    Text("所选日期可订 \(available) 间").font(.caption).foregroundStyle(.secondary)
-                                }
-                                if available > 0, stayNights > 0, let stayPrice, let estimatedStayPrice {
-                                    Text("入住 \(stayNights) 晚 · 每间 ¥\(stayPrice, specifier: "%.2f") × \(roomCount) 间，预计 ¥\(estimatedStayPrice, specifier: "%.2f")\(hasStayPrice ? "" : "（按起价估算）")")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                } else if available > 0 {
-                                    Text("所选日期总价暂不可估算，请刷新房态后重试。")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                if bookingEnabled {
+                                    if available <= 0 {
+                                        Text("所选日期暂无可订房间").font(.caption).foregroundStyle(.secondary)
+                                    } else {
+                                        Text("所选日期可订 \(available) 间").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    if available > 0, stayNights > 0, let stayPrice, let estimatedStayPrice {
+                                        Text("入住 \(stayNights) 晚 · 每间 ¥\(stayPrice, specifier: "%.2f") × \(roomCount) 间，预计 ¥\(estimatedStayPrice, specifier: "%.2f")\(hasStayPrice ? "" : "（按起价估算）")")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    } else if available > 0 {
+                                        Text("所选日期总价暂不可估算，请刷新房态后重试。")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
                                 }
                                 if let roomId, available > 0, bookingEnabled {
                                     Stepper("预订间数：\(min(max(1, roomCounts[roomId] ?? 1), min(10, available))) 间",
@@ -387,15 +393,19 @@ struct HotelPublicDetailView: View {
                 guard await MobileAPI(store: store).featureEnabled("MODULE-HOTEL") else {
                     throw MobileAPIError.unavailable("住宿模块暂未开放")
                 }
-                bookingEnabled = await MobileAPI(store: store).featureEnabled("F-DST-001")
+                bookingEnabled = await MobileAPI(store: store).featureEnabled("F-DST-001", forceRefresh: true)
                 let api = MobileAPI(store: store)
-                let availabilityPath = "/api/JHCTIHotel/GetPublicDetail?id=\(id)&checkIn=\(checkInText)T00:00:00&checkOut=\(checkOutText)T00:00:00&guests=\(guestCount)"
                 let availability: [String: Any]?
-                do {
-                    availability = try await api.getPublicCached(availabilityPath, forceRefresh: true) as? [String: Any]
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch {
+                if bookingEnabled {
+                    let availabilityPath = "/api/JHCTIHotel/GetPublicDetail?id=\(id)&checkIn=\(checkInText)T00:00:00&checkOut=\(checkOutText)T00:00:00&guests=\(guestCount)"
+                    do {
+                        availability = try await api.getPublicCached(availabilityPath, forceRefresh: true) as? [String: Any]
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        availability = nil
+                    }
+                } else {
                     availability = nil
                 }
                 let value: [String: Any]?

@@ -14,14 +14,11 @@ struct NativeResourceFacilitiesSection: View {
     private var facilities: [ResourceItem] { nativeResourceFacilities(rows).compactMap(ResourceItem.init) }
     private var mapPoints: [ResourceItem] { facilities.filter { $0.latitude != nil && $0.longitude != nil } }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(facilities.isEmpty ? "景区设施" : "景区设施分布")
-                .font(.system(size: NativeTypography.size(14), weight: .semibold)).foregroundStyle(Brand.ink)
-            if facilities.isEmpty {
-                Text("景区暂未发布设施信息，完善后将在这里显示。")
-                    .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
-            } else {
+    @ViewBuilder var body: some View {
+        if !facilities.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("景区设施分布")
+                    .font(.system(size: NativeTypography.size(14), weight: .semibold)).foregroundStyle(Brand.ink)
                 if mapPoints.isEmpty {
                     Text("已发布的景区设施暂未提供可用坐标，地图暂不可用。")
                         .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
@@ -38,9 +35,9 @@ struct NativeResourceFacilitiesSection: View {
                     }.font(.system(size: NativeTypography.size(14)))
                 }
             }
+            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Brand.border, lineWidth: 1))
         }
-        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Brand.border, lineWidth: 1))
     }
 }
 

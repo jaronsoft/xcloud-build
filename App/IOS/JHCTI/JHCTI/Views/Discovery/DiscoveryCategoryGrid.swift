@@ -37,6 +37,7 @@ struct DiscoveryCategoryGrid: View {
     let store: SessionStore
     let accessStates: [String: NativePublicFeatureAccessState]
     let onMap: () -> Void
+    let onClosedTicket: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -53,8 +54,14 @@ struct DiscoveryCategoryGrid: View {
                         }
                         .disabled(accessStates[category.id] != .open)
                     } else {
-                        Button(action: onMap) { categoryCard(category) }
-                            .disabled(accessStates[category.id] != .open)
+                        Button {
+                            if category.id == "tickets", accessStates[category.id] == .closed {
+                                onClosedTicket()
+                            } else {
+                                onMap()
+                            }
+                        } label: { categoryCard(category) }
+                            .disabled(accessStates[category.id] != .open && !(category.id == "tickets" && accessStates[category.id] == .closed))
                     }
                 }
             }
@@ -64,10 +71,13 @@ struct DiscoveryCategoryGrid: View {
 
     private func categoryCard(_ category: DiscoveryCategory) -> some View {
         VStack(spacing: 4) {
+            let isClosedTicket = category.id == "tickets" && accessStates[category.id] == .closed
             Image("Quick\(category.icon)").resizable().scaledToFit().frame(width: 42, height: 42)
-            Text(category.title).font(.system(size: NativeTypography.size(14), weight: .medium)).foregroundStyle(Brand.ink)
+                .saturation(isClosedTicket ? 0 : 1).opacity(isClosedTicket ? 0.48 : 1)
+            Text(category.title).font(.system(size: NativeTypography.size(14), weight: .medium))
+                .foregroundStyle(isClosedTicket ? Brand.muted : Brand.ink)
                 .lineLimit(1).minimumScaleFactor(0.85)
-            if let status = categoryStatusText(category) {
+            if !isClosedTicket, let status = categoryStatusText(category) {
                 Text(status)
                     .font(.system(size: NativeTypography.size(12))).lineLimit(1).minimumScaleFactor(0.85).foregroundStyle(Brand.muted)
             }

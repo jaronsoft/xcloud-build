@@ -1,8 +1,6 @@
 import Foundation
 import SwiftUI
 
-private let maximumSearchResults = 20_000
-
 struct DiscoverView: View {
     let store: SessionStore
     let initialKeyword: String
@@ -15,6 +13,7 @@ struct DiscoverView: View {
     @State private var accessStates: [String: NativePublicFeatureAccessState] = [:]
     @State private var moduleStatusLoading = true
     @State private var moduleStatusError = false
+    @State private var showClosedTicketNotice = false
     @State private var hotwords: [String] = []
     @State private var loading = false
     @State private var loadingMore = false
@@ -22,7 +21,6 @@ struct DiscoverView: View {
     @State private var moreRequiresRestart = false
     @State private var searchSequence = 0
     @State private var error: String?
-    @State private var articleSiteID = "0"
 
     var body: some View {
         NavigationStack {
@@ -66,7 +64,8 @@ struct DiscoverView: View {
                                 }
                             }
                         }
-                        DiscoveryCategoryGrid(store: store, accessStates: accessStates, onMap: onMap)
+                        DiscoveryCategoryGrid(store: store, accessStates: accessStates, onMap: onMap,
+                            onClosedTicket: { showClosedTicketNotice = true })
                         if !hotwords.isEmpty {
                             Text("热门搜索").font(.system(size: NativeTypography.size(16), weight: .semibold)).foregroundStyle(Brand.ink)
                             ScrollView(.horizontal, showsIndicators: false) {
@@ -103,11 +102,7 @@ struct DiscoverView: View {
                                 .padding(12).background(.white, in: RoundedRectangle(cornerRadius: 10))
                             }
                         }
-                        if resultTotal > maximumSearchResults {
-                            Text("搜索结果较多，当前最多展示前 20,000 条，请缩小关键词范围。")
-                                .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-                        }
-                        if !results.isEmpty && results.count < min(resultTotal, maximumSearchResults) {
+                        if !results.isEmpty && results.count < resultTotal {
                             if let moreError {
                                 Button("\(moreError)　点此重试") {
                                     Task { if moreRequiresRestart { await searchNow() } else { await loadMoreSearchResults() } }
@@ -125,7 +120,7 @@ struct DiscoverView: View {
                                 .disabled(loadingMore || loading)
                                 .font(.system(size: NativeTypography.size(14), weight: .medium))
                             }
-                        } else if !results.isEmpty && resultTotal <= maximumSearchResults {
+                        } else if !results.isEmpty {
                             Text("已显示全部内容").font(.system(size: NativeTypography.size(12)))
                                 .foregroundStyle(Brand.muted).frame(maxWidth: .infinity).padding(.vertical, 8)
                         }
@@ -134,13 +129,15 @@ struct DiscoverView: View {
                 .padding(.horizontal, 16).padding(.bottom, 20)
             }
             .background(Brand.background)
+            .alert("景区门票暂未开放", isPresented: $showClosedTicketNotice) {
+                Button("知道了", role: .cancel) { }
+            } message: {
+                Text("你仍可浏览景点介绍。")
+            }
             .task { await loadLanding() }
             .onChange(of: initialKeyword) { _, value in
                 keyword = value
                 if !value.isEmpty { Task { await searchNow() } }
-            }
-            .onChange(of: articleSiteID) { _, _ in
-                if !searchedKeyword.isEmpty { Task { await searchNow() } }
             }
         }
     }
@@ -217,8 +214,6 @@ struct DiscoverView: View {
     private func loadLanding() async {
         await loadFeatureStatuses()
         guard !Task.isCancelled else { return }
-        await loadArticleSearchSite()
-        guard !Task.isCancelled else { return }
         do {
             if let value = try await MobileAPI(store: store).get("/api/JHCTISearch/GetPublicHotwords") as? [String] {
                 hotwords = value
@@ -230,27 +225,6 @@ struct DiscoverView: View {
         }
         guard !Task.isCancelled else { return }
         if !initialKeyword.isEmpty { keyword = initialKeyword; await searchNow() }
-    }
-
-    private func loadArticleSearchSite() async {
-        do {
-            guard let home = try await MobileAPI(store: store).get("/api/JHCTIHomePage/GetPublicHome") as? [String: Any],
-                  let modules = (home["AppModules"] as? [[String: Any]]) ?? (home["appModules"] as? [[String: Any]]),
-                  modules.filter({
-                      String(describing: $0["Key"] ?? $0["key"] ?? $0["ModuleKey"] ?? $0["moduleKey"] ?? "").lowercased() == "articles"
-                  }).count == 1,
-                  let module = modules.first(where: {
-                      String(describing: $0["Key"] ?? $0["key"] ?? $0["ModuleKey"] ?? $0["moduleKey"] ?? "").lowercased() == "articles"
-                  }),
-                  let siteID = (module["SiteId"] as? String) ?? (module["siteId"] as? String),
-                  siteID.range(of: "^[1-9][0-9]{0,18}$", options: .regularExpression) != nil,
-                  let parsedSiteID = Int64(siteID), parsedSiteID > 0 else { return }
-            articleSiteID = siteID
-        } catch is CancellationError {
-            return
-        } catch {
-            // 配置暂不可用时继续使用兼容站点编号 1。
-        }
     }
 
     private func loadFeatureStatuses(forceRefresh: Bool = false) async {
@@ -285,8 +259,8 @@ struct DiscoverView: View {
         }
         loading = true; error = nil; searchedKeyword = query
         do {
-            guard let requestPath = searchRequestPath(keyword: query, page: 1),
-                  let page = try await MobileAPI(store: store).get(requestPath) as? [String: Any],
+            let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            guard let page = try await MobileAPI(store: store).get("/api/JHCTISearch/Search?keyword=\(encoded)&page=1&pageSize=20") as? [String: Any],
                   let parsed = nativeSearchResultPage(page, page: 1, pageSize: 20) else {
                 throw MobileAPIError.unavailable("搜索结果格式异常，请重试。")
             }
@@ -310,8 +284,8 @@ struct DiscoverView: View {
         loadingMore = true; moreError = nil
         defer { if sequence == searchSequence { loadingMore = false } }
         do {
-            guard let requestPath = searchRequestPath(keyword: searchedKeyword, page: nextPage),
-                  let response = try await MobileAPI(store: store).get(requestPath) as? [String: Any],
+            let encoded = searchedKeyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            guard let response = try await MobileAPI(store: store).get("/api/JHCTISearch/Search?keyword=\(encoded)&page=\(nextPage)&pageSize=20") as? [String: Any],
                   let parsed = nativeSearchResultPage(response, page: nextPage, pageSize: 20) else {
                 throw MobileAPIError.unavailable("搜索结果格式异常，请重试。")
             }
@@ -337,18 +311,5 @@ struct DiscoverView: View {
             guard sequence == searchSequence else { return }
             moreError = error.localizedDescription
         }
-    }
-
-    private func searchRequestPath(keyword: String, page: Int) -> String? {
-        guard page > 0 else { return nil }
-        var components = URLComponents()
-        components.path = "/api/JHCTISearch/Search"
-        components.queryItems = [
-            URLQueryItem(name: "keyword", value: keyword),
-            URLQueryItem(name: "page", value: String(page)),
-            URLQueryItem(name: "pageSize", value: "20"),
-            URLQueryItem(name: "articleSiteId", value: articleSiteID),
-        ]
-        return components.string
     }
 }

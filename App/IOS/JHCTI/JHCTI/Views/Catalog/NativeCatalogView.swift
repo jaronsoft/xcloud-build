@@ -163,9 +163,6 @@ struct CatalogView: View {
                                     let date = row["PublishDate"] as? String ?? row["AddDate"] as? String ?? ""
                                     Text(String(date.prefix(10))).font(.system(size: NativeTypography.size(10))).foregroundStyle(Brand.muted)
                                 }
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right").font(.system(size: NativeTypography.size(11), weight: .semibold))
-                                    .foregroundStyle(Brand.muted)
                             }
                             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                             .background(.white, in: RoundedRectangle(cornerRadius: 13))
@@ -205,6 +202,7 @@ struct CatalogView: View {
                         }
                         }
                     }
+                    .navigationLinkIndicatorVisibility(isArticleList ? .hidden : .automatic)
                 }
                 if (isArticleList || isDiningList) && hasMore {
                     Section {

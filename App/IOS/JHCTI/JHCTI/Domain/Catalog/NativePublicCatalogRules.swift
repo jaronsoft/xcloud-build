@@ -98,35 +98,6 @@ func nativeNearbyActivityRows(_ response: [String: Any], page: Int, pageSize: In
 }
 
 /** 校验统一搜索的分页回执和业务结果字段，避免把缺页或错误结构显示为合法空结果。 */
-private func nativeSearchTargetIsConsistent(type: String, id: String, targetPath: String) -> Bool {
-    guard let components = URLComponents(string: targetPath), components.scheme == nil,
-          components.host == nil, components.fragment == nil, components.percentEncodedPath == components.path,
-          components.path.hasPrefix("/"), !components.path.hasPrefix("//") else { return false }
-    let path = components.path.split(separator: "/").map(String.init)
-    guard components.path == "/" + path.joined(separator: "/") else { return false }
-    let query = components.queryItems ?? []
-    func validID(_ value: String) -> Bool {
-        guard let number = Int64(value), number > 0 else { return false }
-        return String(number) == value
-    }
-    switch type.lowercased() {
-    case "scenicspot": return path == ["attractions", id] && query.isEmpty
-    case "guideroute":
-        guard path.count == 3, path[0] == "attractions", validID(path[1]), path[2] == "guide" else { return false }
-        return query.isEmpty
-    case "ticket": return path.count == 3 && path[0] == "attractions" && validID(path[1]) && path[2] == "tickets" && query.isEmpty
-    case "article":
-        return path == ["articles", id] && validID(id) && query.count == 1
-            && query[0].name == "siteid" && query[0].value.map(validID) == true
-            && components.percentEncodedQuery == "siteid=\(query[0].value ?? "")"
-    case "activity", "product", "hotel", "travelroute", "diningstore":
-        let prefixes = ["activity": "activities", "product": "products", "hotel": "hotels",
-                        "travelroute": "travel-routes", "diningstore": "restaurants"]
-        return validID(id) && path == [prefixes[type.lowercased()] ?? "", id] && query.isEmpty
-    default: return false
-    }
-}
-
 func nativeSearchResultPage(_ response: [String: Any], page: Int, pageSize: Int) -> (rows: [[String: Any]], total: Int, pageCount: Int)? {
     guard let catalog = nativePublicCatalogPage(response, page: page, pageSize: pageSize), pageSize > 0 else { return nil }
     let pageCountValues = ["PageCount", "pageCount"].compactMap { response.keys.contains($0) ? response[$0] : nil }
@@ -143,20 +114,9 @@ func nativeSearchResultPage(_ response: [String: Any], page: Int, pageSize: Int)
 
     let supportedTypes: Set<String> = ["ScenicSpot", "GuideRoute", "Ticket", "Article", "Activity", "Product", "Hotel", "TravelRoute", "DiningStore"]
     func stringField(_ row: [String: Any], pascal: String, camel: String) -> String? {
-        let keys = [pascal, camel].filter { row.keys.contains($0) }
-        guard !keys.isEmpty else { return nil }
-        let values = keys.compactMap { row[$0] as? String }
-        guard values.count == keys.count, let first = values.first,
-              values.dropFirst().allSatisfy({ $0 == first }) else { return nil }
-        return first
-    }
-    func optionalStringFieldIsValid(_ row: [String: Any], pascal: String, camel: String, maximumLength: Int? = nil) -> Bool {
         let values = [pascal, camel].compactMap { row.keys.contains($0) ? row[$0] : nil }
-        guard let first = values.first else { return true }
-        if first is NSNull { return values.allSatisfy { $0 is NSNull } }
-        guard let text = first as? String,
-              values.dropFirst().allSatisfy({ ($0 as? String) == text }) else { return false }
-        return maximumLength.map { text.utf16.count <= $0 } ?? true
+        guard let first = values.first as? String, values.dropFirst().allSatisfy({ ($0 as? String) == first }) else { return nil }
+        return first
     }
     var keys = Set<String>()
     for row in catalog.rows {
@@ -165,13 +125,7 @@ func nativeSearchResultPage(_ response: [String: Any], page: Int, pageSize: Int)
               let type = stringField(row, pascal: "Type", camel: "type"),
               supportedTypes.contains(where: { $0.caseInsensitiveCompare(type) == .orderedSame }),
               let title = stringField(row, pascal: "Title", camel: "title"), !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              title.utf16.count <= 200,
-              optionalStringFieldIsValid(row, pascal: "Summary", camel: "summary", maximumLength: 2000),
-              optionalStringFieldIsValid(row, pascal: "ImageUrl", camel: "imageUrl", maximumLength: 2048),
-              let targetPath = stringField(row, pascal: "TargetPath", camel: "targetPath"),
-              targetPath.utf16.count <= 500,
-              nativeSearchTargetIsConsistent(type: type, id: id, targetPath: targetPath),
-              optionalStringFieldIsValid(row, pascal: "AdmissionType", camel: "admissionType") else { return nil }
+              let targetPath = stringField(row, pascal: "TargetPath", camel: "targetPath"), targetPath.hasPrefix("/") else { return nil }
         if !keys.insert("\(type.lowercased()):\(id)").inserted { return nil }
     }
     return (catalog.rows, catalog.total, firstPageCount.intValue)

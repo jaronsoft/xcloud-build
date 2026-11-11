@@ -46,7 +46,7 @@ func consistentHomeStringField(_ item: [String: Any], upperKey: String, lowerKey
 }
 
 private let homeRecommendationInternalPageKeys: Set<String> = [
-    "attractions", "tickets", "activities", "shop", "hotels", "routes", "guide", "profile", "discover",
+    "attractions", "tickets", "activities", "shop", "hotels", "routes", "guide", "profile",
     "coupon-center", "dining", "group-buy", "flash-sale", "articles", "intangible-heritage", "tourism-map"
 ]
 
@@ -69,13 +69,14 @@ func isValidHomeQuickEntryTarget(_ item: [String: Any]) -> Bool {
 
     let type = (target.value ?? legacy.value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     let key = page.value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
-    if !consistentHomeStringField(item, upperKey: "Title", lowerKey: "title").isValid { return false }
     let id = targetID.value?.trimmingCharacters(in: .whitespacesAndNewlines)
     let detailTypes: Set<String> = ["scenicspot", "ticket", "article", "activity", "product", "hotel", "travelroute", "diningstore"]
     guard type.isEmpty || type == "internalpage" || detailTypes.contains(type) else { return false }
     if !key.isEmpty && !homeRecommendationInternalPageKeys.contains(key) { return false }
     if !key.isEmpty && !type.isEmpty && type != "internalpage" { return false }
-    if type == "internalpage" && (key.isEmpty || id != nil) { return false }
+    // CMS 用字符串 "0" 表示内部页没有关联内容 ID；真实雪花 ID 仍不允许作为内部页目标。
+    let hasNoInternalTargetID = id == nil || id == "0"
+    if type == "internalpage" && (key.isEmpty || !hasNoInternalTargetID) { return false }
     if type.isEmpty && (key.isEmpty || id != nil) { return false }
     if detailTypes.contains(type) && !(id.map { isValidHomeRecommendationTargetID($0) } ?? false) { return false }
     return true

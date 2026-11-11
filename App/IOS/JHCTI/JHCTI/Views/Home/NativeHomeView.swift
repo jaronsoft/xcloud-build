@@ -221,8 +221,7 @@ struct HomeView: View {
     }
 
     private func openQuickEntryPage(key: String, index: Int) {
-        if key == "discover" { onBrowse() }
-        else if key == "profile" { onProfile() }
+        if key == "profile" { onProfile() }
         else if key == "coupon-center" { onCouponCenter() }
         else if key == "group-buy" { showPendingFeature("F-FNB-007") }
         else if key == "flash-sale" { showPendingFeature("F-OPS-005") }
@@ -293,97 +292,6 @@ struct HomeView: View {
         "景区门票", "文旅地图", "特色美食", "酒店民宿",
         "促销活动", "非遗文化", "旅游攻略", "旅游线路"
     ]
-    private func quickEntryFallbackTitle(_ entry: [String: Any]?, index: Int) -> String {
-        guard let entry else { return shortcuts.indices.contains(index) ? shortcuts[index] : "文旅服务" }
-        let key = (entry["InternalPageKey"] as? String ?? entry["internalPageKey"] as? String ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let pageTitles = [
-            "map": "文旅地图", "discover": "发现", "attractions": "文旅地图", "tourism-map": "文旅地图",
-            "activities": "近期活动", "activity": "近期活动", "tickets": "景区门票",
-            "products": "文旅好物", "shop": "文旅好物", "hotels": "酒店民宿",
-            "routes": "旅游线路", "travel-routes": "旅游线路", "dining": "特色美食",
-            "restaurants": "特色美食", "food": "特色美食", "guide": "旅游攻略",
-            "articles": "文旅资讯", "intangible-heritage": "非遗文化",
-            "group-buy": "团购优惠", "flash-sale": "限时优惠", "coupon-center": "优惠券中心", "profile": "个人中心"
-        ]
-        if let title = pageTitles[key] { return title }
-        let type = (entry["TargetType"] as? String ?? entry["targetType"] as? String ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let targetTitles = [
-            "scenicspot": "景点详情", "ticket": "景区门票", "activity": "近期活动",
-            "product": "文旅好物", "hotel": "酒店民宿", "travelroute": "旅游线路",
-            "diningstore": "特色美食", "article": "文旅资讯"
-        ]
-        if let title = targetTitles[type] { return title }
-        return quickEntryPathTitle(entry) ?? (shortcuts.indices.contains(index) ? shortcuts[index] : "文旅服务")
-    }
-    private func quickEntryTargetPath(_ entry: [String: Any]?) -> String? {
-        guard let entry else { return nil }
-        let raw = (entry["TargetPath"] as? String ?? entry["targetPath"] as? String ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard raw.hasPrefix("/"), !raw.hasPrefix("//") else { return nil }
-        let path = raw.components(separatedBy: CharacterSet(charactersIn: "?#")).first ?? raw
-        return path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).isEmpty
-            ? "/" : "/" + path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
-    }
-    private func quickEntryPathValue(_ path: String?, values: [String: Int]) -> Int? {
-        guard let path else { return nil }
-        if let index = values[path] { return index }
-        let segments = path.split(separator: "/").map(String.init)
-        guard let first = segments.first else { return nil }
-        if first == "attractions", segments.count == 2 { return 1 }
-        if first == "attractions", segments.last == "tickets" { return 0 }
-        if first == "attractions", segments.last == "guide" { return 6 }
-        return values["/\(first)"]
-    }
-    private func quickEntryPathTitle(_ entry: [String: Any]?) -> String? {
-        let values = [
-            "/map": "文旅地图", "/discover": "发现", "/attractions": "文旅地图", "/tickets": "景区门票",
-            "/activities": "近期活动", "/products": "文旅好物", "/shop": "文旅好物",
-            "/hotels": "酒店民宿", "/routes": "旅游线路", "/travel-routes": "旅游线路",
-            "/dining": "特色美食", "/restaurants": "特色美食", "/food": "特色美食",
-            "/articles": "文旅资讯", "/guide": "旅游攻略", "/intangible-heritage": "非遗文化",
-            "/group-buy": "团购优惠", "/flash-sale": "限时优惠", "/coupon-center": "优惠券中心",
-            "/profile": "个人中心"
-        ]
-        guard let path = quickEntryTargetPath(entry) else { return nil }
-        if let title = values[path] { return title }
-        let segments = path.split(separator: "/").map(String.init)
-        guard let first = segments.first else { return nil }
-        if first == "attractions", segments.count == 2 { return "景点详情" }
-        if first == "attractions", segments.last == "tickets" { return "景区门票" }
-        if first == "attractions", segments.last == "guide" { return "旅游攻略" }
-        return values["/\(first)"]
-    }
-    private func quickEntryIconIndex(_ entry: [String: Any]?, fallback: Int) -> Int {
-        guard let entry else { return fallback }
-        let key = (entry["InternalPageKey"] as? String ?? entry["internalPageKey"] as? String ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let pageIndexes = [
-            "map": 1, "discover": 1, "attractions": 1, "tourism-map": 1,
-            "activities": 4, "activity": 4, "tickets": 0,
-            "products": 0, "shop": 0, "hotels": 3,
-            "routes": 7, "travel-routes": 7, "dining": 2,
-            "restaurants": 2, "food": 2, "guide": 6,
-            "articles": 6, "intangible-heritage": 5,
-            "group-buy": 4, "flash-sale": 4, "coupon-center": 4
-        ]
-        if let index = pageIndexes[key] { return index }
-        let type = (entry["TargetType"] as? String ?? entry["targetType"] as? String ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let typeIndexes = [
-            "scenicspot": 1, "ticket": 0, "activity": 4, "product": 0,
-            "hotel": 3, "travelroute": 7, "diningstore": 2, "article": 6
-        ]
-        if let index = typeIndexes[type] { return index }
-        return quickEntryPathValue(quickEntryTargetPath(entry), values: [
-            "/map": 1, "/discover": 1, "/attractions": 1, "/tickets": 0, "/activities": 4,
-            "/products": 0, "/shop": 0, "/hotels": 3, "/routes": 7,
-            "/travel-routes": 7, "/dining": 2, "/restaurants": 2, "/food": 2,
-            "/articles": 6, "/guide": 6, "/intangible-heritage": 5,
-            "/group-buy": 4, "/flash-sale": 4, "/coupon-center": 4
-        ]) ?? fallback
-    }
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -420,7 +328,8 @@ struct HomeView: View {
             .task(id: revision) {
                 let api = MobileAPI(store: store)
                 let homePath = "/api/JHCTIHomePage/GetPublicHome"
-                if revision == 0 && api.hasPublicCachedData(homePath) {
+                if api.hasPublicCachedData(homePath) {
+                    // 每次回到首页先展示磁盘缓存，再静默读取服务端更新。
                     await load(allowStale: true)
                     guard !Task.isCancelled else { return }
                     await load(forceRefresh: true)
@@ -543,11 +452,6 @@ struct HomeView: View {
             ForEach(shortcutIndices.indices, id: \.self) { position in
                 let shortcutIndex = shortcutIndices[position]
                 let entry = quickEntries.indices.contains(position) ? quickEntries[position] : nil
-                let iconIndex = quickEntryIconIndex(entry, fallback: shortcutIndex)
-                let rawTitle = entry?["Title"] as? String ?? entry?["title"] as? String
-                let configuredTitle = rawTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-                let title = configuredTitle.flatMap { $0.isEmpty ? nil : $0 }
-                    ?? quickEntryFallbackTitle(entry, index: shortcutIndex)
                 let configuredImage = entry?["ImageUrl"] as? String ?? entry?["imageUrl"] as? String
                 Button {
                     if let entry { openQuickEntry(entry, index: position) }
@@ -555,21 +459,19 @@ struct HomeView: View {
                 } label: {
                     VStack(spacing: 4) {
                         if let configuredImage, !configuredImage.isEmpty {
-                            remoteImage(configuredImage, height: 42, fallback: "Quick\(iconIndex % 8)")
+                            remoteImage(configuredImage, height: 42, fallback: "Quick\(shortcutIndex % 8)")
                                 .frame(width: 42, height: 42)
                         } else {
-                            Image("Quick\(iconIndex % 8)").resizable().scaledToFit().frame(width: 42, height: 42)
+                            Image("Quick\(shortcutIndex % 8)").resizable().scaledToFit().frame(width: 42, height: 42)
                         }
                         VStack(spacing: 2) {
-                            Text(title)
+                            Text(entry?["Title"] as? String ?? entry?["title"] as? String ?? (entry == nil ? shortcuts[shortcutIndex] : "文旅服务"))
                                 .font(.system(size: NativeTypography.size(12), weight: .medium)).foregroundStyle(Brand.ink)
                         }
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(title)
-                .accessibilityHint("打开此服务")
             }
         }
         .padding(.vertical, 20).padding(.horizontal, 12)
@@ -677,23 +579,30 @@ struct HomeView: View {
                 ($0["SortOrder"] as? Int ?? $0["sortOrder"] as? Int ?? 0)
                     < ($1["SortOrder"] as? Int ?? $1["sortOrder"] as? Int ?? 0)
             }
+            let validQuickEntries = configuredQuickEntries.filter(isValidHomeQuickEntryTarget)
+            let hasConfiguredQuickEntries = components.contains {
+                ($0["ComponentType"] as? String ?? $0["componentType"] as? String ?? "").lowercased() == "quickentry"
+            }
+            quickEntriesConfigured = hasConfiguredQuickEntries
             var availableQuickEntries: [[String: Any]] = []
-            for entry in configuredQuickEntries {
+            for entry in validQuickEntries {
                 if availableQuickEntries.count >= 8 { break }
-                guard isValidHomeQuickEntryTarget(entry) else { continue }
                 let targetType = (entry["TargetType"] as? String ?? entry["targetType"] as? String ?? "").lowercased()
                 let pageKey = (entry["InternalPageKey"] as? String ?? entry["internalPageKey"] as? String ?? "").lowercased()
                 let title = entry["Title"] as? String ?? entry["title"] as? String ?? ""
                 let targetPath = entry["TargetPath"] as? String ?? entry["targetPath"] as? String ?? ""
                 let featureID = homeModuleIdForTarget(targetType, pageKey, title, targetPath)
-                let featureOpen = featureID.isEmpty ? true : await api.featureEnabled(featureID,
-                    allowStale: allowStale, forceRefresh: forceRefresh)
+                let featureOpen: Bool
+                if featureID.isEmpty { featureOpen = true }
+                else {
+                    featureOpen = await api.featureEnabled(featureID,
+                        allowStale: allowStale, forceRefresh: forceRefresh)
+                }
                 guard !Task.isCancelled else { loading = false; return }
-                if featureOpen { availableQuickEntries.append(entry) }
-            }
-            quickEntryItems = availableQuickEntries
-            let hasConfiguredQuickEntries = components.contains {
-                ($0["ComponentType"] as? String ?? $0["componentType"] as? String ?? "").lowercased() == "quickentry"
+                if featureOpen {
+                    availableQuickEntries.append(entry)
+                    quickEntryItems = availableQuickEntries
+                }
             }
             let fallbackShortcutFeatures = [
                 "F-TKT-002", "MODULE-SCENIC", "MODULE-DINING", "MODULE-HOTEL",
@@ -731,18 +640,12 @@ struct HomeView: View {
                 return leftOrder == rightOrder ? left.offset < right.offset : leftOrder < rightOrder
             }.map(\.element)
             quickEntriesConfigured = hasConfiguredQuickEntries
+            loading = false
             let rawModules = value?["AppModules"] as? [[String: Any]] ?? value?["appModules"] as? [[String: Any]] ?? [
                 ["Key": "featured", "Title": "精选推荐", "IsEnabled": true, "SortOrder": 0],
                 ["Key": "activities", "Title": "最新活动", "IsEnabled": true, "SortOrder": 1]
             ]
-            let moduleKeyCounts = Dictionary(grouping: rawModules.compactMap { row in
-                (row["Key"] as? String ?? row["key"] as? String)?.lowercased()
-            }, by: { $0 }).mapValues(\.count)
-            let uniqueModules = rawModules.filter { row in
-                guard let key = row["Key"] as? String ?? row["key"] as? String else { return false }
-                return moduleKeyCounts[key.lowercased()] == 1
-            }
-            let candidates = uniqueModules.compactMap(CatalogModule.init).sorted { $0.sortOrder < $1.sortOrder }
+            let candidates = rawModules.compactMap(CatalogModule.init).sorted { $0.sortOrder < $1.sortOrder }
             var enabled: [CatalogModule] = []
             var published: [String: [[String: Any]]] = [:]
             var catalogErrors: [String: String] = [:]
@@ -782,12 +685,12 @@ struct HomeView: View {
             catalogs = enabled
             moduleRows = published
             moduleErrors = catalogErrors
-            let featuredModule = uniqueModules.first {
+            let featuredModule = rawModules.first {
                 ($0["Key"] as? String ?? $0["key"] as? String) == "featured"
                     && ($0["IsEnabled"] as? Bool ?? $0["isEnabled"] as? Bool ?? false)
             }
             featuredSortOrder = featuredModule?["SortOrder"] as? Int ?? featuredModule?["sortOrder"] as? Int ?? 0
-            configuredOrder = uniqueModules.enumerated().filter {
+            configuredOrder = rawModules.enumerated().filter {
                 $0.element["IsEnabled"] as? Bool ?? $0.element["isEnabled"] as? Bool ?? false
             }
                 .sorted { left, right in
