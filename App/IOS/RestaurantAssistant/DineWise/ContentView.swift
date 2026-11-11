@@ -1286,7 +1286,12 @@ struct ContentView: View {
     private func registerPushIfEnabled(accessToken: String, userID: String) async {
         guard token == accessToken, sessionUserID == userID,
               isPushEnabled(userID) else { return }
-        await retryQueuedPushRevocations(accessToken: accessToken, userID: userID)
+        guard await retryQueuedPushRevocations(accessToken: accessToken, userID: userID) else {
+            if isCurrentPushSession(accessToken, userID: userID) {
+                pushAuthorizationSummary = "旧设备登记待清理，联网后会重试；清理完成前暂不登记新设备。"
+            }
+            return
+        }
         guard token == accessToken, sessionUserID == userID,
               isPushEnabled(userID) else { return }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
@@ -1307,6 +1312,14 @@ struct ContentView: View {
         let userID = sessionUserID
         guard self.token == accessToken, !userID.isEmpty,
               isPushEnabled(userID) else { return }
+        guard await retryQueuedPushRevocations(accessToken: accessToken, userID: userID) else {
+            if isCurrentPushSession(accessToken, userID: userID) {
+                pushAuthorizationSummary = "旧设备登记待清理，联网后会重试；清理完成前暂不登记新设备。"
+            }
+            return
+        }
+        guard self.token == accessToken, sessionUserID == userID,
+              isPushEnabled(userID) else { return }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard self.token == accessToken, sessionUserID == userID,
               isPushEnabled(userID),
@@ -1325,6 +1338,7 @@ struct ContentView: View {
                   isPushEnabled(userID) else {
                 do {
                     try await api.revokePushDevice(id: device.Id, accessToken: accessToken)
+                    clearQueuedPushRevocation(device.Id, userID: userID)
                 } catch {
                     enqueuePushRevocation(device.Id, userID: userID)
                 }
@@ -1412,9 +1426,9 @@ struct ContentView: View {
         "DineWise.PushRevocations.\(userID)"
     }
 
-    private func retryQueuedPushRevocations(accessToken: String, userID: String) async {
-        guard !queuedPushRevocations(userID: userID).isEmpty else { return }
-        _ = await revokeSavedPushDevice(accessToken: accessToken, userID: userID)
+    private func retryQueuedPushRevocations(accessToken: String, userID: String) async -> Bool {
+        guard !queuedPushRevocations(userID: userID).isEmpty else { return true }
+        return await revokeSavedPushDevice(accessToken: accessToken, userID: userID)
     }
 
     private func pushDeviceKey(_ userID: String) -> String {
@@ -1482,7 +1496,7 @@ struct ContentView: View {
                 enqueuePushRevocation(deviceID, userID: userID)
             }
             Task {
-                await retryQueuedPushRevocations(accessToken: token, userID: userID)
+                _ = await retryQueuedPushRevocations(accessToken: token, userID: userID)
                 await api.logout(token: token)
             }
             DineWisePushRegistration.shared.clearDeviceToken()
