@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD013 MD024 -->
 
-本文件维护 ByeMyBuy iOS 的 App Store 文案和版本说明。当前目标版本为 1.3.6；该版本的实际构建号与上传状态待核对。
+本文件维护 ByeMyBuy iOS 的 App Store 文案和版本说明。当前工程版本为 1.3.8；其更新说明、构建号与上传状态待确认。
 
 ## 当前 App Store 推广文本
 
@@ -56,37 +56,21 @@ Explore submissions appear only after review. Anyone holding your share link can
 product comparison,purchase decision,target price,buy or pass,shopping advice,voting,alternatives
 ```
 
-## 1.3.6 — 2026-10-29 (Build 待确认) — 待发布
+## 1.3.6 — 发布日期待确认 (Build 待确认) — 已发布
 
 ### 简体中文
 
-- 首页焕新，更方便发起提问和浏览大家正在纠结的商品。
-- 首页和发现页打开时优先显示上次内容，下次启动可看到更新，也能下拉立即刷新。
-- 发现页的价格、投票结果和最终选择更容易查看；网络超时与列表末尾的提示也更友好。
-- 可在账号页选择跟随设备、简体中文或英文界面；帮助、版本和退出登录入口更清晰。
-- 投票理由改为直接点选，并增加更多贴近日常选择的理由。
-- 分享价格、推荐优惠链接和关注最终结果的操作更醒目。
-- “等等再决定”可以按需展开，提醒时间与最终选择按钮更容易辨认和点击。
-- 大家的建议现在显示脱敏昵称、头像和发表时间。
-- 详情页商品图片完整显示，避免上下内容被裁切。
-- 生成分享图片后可直接预览、保存到相册或分享给朋友，分享到 X 时也会准备图片和文案。
-- 展开 iPhone Duo 时，首页与发现页可并排查看。
-- 账号页新增图漾推荐，轻松发现模板图片创作应用。
+- 首页和发现页焕新，打开即可继续浏览上次内容，也能下拉刷新。
+- 价格、投票和最终选择更清晰；选择理由、分享优惠和设置复看提醒更方便。
+- 商品图片与大家的建议展示更完整；分享图片可预览、保存或发送，也支持分享到 X。
+- 可选择界面语言，在 iPhone Duo 上并排浏览，并从账号页发现图漾。
 
 ### English (U.S.)
 
-- Enjoy a refreshed home screen that makes it easier to ask a question and browse what others are considering.
-- See your last view of Home and Explore immediately, see updates on your next app launch, or pull to refresh now.
-- See prices, votes, and final choices more clearly in Explore, with friendlier messages at timeouts and the end of a list.
-- Choose your app language in Account, with clearer help, version, and sign-out controls.
-- Pick a vote reason from a wider range of everyday considerations.
-- Find clearer actions for sharing a price, recommending an offer link, and following the final result.
-- Expand “Revisit later” when needed, with clearer reminder and final-choice buttons.
-- See masked names, profile photos, and posting times alongside community advice.
-- View full product images on decision pages without cropping the top or bottom.
-- Preview share images, save them to Photos, or send them to friends, with an image and text prepared when sharing to X.
-- See Home and Explore side by side when iPhone Duo is unfolded.
-- Discover PixaRivo in Account for easy template-based image creation.
+- Home and Explore have a fresh look. Pick up where you left off or pull to refresh.
+- Prices, votes, and final choices are clearer, with easier ways to choose a reason, share an offer, and set a reminder.
+- Product photos and community advice are easier to see. Preview, save, or send a share image, including to X.
+- Choose your app language, browse side by side on iPhone Duo, and discover PixaRivo in Account.
 
 ### 内部验收备注（不用于 App Store 文案）
 
