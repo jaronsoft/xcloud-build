@@ -124,7 +124,7 @@ struct DineWiseOperatorStoreView: View {
                 .onChange(of: address) { _, _ in resetRequest() }
             Button("使用当前位置") {
                 locationTokenGeneration = tokenGeneration
-                location.request()
+                location.request(requireFreshFix: true)
                 resetRequest()
             }
             if let authorizedLocation {
@@ -1114,14 +1114,16 @@ final class DineWiseLocationProvider: NSObject, ObservableObject, CLLocationMana
     @Published var longitude: Double?
     @Published var error = ""
     private let manager = CLLocationManager()
+    private var requestStartedAt: Date?
 
     override init() {
         super.init()
         manager.delegate = self
     }
 
-    func request() {
+    func request(requireFreshFix: Bool = false) {
         error = ""
+        requestStartedAt = requireFreshFix ? Date() : nil
         switch manager.authorizationStatus {
         case .notDetermined: manager.requestWhenInUseAuthorization()
         case .authorizedAlways, .authorizedWhenInUse: manager.requestLocation()
@@ -1132,6 +1134,7 @@ final class DineWiseLocationProvider: NSObject, ObservableObject, CLLocationMana
     func clear() {
         latitude = nil
         longitude = nil
+        requestStartedAt = nil
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
@@ -1146,8 +1149,13 @@ final class DineWiseLocationProvider: NSObject, ObservableObject, CLLocationMana
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
+        if let requestStartedAt, location.timestamp < requestStartedAt {
+            error = "未取得本次请求的新位置"
+            return
+        }
         latitude = location.coordinate.latitude
         longitude = location.coordinate.longitude
+        requestStartedAt = nil
         error = ""
     }
 

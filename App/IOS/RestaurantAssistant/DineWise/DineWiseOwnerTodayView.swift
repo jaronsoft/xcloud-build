@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DineWiseOwnerTodayView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     let store: DineWiseStore
     let token: String
     let onOpen: (String, DineWiseOwnerTodayItem?, String?) -> Void
@@ -9,11 +10,13 @@ struct DineWiseOwnerTodayView: View {
     private let api = DineWiseAPI()
     @State private var records: [DineWiseOwnerTodayItem] = []
     @State private var loading = true
+    @State private var refreshInFlight = false
     @State private var error = ""
     @State private var requestGeneration = 0
     @State private var yesterday: DineWiseDailyReport?
     @State private var taskProgress: [DineWiseOwnerTodayRoleProgress] = []
     @State private var pendingSubmissionReviewCount: Int?
+    @State private var meetingProgress: DineWiseMeetingProgressSummary?
     @State private var hasMoreItems = false
 
     private struct TodayItem: Identifiable {
@@ -53,7 +56,7 @@ struct DineWiseOwnerTodayView: View {
                         .padding(.horizontal, 9).padding(.vertical, 5)
                         .background(DineWiseTheme.accent(for: colorScheme).opacity(0.09), in: Capsule())
                 }
-                Button("刷新") { Task { await refresh() } }.disabled(loading)
+                Button("刷新") { Task { await refresh() } }.disabled(loading || refreshInFlight)
             }
             Text("优先展示逾期、待分派、到期提醒、待决策、待复核和到期复盘，最多 6 项；更多记录可到建议与任务中查看。")
                 .font(.subheadline).foregroundStyle(.secondary)
@@ -88,6 +91,7 @@ struct DineWiseOwnerTodayView: View {
             yesterdaySummary
             pendingSubmissionSummary
             roleProgressSummary
+            meetingProgressSummary
             HStack {
                 Button("查看建议与任务") { onOpen("suggestions", nil, nil) }
                 Button("经营报告") { onOpen("report", nil, nil) }
@@ -99,22 +103,41 @@ struct DineWiseOwnerTodayView: View {
         .padding(19)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DineWiseTheme.card, in: RoundedRectangle(cornerRadius: 18))
-        .task(id: "\(store.Id):\(store.Mode):\(token)") { await refresh() }
+        .task(id: "\(store.Id):\(store.Mode):\(token):\(scenePhase)") {
+            guard scenePhase == .active else { return }
+            await refresh()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard !Task.isCancelled else { return }
+                if scenePhase == .active { await refresh(silent: true) }
+            }
+        }
     }
 
-    private func refresh() async {
+    private func refresh(silent: Bool = false) async {
+        if silent && refreshInFlight { return }
         let requestedStoreID = store.Id
         let requestedMode = store.Mode
         let requestedToken = token
         requestGeneration += 1
         let requestedGeneration = requestGeneration
-        loading = true
-        error = ""
-        records = []
-        hasMoreItems = false
-        yesterday = nil
-        taskProgress = []
-        pendingSubmissionReviewCount = nil
+        refreshInFlight = true
+        defer {
+            if requestGeneration == requestedGeneration {
+                refreshInFlight = false
+                if !silent { loading = false }
+            }
+        }
+        if !silent {
+            loading = true
+            error = ""
+            records = []
+            hasMoreItems = false
+            yesterday = nil
+            taskProgress = []
+            pendingSubmissionReviewCount = nil
+            meetingProgress = nil
+        }
         do {
             let response = try await api.ownerToday(storeID: requestedStoreID, token: requestedToken)
             try Task.checkCancellation()
@@ -127,6 +150,7 @@ struct DineWiseOwnerTodayView: View {
             guard response.Mode == requestedMode else {
                 throw DineWiseAPIError.failed("门店数据范围不匹配，请刷新后重试。")
             }
+            error = ""
             let progress = response.TaskProgress ?? []
             let progressRoles = progress.map(\.Role)
             guard progress.allSatisfy({ !$0.Role.isEmpty && $0.TotalCount > 0
@@ -134,6 +158,18 @@ struct DineWiseOwnerTodayView: View {
                 && Set(progressRoles).count == progressRoles.count
                 && (response.PendingSubmissionReviewCount.map { $0 >= 0 } ?? true) else {
                 throw DineWiseAPIError.failed("今日摘要计数异常，请刷新后重试。")
+            }
+            let meetingSummary = response.MeetingProgress
+            if let meeting = meetingSummary {
+                let counts = [meeting.PendingAssignmentCount, meeting.PendingExecutionCount,
+                    meeting.InProgressCount, meeting.PendingReviewCount,
+                    meeting.CompletedCount, meeting.CancelledCount]
+                guard meeting.TotalCount >= 0 && meeting.OverdueCount >= 0
+                    && meeting.OverdueCount <= meeting.TotalCount
+                    && counts.allSatisfy({ $0 >= 0 && $0 <= meeting.TotalCount })
+                    && counts.reduce(0, +) == meeting.TotalCount else {
+                    throw DineWiseAPIError.failed("本周会议事项汇总异常，请刷新后重试。")
+                }
             }
             if let daily = response.Yesterday {
                 guard daily.StoreId == requestedStoreID, daily.Mode == requestedMode else {
@@ -143,6 +179,7 @@ struct DineWiseOwnerTodayView: View {
             }
             taskProgress = progress
             pendingSubmissionReviewCount = response.PendingSubmissionReviewCount
+            meetingProgress = meetingSummary
             records = response.Items
             hasMoreItems = response.HasMoreItems == true
         } catch is CancellationError {
@@ -151,12 +188,7 @@ struct DineWiseOwnerTodayView: View {
             guard requestGeneration == requestedGeneration,
                   store.Id == requestedStoreID, store.Mode == requestedMode,
                   token == requestedToken else { return }
-            self.error = error.localizedDescription
-        }
-        if requestGeneration == requestedGeneration,
-           store.Id == requestedStoreID, store.Mode == requestedMode,
-           token == requestedToken {
-            loading = false
+            if !silent { self.error = error.localizedDescription }
         }
     }
 
@@ -240,6 +272,36 @@ struct DineWiseOwnerTodayView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DineWiseTheme.card, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var meetingProgressSummary: some View {
+        Button { onOpen("suggestions", nil, nil) } label: {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("本周会议事项").font(.headline).foregroundStyle(.primary)
+                    if let meetingProgress {
+                        Text(meetingProgress.TotalCount == 0
+                             ? "\(meetingProgress.WeekStartOn) 至 \(meetingProgress.WeekEndOn) · 暂无事项"
+                             : "\(meetingProgress.WeekStartOn) 至 \(meetingProgress.WeekEndOn) · 已完成 \(meetingProgress.CompletedCount)，未完成 \(meetingProgress.TotalCount - meetingProgress.CompletedCount - meetingProgress.CancelledCount)，已取消 \(meetingProgress.CancelledCount)")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if meetingProgress.OverdueCount > 0 || meetingProgress.PendingReviewCount > 0 {
+                            Text("其中逾期 \(meetingProgress.OverdueCount) 项 · 等待老板复核 \(meetingProgress.PendingReviewCount) 项")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text(loading ? "正在读取周会进度…" : "周会进度暂不可用，可进入建议与任务查看。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 4)
+                Text("查看").font(.caption.weight(.semibold))
+                    .foregroundStyle(DineWiseTheme.accent(for: colorScheme))
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(DineWiseTheme.card, in: RoundedRectangle(cornerRadius: 18))
+        }
+        .buttonStyle(.plain)
     }
 
     private var pendingSubmissionSummary: some View {

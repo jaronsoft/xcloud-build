@@ -192,7 +192,7 @@ struct DineWiseWeatherDay: Decodable, Identifiable {
     let Condition: String
     let MinC: Double
     let MaxC: Double
-    let RainChance: Int
+    let RainChance: Int?
     var id: String { Date }
 }
 
@@ -588,6 +588,7 @@ struct DineWiseOwnerTodaySummary: Decodable {
     let Yesterday: DineWiseDailyReport?
     let TaskProgress: [DineWiseOwnerTodayRoleProgress]?
     let PendingSubmissionReviewCount: Int?
+    let MeetingProgress: DineWiseMeetingProgressSummary?
 }
 
 struct DineWiseOwnerTodayRoleProgress: Decodable, Identifiable {

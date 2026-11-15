@@ -29,7 +29,7 @@ struct DineWiseFeedbackView: View {
             Text("只列出当前门店的岗位现场事实；剩余和沽清不自动判定为经营问题，待核对原话不能视为已证实结论。")
                 .font(.footnote).foregroundStyle(.secondary)
             HStack {
-                DineWisePlaceholderField("营业日期 YYYY-MM-DD", isEmpty: day.isEmpty) {
+                DineWisePlaceholderField("营业日期（如 2026-11-11）", isEmpty: day.isEmpty) {
                     TextField("", text: Binding(get: { day }, set: updateDay))
                         .textFieldStyle(.plain)
                 }
@@ -160,7 +160,7 @@ struct DineWiseFeedbackView: View {
             loading = false
             loadingMore = false
             overview = nil
-            message = "请输入有效的营业日期（YYYY-MM-DD）。"
+            message = "请输入有效的营业日期，例如 2026-11-11。"
             return
         }
         if cursor == nil {

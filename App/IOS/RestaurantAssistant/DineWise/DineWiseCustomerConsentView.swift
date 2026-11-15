@@ -257,8 +257,8 @@ struct DineWiseCustomerConsentView: View {
             .pickerStyle(.segmented)
             if draftFilter.purpose == "birthday" {
                 HStack {
-                    TextField("起始月日 MM-DD", text: $draftFilter.birthdayFrom)
-                    TextField("结束月日 MM-DD", text: $draftFilter.birthdayTo)
+                    TextField("起始月日（如 05-20）", text: $draftFilter.birthdayFrom)
+                    TextField("结束月日（如 05-20）", text: $draftFilter.birthdayTo)
                 }
                 .textFieldStyle(.roundedBorder)
                 .textInputAutocapitalization(.never)

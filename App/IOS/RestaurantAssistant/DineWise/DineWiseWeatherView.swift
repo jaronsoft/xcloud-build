@@ -78,7 +78,8 @@ struct DineWiseWeatherView: View {
                             Text(day.Condition).font(.caption)
                             Text("\(day.MinC, specifier: "%.0f")–\(day.MaxC, specifier: "%.0f")℃")
                                 .font(.caption.bold())
-                            Text("降雨 \(day.RainChance)%").font(.caption2)
+                            Text(day.RainChance.map { "降雨 \($0)%" } ?? "降雨概率 暂无数据")
+                                .font(.caption2)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(9)

@@ -1829,7 +1829,7 @@ struct ContentView: View {
                 let role = selectedRole
                 perform { try await refreshSubmissionPage(storeID: store.Id, token: token, role: role) }
             }
-            Text("原始文字待核对确认后才能用于经营报告。图片和报表附件可作核对凭证，暂不自动识别。")
+            Text("原始文字须人工核对确认后才能用于经营报告。图片先在本机识别为草稿，结果需人工核对；识别原图和报表附件可作为凭证上传。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Picker("资料类型", selection: $submissionKind) {
@@ -1838,7 +1838,7 @@ struct ContentView: View {
                 }
             }
             .onChange(of: submissionKind) { _, _ in pendingSubmissionKey = nil }
-            DineWisePlaceholderField("营业日期 YYYY-MM-DD", isEmpty: submissionDate.isEmpty) {
+            DineWisePlaceholderField("营业日期（如 2026-11-11）", isEmpty: submissionDate.isEmpty) {
                 TextField("", text: $submissionDate)
                     .textFieldStyle(.plain)
                     .onChange(of: submissionDate) { _, _ in pendingSubmissionKey = nil }
@@ -2144,7 +2144,7 @@ struct ContentView: View {
                 let role = selectedRole
                 let date = submissionDate.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard dineWiseValidBusinessDate(date) else {
-                    setMessage("营业日期无效，请按 YYYY-MM-DD 填写真实日期。", isError: true)
+                    setMessage("营业日期无效，请填写真实日期，例如 2026-11-11。", isError: true)
                     return
                 }
                 let text = originalText

@@ -239,7 +239,7 @@ struct DineWisePreparationPlanView: View {
                 Button("加载更早的已指派任务") { loadOlderTasks() }
                     .buttonStyle(.bordered).disabled(busy)
             }
-            DineWisePlaceholderField("目标营业日 YYYY-MM-DD", isEmpty: businessDate.isEmpty) {
+            DineWisePlaceholderField("目标营业日（如 2026-11-11）", isEmpty: businessDate.isEmpty) {
                 TextField("", text: $businessDate)
                     .textFieldStyle(.plain)
             }
@@ -276,7 +276,7 @@ struct DineWisePreparationPlanView: View {
                     .lineLimit(2...4).textFieldStyle(.roundedBorder)
                 Button("取消编辑") { resetEditor() }.buttonStyle(.bordered)
             }
-            Text("日期须为有效 YYYY-MM-DD；名称最长 80 字、依据最长 240 字；数量范围为 0 < 最少 ≤ 最多 ≤ 100000，最多三位小数，同一食材与单位不能重复。")
+            Text("日期须为有效公历日期（如 2026-11-11）；名称最长 80 字、依据最长 240 字；数量范围为 0 < 最少 ≤ 最多 ≤ 100000，最多三位小数，同一食材与单位不能重复。")
                 .font(.footnote).foregroundStyle(.secondary)
             Button(editingID.isEmpty ? "保存人工备菜单" : "保存修改") { save() }
                 .buttonStyle(.borderedProminent)

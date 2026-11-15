@@ -49,7 +49,7 @@ struct DineWiseDailyReportView: View {
             DineWiseRegionalPriceReferenceView(storeID: store.Id, token: token,
                                                timeZoneID: store.TimeZone)
             HStack(spacing: 8) {
-                DineWisePlaceholderField("日期 YYYY-MM-DD", accessibilityLabel: "营业日期 YYYY-MM-DD",
+                DineWisePlaceholderField("日期（如 2026-11-11）", accessibilityLabel: "营业日期，例如 2026-11-11",
                                          isEmpty: businessDate.isEmpty) {
                     TextField("", text: $businessDate)
                         .textFieldStyle(.plain)

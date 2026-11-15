@@ -354,10 +354,16 @@ struct DineWiseDecisionTaskView: View {
                         }
                         .onChange(of: sourceID) { _, _ in replacesID = "" }
                         TextField("标题", text: $title).textFieldStyle(.roundedBorder)
+                        Text("\(title.utf16.count)/120")
+                            .font(.caption).foregroundStyle(title.utf16.count > 120 ? .red : .secondary)
                         TextField("依据与问题", text: $rationale, axis: .vertical)
                             .lineLimit(3...6).textFieldStyle(.roundedBorder)
+                        Text("\(rationale.utf16.count)/2000")
+                            .font(.caption).foregroundStyle(rationale.utf16.count > 2000 ? .red : .secondary)
                         TextField("计算口径", text: $calculationBasis, axis: .vertical)
                             .lineLimit(2...4).textFieldStyle(.roundedBorder)
+                        Text("\(calculationBasis.utf16.count)/2000")
+                            .font(.caption).foregroundStyle(calculationBasis.utf16.count > 2000 ? .red : .secondary)
                         Picker("人工评估可信度", selection: $confidenceLevel) {
                             Text("请选择").tag("")
                             Text("高").tag("high")
@@ -366,12 +372,16 @@ struct DineWiseDecisionTaskView: View {
                         }
                         TextField("可信度判断依据", text: $confidenceReason, axis: .vertical)
                             .lineLimit(2...4).textFieldStyle(.roundedBorder)
+                        Text("\(confidenceReason.utf16.count)/1000")
+                            .font(.caption).foregroundStyle(confidenceReason.utf16.count > 1000 ? .red : .secondary)
                         TextField("人工执行步骤", text: $steps, axis: .vertical)
                             .lineLimit(3...6).textFieldStyle(.roundedBorder)
+                        Text("\(steps.utf16.count)/2000")
+                            .font(.caption).foregroundStyle(steps.utf16.count > 2000 ? .red : .secondary)
                         Picker("目标岗位", selection: $targetRole) {
                             ForEach(roles, id: \.self) { Text(roleName($0)).tag($0) }
                         }
-                        DineWisePlaceholderField("建议有效截止日期 YYYY-MM-DD（可选）",
+                        DineWisePlaceholderField("建议有效截止日期（如 2026-11-11，可选）",
                                                  isEmpty: validUntilOn.isEmpty) {
                             TextField("", text: $validUntilOn)
                                 .textFieldStyle(.plain)
@@ -387,10 +397,14 @@ struct DineWiseDecisionTaskView: View {
                         Button("提交建议") { propose() }
                             .buttonStyle(.borderedProminent)
                             .disabled(busy || sourceID.isEmpty || title.trimmingCharacters(in: .whitespaces).isEmpty
+                                || title.utf16.count > 120 || rationale.utf16.count > 2000
                                 || rationale.trimmingCharacters(in: .whitespaces).isEmpty
+                                || calculationBasis.utf16.count > 2000
                                 || calculationBasis.trimmingCharacters(in: .whitespaces).isEmpty
                                 || confidenceLevel.isEmpty
+                                || confidenceReason.utf16.count > 1000
                                 || confidenceReason.trimmingCharacters(in: .whitespaces).isEmpty
+                                || steps.utf16.count > 2000
                                 || steps.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 } label: {
@@ -498,12 +512,12 @@ struct DineWiseDecisionTaskView: View {
                                 Text(member.Email ?? member.UserId).tag(member.UserId)
                             }
                         }
-                        DineWisePlaceholderField("任务截止日期 YYYY-MM-DD",
+                        DineWisePlaceholderField("任务截止日期（如 2026-11-11）",
                                                  isEmpty: (dueDates[item.Id] ?? "").isEmpty) {
                             TextField("", text: binding(dueDates, key: item.Id) { dueDates = $0 })
                                 .textFieldStyle(.plain)
                         }
-                        DineWisePlaceholderField("稍后提醒日期 YYYY-MM-DD",
+                        DineWisePlaceholderField("稍后提醒日期（如 2026-11-11）",
                                                  isEmpty: (remindDates[item.Id] ?? "").isEmpty) {
                             TextField("", text: binding(remindDates, key: item.Id) { remindDates = $0 })
                                 .textFieldStyle(.plain)
@@ -792,7 +806,7 @@ struct DineWiseDecisionTaskView: View {
                             }
                         }
                         if role == "owner" && task.SourceType != "meeting" && task.Status == "pending_review" {
-                            DineWisePlaceholderField("观察期复盘日期 YYYY-MM-DD",
+                            DineWisePlaceholderField("观察期复盘日期（如 2026-11-11）",
                                                      isEmpty: (reviewDueDates[task.Id] ?? "").isEmpty) {
                                 TextField("", text: binding(reviewDueDates, key: task.Id) { reviewDueDates = $0 })
                                     .textFieldStyle(.plain)
