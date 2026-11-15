@@ -56,6 +56,12 @@ Explore submissions appear only after review. Anyone holding your share link can
 product comparison,purchase decision,target price,buy or pass,shopping advice,voting,alternatives
 ```
 
+## 1.3.8 — 2026-11-12 (Build 待确认) — 待发布
+
+### 简体中文
+
+### English (U.S.)
+
 ## 1.3.6 — 发布日期待确认 (Build 待确认) — 已发布
 
 ### 简体中文
