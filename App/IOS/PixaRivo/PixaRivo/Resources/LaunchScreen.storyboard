@@ -5,7 +5,6 @@
         <deployment identifier="iOS"/>
         <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="24000"/>
         <capability name="Safe area layout guides" minToolsVersion="9.0"/>
-        <capability name="System colors in document resources" minToolsVersion="11.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <scenes>
@@ -14,60 +13,41 @@
                 <viewController id="launch-controller" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="launch-view">
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
-                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <viewLayoutGuide key="safeArea" id="launch-safe-area"/>
                         <subviews>
-                            <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" alignment="center" spacing="16" translatesAutoresizingMaskIntoConstraints="NO" id="brand-stack">
-                                <rect key="frame" x="65" y="293" width="263" height="266"/>
+                            <stackView opaque="NO" contentMode="scaleToFill" axis="horizontal" alignment="center" spacing="10" translatesAutoresizingMaskIntoConstraints="NO" id="brand-stack">
+                                <rect key="frame" x="27" y="81" width="238" height="46"/>
                                 <subviews>
                                     <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="BrandIcon" translatesAutoresizingMaskIntoConstraints="NO" id="brand-icon">
-                                        <rect key="frame" x="83.5" y="0.0" width="96" height="96"/>
+                                        <rect key="frame" x="0.0" y="0.0" width="46" height="46"/>
                                         <constraints>
-                                            <constraint firstAttribute="width" constant="96" id="icon-width"/>
-                                            <constraint firstAttribute="height" constant="96" id="icon-height"/>
+                                            <constraint firstAttribute="width" constant="46" id="icon-width"/>
+                                            <constraint firstAttribute="height" constant="46" id="icon-height"/>
                                         </constraints>
                                     </imageView>
-                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="title-space">
-                                        <rect key="frame" x="131.5" y="112" width="0.0" height="4"/>
-                                        <constraints>
-                                            <constraint firstAttribute="height" constant="4" id="title-space-height"/>
-                                        </constraints>
-                                    </view>
-                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="PixaRivo" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="brandTitle">
-                                        <rect key="frame" x="65.5" y="132" width="132" height="43"/>
-                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="36"/>
-                                        <color key="textColor" red="0.094" green="0.094" blue="0.09" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
-                                        <nil key="highlightedColor"/>
-                                    </label>
-                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="MAKE IT YOURS" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="brandTagline">
-                                        <rect key="frame" x="65.5" y="191" width="132" height="17"/>
-                                        <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="12"/>
-                                        <color key="textColor" red="0.941" green="0.322" blue="0.239" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
-                                        <nil key="highlightedColor"/>
-                                    </label>
-                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="accent-line">
-                                        <rect key="frame" x="99.5" y="224" width="64" height="3"/>
-                                        <color key="backgroundColor" red="0.941" green="0.322" blue="0.239" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
-                                        <constraints>
-                                            <constraint firstAttribute="width" constant="64" id="accent-width"/>
-                                            <constraint firstAttribute="height" constant="3" id="accent-height"/>
-                                        </constraints>
-                                    </view>
-                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Replace · Edit · Compose" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="brandDescription">
-                                        <rect key="frame" x="0.0" y="243" width="263" height="23"/>
-                                        <fontDescription key="fontDescription" type="system" weight="regular" pointSize="15"/>
-                                        <color key="textColor" red="0.35" green="0.34" blue="0.32" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
-                                        <nil key="highlightedColor"/>
-                                    </label>
+                                    <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" alignment="leading" spacing="2" translatesAutoresizingMaskIntoConstraints="NO" id="brand-copy">
+                                        <rect key="frame" x="56" y="1" width="182" height="44"/>
+                                        <subviews>
+                                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="PixaRivo" lineBreakMode="tailTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="brandTitle">
+                                                <rect key="frame" x="0.0" y="0.0" width="182" height="27"/>
+                                                <fontDescription key="fontDescription" type="system" weight="bold" pointSize="22"/>
+                                                <color key="textColor" red="0.098" green="0.169" blue="0.404" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                            </label>
+                                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="VISUAL SKILLS" lineBreakMode="tailTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="brandTagline">
+                                                <rect key="frame" x="0.0" y="29" width="182" height="15"/>
+                                                <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="10"/>
+                                                <color key="textColor" red="0.32" green="0.39" blue="0.53" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                                            </label>
+                                        </subviews>
+                                    </stackView>
                                 </subviews>
                             </stackView>
                         </subviews>
-                        <viewLayoutGuide key="safeArea" id="launch-safe-area"/>
                         <color key="backgroundColor" name="LaunchBackground"/>
                         <constraints>
-                            <constraint firstItem="brand-stack" firstAttribute="centerX" secondItem="launch-view" secondAttribute="centerX" id="stack-center-x"/>
-                            <constraint firstItem="brand-stack" firstAttribute="centerY" secondItem="launch-view" secondAttribute="centerY" constant="-8" id="stack-center-y"/>
-                            <constraint firstItem="brand-stack" firstAttribute="leading" relation="greaterThanOrEqual" secondItem="launch-safe-area" secondAttribute="leading" constant="32" id="stack-leading"/>
-                            <constraint firstItem="launch-safe-area" firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="brand-stack" secondAttribute="trailing" constant="32" id="stack-trailing"/>
+                            <constraint firstItem="brand-stack" firstAttribute="leading" secondItem="launch-safe-area" secondAttribute="leading" constant="27" id="stack-leading"/>
+                            <constraint firstItem="brand-stack" firstAttribute="top" secondItem="launch-safe-area" secondAttribute="top" constant="22" id="stack-top"/>
+                            <constraint firstItem="launch-safe-area" firstAttribute="trailing" relation="greaterThanOrEqual" secondItem="brand-stack" secondAttribute="trailing" constant="20" id="stack-trailing"/>
                         </constraints>
                     </view>
                 </viewController>
@@ -79,7 +59,7 @@
     <resources>
         <image name="BrandIcon" width="1024" height="1024"/>
         <namedColor name="LaunchBackground">
-            <color red="0.957" green="0.945" blue="0.918" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+            <color red="0.933" green="0.953" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
         </namedColor>
     </resources>
 </document>
