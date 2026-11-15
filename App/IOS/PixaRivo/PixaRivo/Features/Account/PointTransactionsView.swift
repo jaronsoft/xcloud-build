@@ -286,6 +286,9 @@ struct PixaPointTransactionsView: View {
                     Task { await model.filter(startDate: nil, endDate: nil, category: nil, session: session) }
                 }
             }
+            Text("account.transactions.retention_notice")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 

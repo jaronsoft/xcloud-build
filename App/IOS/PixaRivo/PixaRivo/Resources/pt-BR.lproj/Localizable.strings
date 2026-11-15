@@ -189,6 +189,7 @@
 "share.work.description" = "Feito com um modelo PixaRivo";
 "share.failed.title" = "Não é possível compartilhar";
 "share.failed.message" = "A imagem ainda não está pronta. Por favor, tente novamente em breve.";
+"share.link_unavailable" = "O link do modelo está indisponível. Tente novamente mais tarde.";
 "share.app_store" = "Baixe na App Store";
 "share.x.template_intro" = "Personalize este modelo com suas fotos e textos.";
 "share.x.template_tag" = "ModelosCriativos";
@@ -477,6 +478,7 @@
 "account.transactions.start" = "Data inicial";
 "account.transactions.end_date" = "Data final";
 "account.transactions.range_error" = "Escolha até 90 dias, sem ultrapassar hoje.";
+"account.transactions.retention_notice" = "Aviso: o histórico de pontos é mantido por apenas três meses. Consulte e salve a tempo os registros de que precisar.";
 "account.transactions.search" = "Buscar datas";
 "account.transactions.last_30_days" = "Últimos 30 dias";
 "account.transactions.filter_category" = "Categoria";

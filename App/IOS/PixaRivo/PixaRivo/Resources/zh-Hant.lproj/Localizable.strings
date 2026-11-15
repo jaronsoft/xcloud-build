@@ -193,6 +193,7 @@
 "share.work.description" = "使用 PixaRivo 範本製作";
 "share.failed.title" = "無法分享";
 "share.failed.message" = "圖像尚未準備好。請稍後重試。";
+"share.link_unavailable" = "範本連結暫時無法使用，請稍後再試。";
 "share.app_store" = "在應用程式商店下載";
 "share.x.template_intro" = "選擇這個範本，替換圖片和文字，創作自己的作品。";
 "share.x.template_tag" = "範本創作";
@@ -460,6 +461,7 @@
 "account.transactions.start" = "開始日期";
 "account.transactions.end_date" = "結束日期";
 "account.transactions.range_error" = "請選擇不晚於今天且不超過 90 天的區間。";
+"account.transactions.retention_notice" = "溫馨提醒：消費流水僅保留最近三個月，請及時查看並留存所需記錄。";
 "account.transactions.search" = "查詢區間";
 "account.transactions.last_30_days" = "近 30 天全部";
 "account.transactions.filter_category" = "流水分類";

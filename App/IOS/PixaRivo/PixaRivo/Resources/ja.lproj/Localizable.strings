@@ -168,6 +168,7 @@
 "share.work.description" = "PixaRivo テンプレートで作成";
 "share.failed.title" = "共有できません";
 "share.failed.message" = "画像はまだ準備ができていません。しばらくしてからもう一度お試しください。";
+"share.link_unavailable" = "テンプレートのリンクを利用できません。しばらくしてからもう一度お試しください。";
 "share.app_store" = "App Storeでダウンロード";
 "share.x.template_intro" = "写真や文字を入れ替えて、自分だけの作品を作れます。";
 "share.x.template_tag" = "テンプレート制作";
@@ -454,6 +455,7 @@
 "account.transactions.start" = "開始日";
 "account.transactions.end_date" = "終了日";
 "account.transactions.range_error" = "今日以前の90日以内の期間を選択してください。";
+"account.transactions.retention_notice" = "お知らせ：ポイントの利用履歴は直近3か月分のみ保存されます。必要な記録は早めに確認・保存してください。";
 "account.transactions.search" = "期間を検索";
 "account.transactions.last_30_days" = "過去30日すべて";
 "account.transactions.filter_category" = "カテゴリ";

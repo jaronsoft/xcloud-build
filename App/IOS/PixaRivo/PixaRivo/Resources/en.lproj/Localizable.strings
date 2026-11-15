@@ -36,6 +36,7 @@
 "share.work.description" = "Made with a PixaRivo template";
 "share.failed.title" = "Unable to Share";
 "share.failed.message" = "The image is not ready yet. Please try again shortly.";
+"share.link_unavailable" = "The template link is unavailable. Please try again later.";
 "share.app_store" = "Download on App Store";
 "share.x.template_intro" = "Make it your own with photos and text.";
 "share.x.template_tag" = "CreativeTemplates";
@@ -402,6 +403,7 @@
 "account.transactions.start" = "Start date";
 "account.transactions.end_date" = "End date";
 "account.transactions.range_error" = "Choose up to 90 days ending no later than today.";
+"account.transactions.retention_notice" = "Please note: Point transaction records are kept for only three months. Review and save any records you need in time.";
 "account.transactions.search" = "Search dates";
 "account.transactions.last_30_days" = "All last 30 days";
 "account.transactions.filter_category" = "Category";

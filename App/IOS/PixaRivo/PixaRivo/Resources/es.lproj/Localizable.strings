@@ -189,6 +189,7 @@
 "share.work.description" = "Hecho con una plantilla PixaRivo";
 "share.failed.title" = "No se puede compartir";
 "share.failed.message" = "La imagen aún no está lista. Inténtelo de nuevo en breve.";
+"share.link_unavailable" = "El enlace de la plantilla no está disponible. Inténtalo de nuevo más tarde.";
 "share.app_store" = "Descargar en la tienda de aplicaciones";
 "share.x.template_intro" = "Personaliza esta plantilla con tus fotos y textos.";
 "share.x.template_tag" = "PlantillasCreativas";
@@ -477,6 +478,7 @@
 "account.transactions.start" = "Fecha inicial";
 "account.transactions.end_date" = "Fecha final";
 "account.transactions.range_error" = "Elige hasta 90 días, sin pasar de hoy.";
+"account.transactions.retention_notice" = "Aviso: el historial de puntos solo se conserva durante tres meses. Consulta y guarda a tiempo los registros que necesites.";
 "account.transactions.search" = "Buscar fechas";
 "account.transactions.last_30_days" = "Últimos 30 días";
 "account.transactions.filter_category" = "Categoría";

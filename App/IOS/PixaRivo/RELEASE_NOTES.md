@@ -19,15 +19,25 @@ Halloween templates are here! Add photos and text to create posters and social g
 
 ### 简体中文
 
-- 分享公开模板时可直接打开 X 编辑页，附上标题、简短介绍、标签和图片预览；分享案例时可附上标题、标签及模板与作品对比图，作品详情底部也可快捷分享图片与标题。
+- 分享公开模板时可选择已安装的应用，并附上标题、简短介绍和模板链接。
+- 分享案例时可附上标题、标签及模板与作品对比图。
+- 作品详情底部可快捷分享图片与标题。
 - 编辑模板时会自动保存未完成的内容，重新打开同一模板可继续创作。
+- 模板详情现在会完整显示样图。
+- 部分模板可只填写文字创作，无需上传图片。
 - 登录失败时会显示更准确的提示，作品图片和列表显示也更加稳定。
+- 积分流水页新增记录保存期限提示，方便及时查看和留存所需记录。
 
 ### English (U.S.)
 
-- Open the X composer directly when sharing public templates, with a title, short introduction, tags, and image preview; share gallery creations with a title, tags, and a template-to-result comparison image; and share work images with titles from a button at the bottom of each work detail page.
+- Choose an installed app when sharing public templates, with a title, short introduction, and template link.
+- Share gallery creations with a title, tags, and a template-to-result comparison image.
+- Share work images with titles from a button at the bottom of each work detail page.
 - Unfinished template edits are saved automatically, so you can continue when you reopen the same template.
+- Template details now show the full sample image.
+- Some templates can be used with text alone, without uploading an image.
 - Sign-in errors now show clearer messages, and work images and lists display more reliably.
+- Point Activity now shows how long records are kept, so you can review and save any records you need in time.
 
 ## 1.3.0 — 2026-10-26 (Build 待确认) — 已发布
 

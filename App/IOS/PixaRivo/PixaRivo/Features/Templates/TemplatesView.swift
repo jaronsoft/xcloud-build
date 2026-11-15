@@ -14,6 +14,7 @@ struct TemplatesView: View {
     @Environment(PixaNotificationStore.self) private var notifications
     @State private var store = TemplateStore(surface: .creation)
     @State private var showsShareError = false
+    @State private var sharePayload: PixaSharePayload?
     @State private var showsFilters = false
     @State private var notificationTemplate: StyleTemplate?
     @State private var showsNotificationLogin = false
@@ -82,8 +83,8 @@ struct TemplatesView: View {
                                     TemplateCard(template: template)
                                 }
                                 .buttonStyle(.plain)
-                                PixaXShareButton {
-                                    Task { await share(template) }
+                                PixaShareButton(isPreparing: false) {
+                                    share(template)
                                 }
                                 .padding(8)
                             }
@@ -131,13 +132,16 @@ struct TemplatesView: View {
             }
         }
         .sheet(isPresented: $showsNotificationLogin) { LoginView() }
+        .sheet(item: $sharePayload) { payload in
+            PixaActivityView(items: payload.items)
+        }
         .sheet(item: $notificationTemplate) { template in
             TemplateEditorView(template: template)
         }
         .alert("share.failed.title", isPresented: $showsShareError) {
             Button("common.ok", role: .cancel) {}
         } message: {
-            Text("share.x.open_failed")
+            Text("share.link_unavailable")
         }
         .alert("common.error", isPresented: $showsUnavailableTemplate) {
             Button("common.ok", role: .cancel) {}
@@ -314,13 +318,13 @@ struct TemplatesView: View {
 
     private func reload() { Task { await store.load(forceRefresh: true) } }
 
-    @MainActor
-    private func share(_ template: StyleTemplate) async {
-        showsShareError = !(await PixaShareService.openTemplateOnX(
+    private func share(_ template: StyleTemplate) {
+        sharePayload = PixaShareService.templatePayload(
             title: template.name,
             description: template.description,
             id: template.id
-        ))
+        )
+        showsShareError = sharePayload == nil
     }
 }
 

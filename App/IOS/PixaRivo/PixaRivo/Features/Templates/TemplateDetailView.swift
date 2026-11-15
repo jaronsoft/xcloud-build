@@ -9,6 +9,7 @@ struct TemplateDetailView: View {
     @State private var showsEditor = false
     @State private var showsLogin = false
     @State private var showsShareError = false
+    @State private var sharePayload: PixaSharePayload?
     @State private var previewTarget: ArtworkPreviewTarget?
 
     private var active: StyleTemplate { detail ?? template }
@@ -21,7 +22,13 @@ struct TemplateDetailView: View {
                         previewTarget = ArtworkPreviewTarget(url: url)
                     }
                 } label: {
-                    RemoteArtwork(url: active.imageURL, aspectRatio: active.displayAspectRatio, preset: .detail)
+                    RemoteArtwork(
+                        url: active.imageURL,
+                        aspectRatio: active.displayAspectRatio,
+                        preset: .detail,
+                        contentMode: .fit,
+                        usesIntrinsicAspectRatio: true
+                    )
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                         .overlay(alignment: .bottomTrailing) {
                             Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -114,8 +121,8 @@ struct TemplateDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                PixaXShareButton {
-                    Task { await share() }
+                PixaShareButton(isPreparing: false) {
+                    share()
                 }
             }
         }
@@ -165,13 +172,16 @@ struct TemplateDetailView: View {
         }
         .sheet(isPresented: $showsEditor) { TemplateEditorView(template: active) }
         .sheet(isPresented: $showsLogin) { LoginView() }
+        .sheet(item: $sharePayload) { payload in
+            PixaActivityView(items: payload.items)
+        }
         .fullScreenCover(item: $previewTarget) { target in
             PixaArtworkPreview(url: target.url)
         }
         .alert("share.failed.title", isPresented: $showsShareError) {
             Button("common.ok", role: .cancel) {}
         } message: {
-            Text("share.x.open_failed")
+            Text("share.link_unavailable")
         }
         .task(id: template.id) {
             async let accountLoad: Void = accountData.load(session: session)
@@ -214,13 +224,13 @@ struct TemplateDetailView: View {
         cases = page?.items.filter { $0.mediaURL != nil } ?? []
     }
 
-    @MainActor
-    private func share() async {
-        showsShareError = !(await PixaShareService.openTemplateOnX(
+    private func share() {
+        sharePayload = PixaShareService.templatePayload(
             title: active.name,
             description: active.description,
             id: active.id
-        ))
+        )
+        showsShareError = sharePayload == nil
     }
 }
 
