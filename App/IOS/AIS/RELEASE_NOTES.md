@@ -25,11 +25,13 @@ Turn ideas, product photos, and reference assets into visual work you can refine
 
 ### 简体中文
 
-- 本版本更新内容待整理。
+- 积分流水页新增记录保存期限提示，方便及时查看和留存所需记录。
+- 部分模板可只填写文字创作，无需上传图片。
 
 ### English (U.S.)
 
-- Release notes for this version are pending.
+- Point Activity now shows how long records are kept, so you can review and save any records you need in time.
+- Some templates can be used with text alone, without uploading an image.
 
 ### 发布信息
 

@@ -544,6 +544,9 @@ struct AccountTransactionsView: View {
                         Task { await model.filterTransactions(startDate: nil, endDate: nil, category: nil, session: session) }
                     }
                 }
+                Text("account.transactions.retention_notice")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             if model.transactions.isEmpty && !model.isLoading {
                 ContentUnavailableView(

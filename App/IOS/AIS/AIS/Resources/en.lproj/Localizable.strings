@@ -217,6 +217,7 @@
 "account.transactions.start" = "Start date";
 "account.transactions.end_date" = "End date";
 "account.transactions.range_error" = "Choose up to 90 days ending no later than today.";
+"account.transactions.retention_notice" = "Please note: Point transaction records are kept for only three months. Review and save any records you need in time.";
 "account.transactions.search" = "Search dates";
 "account.transactions.last_30_days" = "All last 30 days";
 "account.transactions.filter_category" = "Category";

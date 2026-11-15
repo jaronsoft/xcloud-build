@@ -217,6 +217,7 @@
 "account.transactions.start" = "开始日期";
 "account.transactions.end_date" = "结束日期";
 "account.transactions.range_error" = "请选择不晚于今天且跨度不超过 90 天的区间。";
+"account.transactions.retention_notice" = "温馨提示：消费流水仅保存最近三个月，请及时查看并留存所需记录。";
 "account.transactions.search" = "查询区间";
 "account.transactions.last_30_days" = "近 30 天全部";
 "account.transactions.filter_category" = "流水分类";
