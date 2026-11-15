@@ -5,39 +5,37 @@
 本文件按营销版本记录简体中文和 English (U.S.) 更新说明；`1.2.0` 以前的记录归档在文末索引，其他四种语言的推广文本和版本内容见 [其他语言发布说明](./RELEASE_NOTES_OTHER_LANGUAGES.md)。每次准备新版本时先新增一节；上传 App Store Connect 后，再补充实际 Build、上传时间和发布状态。中英文 App Store 推广文本按产品当前定位维护，不随版本更新自动改写。
 > **注意：这是直接给用户看的内容，请尽量精简，只写用户能感知的变化；不要透露实现细节、接口、内部流程、调试信息或未公开计划。**
 
-## 当前 App Store 推广文本
+## 待提交的 App Store 推广文本
+
+以下文案用于下一次 App Store 元数据更新；线上展示内容以 App Store Connect 为准。
 
 ### App Store 推广文本（简体中文）
 
-万圣节模板来啦！选好模板，换上图片和文字，轻松制作海报与社交配图。PixaRivo 现已支持 iPhone Duo，展开或折叠都能自在创作。新用户注册及每日首次使用可领积分。
+手抄报线稿、节日写真、商品海报、绘本插画、旅行明信片……PixaRivo 的视觉 Skill 让想法有更多模样。选择喜欢的模板，换上自己的图片或文字，开始创作。
 
 ### App Store Promotional Text (English, U.S.)
 
-Halloween templates are here! Add photos and text to create posters and social graphics. PixaRivo now supports iPhone Duo, open or closed. Earn signup and daily points.
+School posters, festive portraits, product visuals, picture-book art. Pick a PixaRivo visual Skill, add your photos or words, and make the idea your own.
 
-## 1.5.0 — 2026-10-30 (Build 待自动生成) — 待发布
+## 1.5.1 — 2026-11-15 (Build 待自动生成) — 待发布
 
 ### 简体中文
 
-- 分享公开模板时可选择已安装的应用，并附上标题、简短介绍和模板链接。
-- 分享案例时可附上标题、标签及模板与作品对比图。
-- 作品详情底部可快捷分享图片与标题。
-- 编辑模板时会自动保存未完成的内容，重新打开同一模板可继续创作。
-- 模板详情现在会完整显示样图。
-- 部分模板可只填写文字创作，无需上传图片。
-- 登录失败时会显示更准确的提示，作品图片和列表显示也更加稳定。
-- 积分流水页新增记录保存期限提示，方便及时查看和留存所需记录。
+### English (U.S.)
+
+## 1.5.0 — 2026-10-30 (Build 待确认) — 已提交审核
+
+### 简体中文
+
+- 分享模板、案例和作品更方便，可带上介绍、图片或链接。
+- 未完成的模板编辑会自动保存，重新打开即可继续；部分模板只需填写文字。
+- 模板样图显示更完整，登录提示和作品浏览体验也得到优化。
 
 ### English (U.S.)
 
-- Choose an installed app when sharing public templates, with a title, short introduction, and template link.
-- Share gallery creations with a title, tags, and a template-to-result comparison image.
-- Share work images with titles from a button at the bottom of each work detail page.
-- Unfinished template edits are saved automatically, so you can continue when you reopen the same template.
-- Template details now show the full sample image.
-- Some templates can be used with text alone, without uploading an image.
-- Sign-in errors now show clearer messages, and work images and lists display more reliably.
-- Point Activity now shows how long records are kept, so you can review and save any records you need in time.
+- Share templates, gallery examples, and your creations more easily, with descriptions, images, or links.
+- Unfinished template edits are saved automatically, so you can pick up where you left off. Some templates only need text.
+- Template previews are easier to see, with clearer sign-in messages and smoother browsing of your creations.
 
 ## 1.3.0 — 2026-10-26 (Build 待确认) — 已发布
 

@@ -2,9 +2,9 @@
 
 <!-- markdownlint-disable MD013 -->
 
-> 更新时间：2026-10-30
+> 更新时间：2026-11-15
 >
-> 当前工程营销版本：`1.5.0`；App Store 公共目录显示 `1.3.0` 已发布，实际 Build 待核
+> 当前工程营销版本：`1.5.1`；用户确认 `1.5.0` 已提交苹果审核，实际 Build 与审核阶段待核
 >
 > Bundle ID：`com.wekarepartners.pixarivo`
 >
@@ -18,15 +18,15 @@ PixaRivo 独立官网已上线，App Store Connect 的 Marketing URL 使用 `htt
 
 | 项目 | 记录 |
 | --- | --- |
-| 工程配置 | `MARKETING_VERSION = 1.5.0`，本地 `CURRENT_PROJECT_VERSION = 58` |
+| 工程配置 | `MARKETING_VERSION = 1.5.1`，本地 `CURRENT_PROJECT_VERSION = 58` |
 | 最近已发布版本 | `1.3.0 (2026-10-26，Build 待确认)` |
-| 审核中版本 | 无 |
+| 已提交审核版本 | `1.5.0 (Build 与审核阶段待确认；用户确认)` |
 | 其他已发布版本 | `1.2.11 (Build 133)`、`1.2.9 (Build 125)`、`1.2.6 (Build 112)` |
-| 当前待发布版本 | `1.5.0 (Build 待自动生成)` |
+| 当前待发布版本 | `1.5.1 (Build 待自动生成)` |
 | 更新说明 | 见 [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md) |
 | 送审状态 | 见 [截图脚本与提交清单](./06-截图脚本与提交清单.md) |
 
-历史状态见 [版本时间核对](./08-版本时间核对.md)。App Store 公共目录显示 `1.3.0` 于 2026-10-26 发布，线上 Build 与 App Store Connect 可分发时间仍待核；本地 `CURRENT_PROJECT_VERSION = 58` 仅为工程默认值，不代表下一次线上编号。
+历史状态见 [版本时间核对](./08-版本时间核对.md)。截至 2026-11-15，美区和中国区 App Store 公共目录仍返回 `1.3.0`；`1.5.0` 的实际 Build 与审核阶段待从 App Store Connect 核实。本地 `CURRENT_PROJECT_VERSION = 58` 仅为工程默认值，不代表下一次线上编号。
 
 ## 最近发布版本记录
 
@@ -36,9 +36,9 @@ PixaRivo 独立官网已上线，App Store Connect 的 Marketing URL 使用 `htt
 | 状态 | 已发布；App Store 公共目录显示发布日期为 2026-10-26 |
 | 更新说明 | 见 [`RELEASE_NOTES.md`](../../RELEASE_NOTES.md) |
 
-`1.5.0` 已设为当前工程营销版本，线上 Build 由发布流程自动生成；本地 `CURRENT_PROJECT_VERSION = 58` 仍只是工程默认值。
+`1.5.1` 已设为当前工程营销版本，线上 Build 由发布流程自动生成；本地 `CURRENT_PROJECT_VERSION = 58` 仍只是工程默认值。
 
-确认 App Store Connect 实际记录后，应补充 `1.3.0` 与 `1.2.12` 的 Build、可分发日期、构建环境和归档位置。
+确认 App Store Connect 实际记录后，应补充 `1.5.0` 的审核 Build 与阶段，以及 `1.3.0`、`1.2.12` 的 Build、可分发日期、构建环境和归档位置。
 
 ## 官网与合规页面状态
 
@@ -95,7 +95,7 @@ PixaRivo 独立官网已上线，App Store Connect 的 Marketing URL 使用 `htt
 - `[DEMO_EMAIL]`、`[DEMO_PASSWORD]`：长期有效的专用审核账号；
 - `[SUBMITTED_VERSION]`、`[SUBMITTED_BUILD]`：本次在 App Store Connect 实际选中的版本与构建；
 - App Store Connect Apple ID：`6800612526`；
-- 当前工程营销版本为 `1.5.0`；`1.3.0` 已发布，实际 Build 待确认。送审以自动流程生成并由 App Store Connect 实际处理的 Build 为准同步版本记录。
+- 当前工程营销版本为 `1.5.1`；用户确认 `1.5.0` 已提交苹果审核，实际 Build 与审核阶段待确认。送审以自动流程生成并由 App Store Connect 实际处理的 Build 为准同步版本记录。
 - `[DSA_ADDRESS]`、`[DSA_PHONE]`、`[DSA_EMAIL]`：欧盟 DSA trader 公示并由 Apple 验证的公司联系信息；
 - `[KOREA_CONTACT_*]`：如在韩国销售，由组织开发者提交的当地法规联系信息。
 

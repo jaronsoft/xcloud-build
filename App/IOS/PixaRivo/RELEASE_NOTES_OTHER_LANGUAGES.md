@@ -4,25 +4,37 @@
 
 本文件记录日本語、Español、Português (Brasil) 和繁體中文的 App Store 推广文本与版本更新说明。简体中文和 English (U.S.) 内容见 [PixaRivo Release Notes](./RELEASE_NOTES.md)。尚未填写的语言栏位不代表已完成翻译。
 
-## 当前 App Store 推广文本
+## 待提交的 App Store 推广文本
+
+以下文案用于下一次 App Store 元数据更新；线上展示内容以 App Store Connect 为准。
 
 ### App Store Promotional Text (日本語)
 
-ハロウィンのテンプレートが登場！写真や文字を入れてポスターやSNS画像を作成。PixaRivoはiPhone Duoに対応し、開閉どちらでも快適に創作。新規登録と毎日の初回利用でポイントを獲得。
+手描き新聞風ポスター、季節のポートレート、商品ビジュアル、絵本風アートまで。PixaRivoのビジュアルSkillを選び、写真や文字を加えて、自分らしい一枚に。
 
 ### App Store Promotional Text (Español)
 
-¡Llegaron las plantillas de Halloween! Crea pósteres con tus fotos y texto. PixaRivo ya funciona en iPhone Duo, abierto o cerrado. Gana puntos al registrarte y cada día.
+Carteles escolares, retratos festivos, productos, arte de cuento. Elige un Skill visual de PixaRivo, añade fotos o texto y hazlo tuyo.
 
 ### App Store Promotional Text (Português, Brasil)
 
-Modelos de Halloween chegaram! Crie pôsteres com fotos e texto. PixaRivo agora funciona no iPhone Duo, aberto ou fechado. Ganhe pontos ao se cadastrar e a cada dia.
+Cartazes escolares, retratos festivos, produtos, arte de livro ilustrado. Escolha um Skill visual no PixaRivo, adicione fotos ou texto e crie algo seu.
 
 ### App Store 推廣文字（繁體中文）
 
-萬聖節範本來了！選好範本，換上圖片與文字，輕鬆製作海報與社群配圖。PixaRivo 現已支援 iPhone Duo，展開或摺疊都能自在創作。新用戶註冊及每日首次使用可領點數。
+從手抄報線稿、節慶寫真，到商品海報、繪本插畫與旅行明信片。挑選 PixaRivo 視覺 Skill，換上自己的圖片或文字，讓靈感有更多模樣。
 
-## 1.5.0 — 2026-10-30 (Build 待自动生成) — 待发布
+## 1.5.1 — 2026-11-15 (Build 待自动生成) — 待发布
+
+### 日本語
+
+### Español
+
+### Português (Brasil)
+
+### 繁體中文
+
+## 1.5.0 — 2026-10-30 (Build 待确认) — 已提交审核
 
 ### 日本語
 
