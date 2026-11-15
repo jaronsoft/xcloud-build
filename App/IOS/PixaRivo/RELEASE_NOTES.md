@@ -21,7 +21,11 @@ School posters, festive portraits, product visuals, picture-book art. Pick a Pix
 
 ### 简体中文
 
+- 启动画面焕新，品牌展示与创作步骤的过渡更流畅。
+
 ### English (U.S.)
+
+- Refreshed the opening screen with smoother transitions through the brand and creation steps.
 
 ## 1.5.0 — 2026-10-30 (Build 待确认) — 已提交审核
 
