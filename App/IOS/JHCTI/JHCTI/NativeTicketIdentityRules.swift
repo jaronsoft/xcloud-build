@@ -37,6 +37,7 @@ private func nativeTicketIdentityDate(_ value: Any) -> Bool {
 func nativeTicketIdentityProfileValid(_ value: [String: Any]?) -> Bool {
     guard let value, nativeTicketIdentityVersion(value) != nil else { return false }
     let hasProfile = nativeTicketIdentityAliasValue(value, "HasProfile", validate: nativeTicketIdentityBoolean)
+    let dataReadable = nativeTicketIdentityAliasValue(value, "IsIdentityDataReadable", validate: nativeTicketIdentityBoolean)
     let hasConsent = nativeTicketIdentityAliasValue(value, "HasConsent", validate: nativeTicketIdentityBoolean)
     let isConsentCurrent = nativeTicketIdentityAliasValue(value, "IsConsentCurrent", validate: nativeTicketIdentityBoolean)
     let isPhoneVerified = nativeTicketIdentityAliasValue(value, "IsPhoneVerified", validate: nativeTicketIdentityBoolean)
@@ -52,10 +53,11 @@ func nativeTicketIdentityProfileValid(_ value: [String: Any]?) -> Bool {
         guard let number = $0 as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return false }
         return Int64(number.stringValue).map { $0 >= 0 } ?? false
     }
-    let fields = [hasProfile, hasConsent, isConsentCurrent, isPhoneVerified, consentVersion,
+    let fields = [hasProfile, dataReadable, hasConsent, isConsentCurrent, isPhoneVerified, consentVersion,
                   consentedAt, maskedName, maskedNumber, version]
     guard fields.allSatisfy({ $0.0 }),
           let hasProfileValue = hasProfile.1 as? NSNumber,
+          let dataReadableValue = dataReadable.1 as? NSNumber,
           let hasConsentValue = hasConsent.1 as? NSNumber,
           let currentValue = isConsentCurrent.1 as? NSNumber,
           let phoneVerifiedValue = isPhoneVerified.1 as? NSNumber,
@@ -69,10 +71,11 @@ func nativeTicketIdentityProfileValid(_ value: [String: Any]?) -> Bool {
     return (!hasConsentFlag || (hasProfileFlag && !consentVersionIsNull && !consentedAtIsNull))
         && (hasConsentFlag || (!currentFlag && consentVersionIsNull && consentedAtIsNull))
         && (!currentFlag || hasConsentFlag)
-        && (!hasProfileFlag || (phoneVerifiedValue.boolValue
-            && !maskedNameValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !maskedNumberValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
-        && (hasProfileFlag || (!hasConsentFlag && !currentFlag
+        && (!hasProfileFlag || (dataReadableValue.boolValue
+            ? phoneVerifiedValue.boolValue && !maskedNameValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !maskedNumberValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            : maskedNameValue.isEmpty && maskedNumberValue.isEmpty))
+        && (hasProfileFlag || (dataReadableValue.boolValue && !hasConsentFlag && !currentFlag
             && maskedNameValue.isEmpty && maskedNumberValue.isEmpty))
 }
 
@@ -85,7 +88,7 @@ func nativeTicketIdentityInputError(name: String, number: String, consent: Bool)
     guard number.range(of: "^[1-9][0-9]{16}[0-9X]$", options: .regularExpression) != nil else {
         return "请填写 18 位居民身份证号码。"
     }
-    return consent ? nil : "请先单独同意实名购票资料隐私告知。"
+    return consent ? nil : "请先阅读并单独同意实名资料告知。"
 }
 
 func nativeTicketIdentitySaveReceiptValid(_ value: [String: Any]?, previousVersion: Int64) -> Bool {
@@ -96,6 +99,7 @@ func nativeTicketIdentitySaveReceiptValid(_ value: [String: Any]?, previousVersi
 
 func nativeTicketIdentityBookingEligible(_ value: [String: Any]?) -> Bool {
     nativeTicketIdentityProfileValid(value) && value?["HasProfile"] as? Bool == true
+        && value?["IsIdentityDataReadable"] as? Bool == true
         && value?["HasConsent"] as? Bool == true && value?["IsConsentCurrent"] as? Bool == true
         && value?["IsPhoneVerified"] as? Bool == true
 }

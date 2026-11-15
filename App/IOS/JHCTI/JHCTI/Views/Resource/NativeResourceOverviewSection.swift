@@ -5,6 +5,7 @@ struct NativeResourceOverviewSection: View {
     let item: ResourceItem
     let detail: [String: Any]
     let initialGuideRouteID: String?
+    let guideAccessState: NativePublicFeatureAccessState
     let ticketBookingEnabled: Bool
     let reservationUnavailable: Bool
     @Binding var selectedDetailTab: String
@@ -177,8 +178,12 @@ struct NativeResourceOverviewSection: View {
                     .font(.system(size: NativeTypography.size(14))).padding(.vertical, 13)
                     Divider()
                 }
-                let routes = detail["Routes"] as? [[String: Any]] ?? []
-                if let initialGuideRouteID, !routes.contains(where: { $0["Id"] as? String == initialGuideRouteID }) {
+        let routes = detail["Routes"] as? [[String: Any]] ?? []
+        if let initialGuideRouteID, guideAccessState != .open {
+            Text(guideAccessState.message(featureName: "导览服务", action: "景点信息仍可查看，导览路线暂不显示。"))
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+        }
+                if guideAccessState == .open, let initialGuideRouteID, !routes.contains(where: { $0["Id"] as? String == initialGuideRouteID }) {
                     Text("搜索到的导览路线已不可查看，可能已更新或下线。请返回搜索后重试。")
                         .font(.system(size: NativeTypography.size(13))).foregroundStyle(.orange)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 10)

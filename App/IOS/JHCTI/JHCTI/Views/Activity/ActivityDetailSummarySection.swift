@@ -5,6 +5,7 @@ struct ActivityDetailSummarySection: View {
     let activityID: String
     let detail: [String: Any]
     let hasSessions: Bool
+    let registrationEnabled: Bool?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -21,14 +22,19 @@ struct ActivityDetailSummarySection: View {
                                   startLabel: "活动开始", activeLabel: "活动进行中", endedLabel: "活动已结束")
                 }
                 activityRow("报名时间", dateRange(detail["SignupStartTime"], detail["SignupEndTime"]))
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    countdownView(detail["SignupStartTime"], detail["SignupEndTime"], now: context.date,
-                                  startLabel: "报名开始", activeLabel: "报名进行中", endedLabel: "报名已截止")
+                if registrationEnabled == true {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        countdownView(detail["SignupStartTime"], detail["SignupEndTime"], now: context.date,
+                                      startLabel: "报名开始", activeLabel: "报名进行中", endedLabel: "报名已截止")
+                    }
+                    Text(hasSessions
+                        ? "常规截止后，仅已开始的场次仍可报名；所选场次结束后立即停止报名。"
+                        : "常规截止后，仅已开始的活动仍可报名；活动结束后立即停止报名。")
+                        .font(.system(size: NativeTypography.size(10))).foregroundStyle(Brand.muted)
+                } else {
+                    Text(registrationEnabled == false ? "活动报名暂未开放" : "正在确认报名状态")
+                        .font(.system(size: NativeTypography.size(11))).foregroundStyle(Brand.muted)
                 }
-                Text(hasSessions
-                    ? "常规截止后，仅已开始的场次仍可报名；所选场次结束后立即停止报名。"
-                    : "常规截止后，仅已开始的活动仍可报名；活动结束后立即停止报名。")
-                    .font(.system(size: NativeTypography.size(10))).foregroundStyle(Brand.muted)
                 if let venue = detail["Venue"] as? String, !venue.isEmpty { activityRow("活动地点", venue) }
                 if let organizer = detail["Organizer"] as? String, !organizer.isEmpty { activityRow("主办方", organizer) }
                 if let phone = detail["ContactPhone"] as? String, !phone.isEmpty { activityRow("联系电话", phone) }

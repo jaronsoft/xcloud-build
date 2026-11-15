@@ -691,14 +691,17 @@ struct ResourceView: View {
         loading = true; error = nil; nearbyResultsActive = false
         do {
             // 开关查询失败应提示重试，不能把网络异常解释为模块关闭或空数据。
-            let status = try await MobileAPI(store: store).getPublicCached(
-                "/api/JHCTIFeatureAccess/GetPublicStatus?featureId=MODULE-SCENIC") as? [String: Any]
+            let accessState = await MobileAPI(store: store).featureAccessState("MODULE-SCENIC", forceRefresh: true)
             try Task.checkCancellation()
             guard sequence == loadSequence else { return }
-            guard let status else { throw MobileAPIError.unavailable("内容状态暂时无法获取，请重试") }
-            guard status["IsConfigured"] as? Bool == true && status["IsEnabled"] as? Bool == true else {
+            switch accessState {
+            case .open:
+                break
+            case .closed, .pendingConfirmation:
                 resources = []
                 throw MobileAPIError.unavailable("景点模块暂未开放")
+            case .unavailable:
+                throw MobileAPIError.unavailable("景点模块开放状态暂时无法确认，请重试")
             }
             let path: String
             if mapMode {

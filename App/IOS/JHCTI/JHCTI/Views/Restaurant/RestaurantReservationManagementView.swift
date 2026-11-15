@@ -104,14 +104,9 @@ struct RestaurantReservationManagementView: View {
             if requestGeneration == requestID, store.session?.accessToken == token { loading = false }
         }
         do {
-            let gate = try await MobileAPI(store: store).get("/api/JHCTIFeatureAccess/GetPublicStatus?featureId=F-FNB-002", authenticated: true,
-                expectedPrincipal: principal)
-            guard requestGeneration == requestID, store.session?.accessToken == token else { return }
-            guard let gate = gate as? [String: Any],
-                  let enabled = gate["IsEnabled"] as? Bool ?? gate["isEnabled"] as? Bool else {
-                throw MobileAPIError.unavailable("无法确认餐饮预订功能状态")
-            }
-            if !enabled {
+            let gateState = await MobileAPI(store: store).featureAccessState("F-FNB-002", forceRefresh: true)
+            guard !Task.isCancelled, requestGeneration == requestID, store.session?.accessToken == token else { return }
+            if gateState != .open {
                 rows = []; total = 0; error = "餐饮预订功能待平台开放。"; return
             }
             var path = "/api/JHCTIDining/GetReservations?storeId=\(storeID)&page=\(requestedPage)&pageSize=20"

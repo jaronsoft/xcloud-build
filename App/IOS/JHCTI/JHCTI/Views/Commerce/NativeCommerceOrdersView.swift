@@ -349,7 +349,17 @@ struct NativeCommerceOrdersView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("履约与物流轨迹").font(.system(size: NativeTypography.size(14), weight: .semibold))
                     if shipments.isEmpty { Text("暂无履约记录").font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted) }
-                    ForEach(shipments.indices, id: \.self) { index in shipmentCard(shipments[index]) }
+                    ForEach(shipments.indices, id: \.self) { index in
+                        let shipment = shipments[index]
+                        let shipmentId = shipment["Id"] as? String ?? ""
+                        NativeCommerceShipmentCard(
+                            shipment: shipment,
+                            statusText: shipmentStatus(shipment["Status"] as? String ?? ""),
+                            isConfirming: busyShipmentId == shipmentId,
+                            isConfirmationBusy: !busyShipmentId.isEmpty,
+                            onConfirm: { Task { await confirmReceipt(shipmentId) } }
+                        )
+                    }
                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 11))
                 if let error { Text(error).font(.system(size: NativeTypography.size(14))).foregroundStyle(.red) }
                 Button("刷新订单与物流") { openOrder(id: order["Id"] as? String ?? "") }
@@ -385,32 +395,6 @@ struct NativeCommerceOrdersView: View {
         case "Revoked": return "已作废"
         default: return "状态待核对"
         }
-    }
-
-    private func shipmentCard(_ shipment: [String: Any]) -> some View {
-        let shipmentId = shipment["Id"] as? String ?? ""
-        let events = shipment["Events"] as? [[String: Any]] ?? []
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(shipment["FulfillmentType"] as? String == "Express" ? "快递配送" : "自提/虚拟交付")
-                .font(.system(size: NativeTypography.size(14), weight: .semibold)).foregroundStyle(Brand.ink)
-            Text("状态：\(shipmentStatus(shipment["Status"] as? String ?? ""))")
-                .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
-            if let carrier = shipment["CarrierName"] as? String, !carrier.isEmpty {
-                Text("承运方：\(carrier)").font(.system(size: NativeTypography.size(14)))
-            }
-            if let tracking = shipment["TrackingNumber"] as? String, !tracking.isEmpty {
-                Text("物流单号：\(tracking)").font(.system(size: NativeTypography.size(14), design: .monospaced).monospacedDigit())
-            }
-            ForEach(events.indices, id: \.self) { index in
-                let event = events[index]
-                Text("• \(event["Description"] as? String ?? "物流状态更新")  \(event["EventTime"] as? String ?? "")")
-                    .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-            }
-            if shipment["FulfillmentType"] as? String == "Express", shipment["Status"] as? String == "Shipped" {
-                Button(busyShipmentId == shipmentId ? "正在确认…" : "确认此包裹已收货") { Task { await confirmReceipt(shipmentId) } }
-                    .font(.system(size: NativeTypography.size(14), weight: .semibold)).disabled(!busyShipmentId.isEmpty)
-            }
-        }.padding(11).frame(maxWidth: .infinity, alignment: .leading).background(Brand.background, in: RoundedRectangle(cornerRadius: 9))
     }
 
     private func loadOrders(reset: Bool) async {
@@ -475,11 +459,23 @@ struct NativeCommerceOrdersView: View {
         let sequence = reviewReadSequence
         do {
             let api = MobileAPI(store: store)
-            guard await api.featureEnabled("USER-REVIEWS"), !Task.isCancelled, sequence == reviewReadSequence,
+            let accessState = await api.featureAccessState("USER-REVIEWS", forceRefresh: true)
+            try Task.checkCancellation()
+            guard sequence == reviewReadSequence,
                   nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal,
                   selectedOrder?["Id"] as? String == orderId else {
                 if sequence == reviewReadSequence { reviewStatusLoading = false }
                 return
+            }
+            switch accessState {
+            case .open:
+                break
+            case .closed, .pendingConfirmation:
+                reviewsEnabled = false
+                reviewStatusLoading = false
+                return
+            case .unavailable:
+                throw MobileAPIError.unavailable("评价功能开放状态暂时无法确认，请重试")
             }
             let ids = items.compactMap { $0["Id"] as? String }
                 .filter { Int64($0).map({ $0 > 0 }) == true }

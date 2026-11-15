@@ -298,7 +298,8 @@ struct NativeCouponsView: View {
             do {
                 let profile = try await MobileAPI(store: store).get("/api/JHCTITourismAuth/GetMyTicketIdentityProfile", authenticated: true) as? [String: Any]
                 guard store.session?.accessToken == token else { return }
-                guard profile?["HasProfile"] as? Bool == true, profile?["IsPhoneVerified"] as? Bool == true,
+                guard profile?["HasProfile"] as? Bool == true, profile?["IsIdentityDataReadable"] as? Bool == true,
+                      profile?["IsPhoneVerified"] as? Bool == true,
                       profile?["IsConsentCurrent"] as? Bool == true else { identityNotReady = true; return }
                 pendingCampaign = campaign
             } catch { self.error = error.localizedDescription }

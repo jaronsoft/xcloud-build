@@ -172,8 +172,8 @@ struct NativeTicketVerificationView: View {
                                     if item["BundleRedeemedAsWhole"] as? Bool == true {
                                         Text("整套一次核销").font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
                                     } else if let itemName = item["BundleItemName"] as? String, !itemName.isEmpty {
-                                        Text("历史逐项核销：\(itemName) × \(item["BundleItemQuantity"] as? Int ?? 1)")
-                                            .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
+                                        Text("历史逐项核销，需人工核对：\(itemName) × \(item["BundleItemQuantity"] as? Int ?? 1)")
+                                            .font(.system(size: NativeTypography.size(12), weight: .semibold)).foregroundStyle(.orange)
                                     }
                                     let bundleItems = item["BundleItems"] as? [[String: Any]] ?? []
                                     let summary = bundleItems.compactMap { bundleItem -> String? in
@@ -242,13 +242,21 @@ struct NativeTicketVerificationView: View {
         sequence += 1; let current = sequence
         loading = true; error = nil; points = []; records = []
         do {
-            guard let status = try await MobileAPI(store: store).get("/api/JHCTIFeatureAccess/GetPublicStatus?featureId=F-TKT-004") as? [String: Any],
-                  let configured = status["IsConfigured"] as? Bool, let enabled = status["IsEnabled"] as? Bool,
-                  nativeTourismPrincipal(store.session?.accessToken) == nativeTourismPrincipal(token), current == sequence else {
+            let accessState = await MobileAPI(store: store).featureAccessState("F-TKT-004", forceRefresh: true)
+            try Task.checkCancellation()
+            guard nativeTourismPrincipal(store.session?.accessToken) == nativeTourismPrincipal(token), current == sequence else {
+                return
+            }
+            switch accessState {
+            case .open:
+                featureOpen = true
+            case .closed, .pendingConfirmation:
+                featureOpen = false
+                loading = false
+                return
+            case .unavailable:
                 throw MobileAPIError.unavailable("门票核销开放状态暂时无法确认，请重试")
             }
-            featureOpen = configured && enabled
-            guard featureOpen else { loading = false; return }
             guard let pointRows = try await MobileAPI(store: store).get("/api/JHCTITicket/GetMyVerificationPoints", authenticated: true,
                 expectedPrincipal: expectedPrincipal) as? [[String: Any]],
                   nativeTourismPrincipal(store.session?.accessToken) == nativeTourismPrincipal(token), current == sequence else { throw MobileAPIError.unavailable("授权检票点回执无效，请重试") }

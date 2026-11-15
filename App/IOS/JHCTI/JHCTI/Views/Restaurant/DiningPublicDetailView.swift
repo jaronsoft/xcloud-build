@@ -114,6 +114,13 @@ struct DiningPublicDetailView: View {
         return minimum <= 30 && maximum >= minimum
     }
 
+    private func isValidDiningContactPhone(_ value: String) -> Bool {
+        let ignoredCharacters = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "-"))
+        let normalized = value.unicodeScalars.filter { !ignoredCharacters.contains($0) }.map(String.init).joined()
+        let digits = normalized.hasPrefix("+") ? String(normalized.dropFirst()) : normalized
+        return (6...24).contains(digits.count) && digits.unicodeScalars.allSatisfy { (48...57).contains(Int($0.value)) }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -296,13 +303,18 @@ struct DiningPublicDetailView: View {
         }
         queueState = "loading"; queueError = nil; queueSession = nil
         do {
-            let access = try await MobileAPI(store: store).get("/api/JHCTIFeatureAccess/GetPublicStatus?featureId=F-FNB-003") as? [String: Any]
+            let access = await MobileAPI(store: store).featureAccessState("F-FNB-003", forceRefresh: true)
+            try Task.checkCancellation()
             guard requestSequence == queueRequestSequence, store.session?.accessToken == sessionToken else { return }
-            guard let access else { throw MobileAPIError.unavailable("排队功能状态响应格式异常") }
-            guard access["IsConfigured"] as? Bool == true, access["IsEnabled"] as? Bool == true else {
+            switch access {
+            case .open:
+                break
+            case .closed, .pendingConfirmation:
                 queueState = "disabled"
                 if store.session != nil { _ = await loadQueueEntries() }
                 return
+            case .unavailable:
+                throw MobileAPIError.unavailable("排队功能开放状态暂时无法确认，请重试")
             }
             let result = try await MobileAPI(store: store).get("/api/JHCTIDining/GetOpenQueueStatus?storeId=\(id)")
             guard requestSequence == queueRequestSequence, store.session?.accessToken == sessionToken else { return }
@@ -467,9 +479,16 @@ struct DiningPublicDetailView: View {
         Task { await loadQueue() }
         unsupportedSlotCount = 0
         do {
-            guard await MobileAPI(store: store).featureEnabled("MODULE-DINING") else {
+            let diningAccess = await MobileAPI(store: store).featureAccessState("MODULE-DINING", forceRefresh: true)
+            try Task.checkCancellation()
+            switch diningAccess {
+            case .open:
+                break
+            case .closed, .pendingConfirmation:
                 packageLoading = false; slots = []; reservations = []; queueEntries = []
                 throw MobileAPIError.unavailable("特色美食模块暂未开放")
+            case .unavailable:
+                throw MobileAPIError.unavailable("特色美食模块开放状态暂时无法确认，请重试")
             }
             guard sequence == requestSequence else { return }
             guard let value = try await MobileAPI(store: store).getPublicCached("/api/JHCTIDining/GetPublicMenu?storeId=\(id)", forceRefresh: true) as? [String: Any],
@@ -481,14 +500,22 @@ struct DiningPublicDetailView: View {
             packageRequestSequence += 1
             let packageSequence = packageRequestSequence
             Task { await loadDiningPackages(sequence: packageSequence) }
-            if await MobileAPI(store: store).featureEnabled("F-FNB-002") {
+            let reservationAccess = await MobileAPI(store: store).featureAccessState("F-FNB-002", forceRefresh: true)
+            try Task.checkCancellation()
+            guard sequence == requestSequence else { return }
+            switch reservationAccess {
+            case .open:
                 featureState = "open"
                 await loadSlots(sequence: sequence)
                 _ = await loadReservations()
-            } else {
+            case .closed, .pendingConfirmation:
                 featureState = "closed"; slots = []; unsupportedSlotCount = 0
                 _ = await loadReservations()
+            case .unavailable:
+                throw MobileAPIError.unavailable("餐饮预订开放状态暂时无法确认，请重试")
             }
+        } catch is CancellationError {
+            return
         } catch {
             if sequence == requestSequence {
                 packageLoading = false
@@ -657,10 +684,9 @@ struct DiningPublicDetailView: View {
         guard !submitting, let session = store.session, let slot = selectedSlot,
               !guestName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               guestName.count <= 80,
-              !guestPhone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              guestPhone.count <= 40, guestNote.count <= 500,
+              isValidDiningContactPhone(guestPhone), guestNote.count <= 500,
               guestBounds.contains(guestCount) else {
-            reservationError = "请检查联系人、联系电话、人数和所选时段"; return
+            reservationError = "请检查联系人、有效联系电话、人数和所选时段"; return
         }
         let slotID = Self.string(slot["Id"] ?? slot["id"])
         submitting = true; reservationError = nil; notice = nil

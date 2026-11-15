@@ -146,12 +146,30 @@ final class MobileAPI {
                                                        forceRefresh: forceRefresh, allowStale: allowStale) as? [String: Any] else {
             return .unavailable
         }
-        guard let configured = status["IsConfigured"] as? Bool,
-              let enabled = status["IsEnabled"] as? Bool else { return .unavailable }
-        switch status["Status"] as? String {
+        func field(_ pascal: String) -> Any? {
+            let camel = pascal.prefix(1).lowercased() + pascal.dropFirst()
+            let hasPascal = status.keys.contains(pascal)
+            let hasCamel = status.keys.contains(camel)
+            if hasPascal && hasCamel {
+                let left = status[pascal]!
+                let right = status[camel]!
+                if let left = left as? String, let right = right as? String {
+                    if left != right { return nil }
+                } else if let left = left as? NSNumber, let right = right as? NSNumber {
+                    if left != right { return nil }
+                } else {
+                    return nil
+                }
+            }
+            return hasPascal ? status[pascal] : hasCamel ? status[camel] : nil
+        }
+        guard field("FeatureId") as? String == id,
+              let configured = field("IsConfigured") as? Bool,
+              let enabled = field("IsEnabled") as? Bool else { return .unavailable }
+        switch field("Status") as? String {
         case "Open": return configured && enabled ? .open : .unavailable
         case "Closed": return configured && !enabled ? .closed : .unavailable
-        case "PendingConfirmation": return !configured ? .pendingConfirmation : .unavailable
+        case "PendingConfirmation": return !configured && !enabled ? .pendingConfirmation : .unavailable
         default: return .unavailable
         }
     }
@@ -185,6 +203,24 @@ final class MobileAPI {
     func sendPhoneCode(phone: String, captchaKey: String, captcha: String) async throws -> String? {
         try await post("/api/JHCTITourismAuth/SendPhoneVerificationCode",
                        body: ["PhoneNumber": phone, "CaptchaKey": captchaKey, "Captcha": captcha]) as? String
+    }
+
+    func sendPhoneChangeCode(phone: String, purpose: String, captchaKey: String, captcha: String,
+                             expectedPrincipal: String) async throws -> String? {
+        try await post("/api/JHCTITourismAuth/SendPhoneChangeCode",
+                       body: ["PhoneNumber": phone, "Purpose": purpose, "CaptchaKey": captchaKey, "Captcha": captcha],
+                       authenticated: true, expectedPrincipal: expectedPrincipal) as? String
+    }
+
+    func changePhoneNumber(currentPhone: String, currentCode: String, newPhone: String, newCode: String,
+                           version: Int64, expectedPrincipal: String) async throws -> [String: Any] {
+        guard let profile = try await post("/api/JHCTITourismAuth/ChangeMyPhoneNumber",
+            body: ["CurrentPhoneNumber": currentPhone, "CurrentSmsCode": currentCode,
+                   "NewPhoneNumber": newPhone, "NewSmsCode": newCode, "Version": version],
+            authenticated: true, expectedPrincipal: expectedPrincipal) as? [String: Any] else {
+            throw MobileAPIError.unavailable("手机号更换响应无效")
+        }
+        return profile
     }
 
     func sendPasswordRecoveryCode(phone: String, captchaKey: String, captcha: String) async throws -> String? {

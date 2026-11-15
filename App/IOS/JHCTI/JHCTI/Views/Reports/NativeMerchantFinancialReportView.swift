@@ -145,6 +145,11 @@ struct MerchantFinancialReportView: View {
                             let quantity = item["Quantity"] as? Int ?? item["quantity"] as? Int ?? 1
                             return "\(name) × \(quantity)"
                         }.joined(separator: "、")
+                        let isBundle = (row["TicketKind"] as? String ?? row["ticketKind"] as? String) == "Bundle"
+                        let bundleRedeemedAsWhole = row["BundleRedeemedAsWhole"] as? Bool
+                            ?? row["bundleRedeemedAsWhole"] as? Bool ?? false
+                        let bundleItemName = (row["BundleItemName"] as? String
+                            ?? row["bundleItemName"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                         VStack(alignment: .leading, spacing: 5) {
                             Text(row["TicketName"] as? String ?? row["ticketName"] as? String ?? "门票")
                                 .font(.system(size: NativeTypography.size(14), weight: .semibold))
@@ -158,6 +163,17 @@ struct MerchantFinancialReportView: View {
                                !bundleSummary.isEmpty {
                                 Text("套票包含（一张凭证一次核销全部项目）：\(bundleSummary)")
                                     .font(.caption)
+                            }
+                            if isBundle {
+                                if bundleRedeemedAsWhole {
+                                    Text("整套一次核销").font(.caption).foregroundStyle(Brand.muted)
+                                } else if !bundleItemName.isEmpty {
+                                    Text("历史逐项核销，需人工核对：\(bundleItemName) × \(row["BundleItemQuantity"] as? Int ?? row["bundleItemQuantity"] as? Int ?? 1)")
+                                        .font(.caption).foregroundStyle(.orange)
+                                } else {
+                                    Text("核销范围未记录，需人工核对")
+                                        .font(.caption).foregroundStyle(.orange)
+                                }
                             }
                             Text("订单 \(row["OrderNo"] as? String ?? row["orderNo"] as? String ?? "") · \(row["OperatorName"] as? String ?? row["operatorName"] as? String ?? "") · \(row["RedeemedAt"] as? String ?? row["redeemedAt"] as? String ?? "")")
                                 .font(.caption2).foregroundStyle(Brand.muted)

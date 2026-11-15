@@ -14,6 +14,9 @@ struct HotelCatalogView: View {
     @State private var retryPage = 1
     @State private var requestSequence = 0
     @State private var pageLoadTask: Task<Void, Never>?
+    @State private var bookingAccessTask: Task<Void, Never>?
+    @State private var bookingAccess = NativePublicFeatureAccessState.unavailable
+    @State private var bookingAccessLoaded = false
     @State private var hasAppeared = false
     @State private var initialLoadStarted = false
     private let pageSize = 10
@@ -60,8 +63,10 @@ struct HotelCatalogView: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 8)
                     }
                 }
-                Text("选择酒店后，可在详情页查询指定日期的房型、价格与余量。")
-                    .font(.caption).foregroundStyle(Brand.muted).frame(maxWidth: .infinity, alignment: .leading)
+                if let bookingNote {
+                    Text(bookingNote).font(.caption).foregroundStyle(Brand.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .padding(16)
         }
@@ -74,10 +79,12 @@ struct HotelCatalogView: View {
         .onAppear {
             if hasAppeared { startPageLoad(page: 1, forceRefresh: true) }
             else { hasAppeared = true }
+            loadBookingAccess()
         }
         .onDisappear {
             requestSequence += 1
             pageLoadTask?.cancel(); pageLoadTask = nil
+            bookingAccessTask?.cancel(); bookingAccessTask = nil
             loading = false; loadingMore = false
         }
         .task {
@@ -88,6 +95,37 @@ struct HotelCatalogView: View {
     }
 
     private var hasMore: Bool { total.map { page * pageSize < $0 } ?? (lastPageCount >= pageSize) }
+
+    private var bookingLabel: String? {
+        guard bookingAccessLoaded else { return nil }
+        switch bookingAccess {
+        case .open: return "选择日期查看房型与价格"
+        case .closed: return "预订暂未开放"
+        case .pendingConfirmation: return "预订开放状态待确认"
+        case .unavailable: return "预订状态暂不可用"
+        }
+    }
+
+    private var bookingNote: String? {
+        guard bookingAccessLoaded else { return nil }
+        switch bookingAccess {
+        case .open: return "选择酒店后，可在详情页查询指定日期的房型、价格与余量。"
+        case .closed: return "你可以继续浏览住宿信息；预订暂未开放。"
+        case .pendingConfirmation: return "你可以继续浏览住宿信息；预订开放状态待确认。"
+        case .unavailable: return "你可以继续浏览住宿信息；当前暂时无法确认预订状态。"
+        }
+    }
+
+    private func loadBookingAccess() {
+        bookingAccessTask?.cancel()
+        bookingAccessLoaded = false
+        bookingAccessTask = Task {
+            let access = await MobileAPI(store: store).featureAccessState("F-DST-001", forceRefresh: true)
+            guard !Task.isCancelled else { return }
+            bookingAccess = access
+            bookingAccessLoaded = true
+        }
+    }
 
     @MainActor private func startPageLoad(page: Int, forceRefresh: Bool = false) {
         requestSequence += 1
@@ -121,7 +159,10 @@ struct HotelCatalogView: View {
                 let amenitiesText = amenities.prefix(3).joined(separator: " · ")
                 Text(amenitiesText.isEmpty ? "查看住宿设施" : amenitiesText)
                     .font(.system(size: NativeTypography.size(10))).foregroundStyle(Brand.muted).lineLimit(1)
-                Text("选择日期查看房型与价格").font(.system(size: NativeTypography.size(10), weight: .medium)).foregroundStyle(Brand.primary)
+                if let bookingLabel {
+                    Text(bookingLabel).font(.system(size: NativeTypography.size(10), weight: .medium))
+                        .foregroundStyle(bookingAccess == .open ? Brand.primary : Brand.muted)
+                }
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right").font(.system(size: NativeTypography.size(11), weight: .semibold)).foregroundStyle(Brand.muted)

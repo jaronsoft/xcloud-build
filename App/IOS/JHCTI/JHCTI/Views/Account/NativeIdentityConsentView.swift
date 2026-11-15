@@ -26,6 +26,9 @@ struct NativeIdentityConsentView: View {
     private var principal: String? { nativeTourismPrincipal(store.session?.accessToken) }
     private var hasConsent: Bool { profile?["HasConsent"] as? Bool == true }
     private var consentStatus: String {
+        if profile?["HasProfile"] as? Bool == true && profile?["IsIdentityDataReadable"] as? Bool != true {
+            return hasConsent ? "已授权，资料暂不可读" : "资料暂不可读"
+        }
         guard hasConsent else { return "未授权" }
         return profile?["IsConsentCurrent"] as? Bool == false ? "已授权（告知版本已更新）" : "已授权"
     }
@@ -37,17 +40,23 @@ struct NativeIdentityConsentView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("实名资料仅用于需要实名的购票业务。撤回后，后续实名购票需重新授权；已产生订单中的资料快照按原规则保留。")
+                    Text("实名资料仅用于实名票种购票、入园核验及实名消费券资格校验。本平台只校验格式和平台规则，不进行公安或第三方权威身份核验。撤回后，新的实名业务不能使用已保存资料；订单资料快照及账号中加密保存的资料仍按原规则保留。")
                         .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
                     if loading {
                         ProgressView("正在读取授权记录…").frame(maxWidth: .infinity, alignment: .leading)
                     } else if let profile, profileOwner == principal {
                         VStack(alignment: .leading, spacing: 10) {
                             consentRow("授权状态", detail: consentStatus)
-                            consentRow("实名姓名", detail: profile["MaskedRealName"] as? String ?? "未登记")
-                            consentRow("身份证号", detail: profile["MaskedIdentityNumber"] as? String ?? "未登记")
+                            consentRow("实名姓名", detail: profile["IsIdentityDataReadable"] as? Bool == true
+                                ? profile["MaskedRealName"] as? String ?? "不可读取" : "不可读取")
+                            consentRow("身份证号", detail: profile["IsIdentityDataReadable"] as? Bool == true
+                                ? profile["MaskedIdentityNumber"] as? String ?? "不可读取" : "不可读取")
                             consentRow("告知版本", detail: profile["ConsentVersion"] as? String ?? "—")
                             consentRow("授权时间", detail: profile["ConsentedAt"] as? String ?? "—")
+                            if profile["HasProfile"] as? Bool == true && profile["IsIdentityDataReadable"] as? Bool != true {
+                                Text("实名资料已保存，但当前无法安全读取；修复前不能用于新的实名业务或重新授权。请联系平台处理。已产生订单资料快照仍按原规则保留。")
+                                    .font(.footnote).foregroundStyle(Brand.muted)
+                            }
                             if hasConsent {
                                 Button(role: .destructive) {
                                     guard let principal else { return }
@@ -59,12 +68,14 @@ struct NativeIdentityConsentView: View {
                                 .buttonStyle(.bordered)
                                 .disabled(busy || loading)
                             } else {
-                                Text("当前没有有效的实名资料授权，请先登记或重新授权后再购买实名门票。")
+                                Text("当前没有有效的实名资料授权；使用实名票种或实名消费券业务前，请先登记或重新授权。")
                                     .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
                             }
                             if profile["IsPhoneVerified"] as? Bool != true {
-                                Text("请先返回个人中心验证绑定手机号，再登记实名购票资料。")
+                                Text("请先返回个人中心验证绑定手机号，再登记实名资料。")
                                     .font(.footnote).foregroundStyle(Brand.muted)
+                            } else if profile["IsIdentityDataReadable"] as? Bool != true {
+                                EmptyView()
                             } else if profile["IsConsentCurrent"] as? Bool != true {
                                 if editorOpen {
                                     Text(profile["HasProfile"] as? Bool == true ? "重新授权时请填写原登记资料；如需更正，请联系客服核验。" : "请填写本人资料。登记后不能自行更改，如需更正请联系客服核验。")
@@ -73,13 +84,13 @@ struct NativeIdentityConsentView: View {
                                         .textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
                                     TextField("18 位居民身份证号码", text: $identityNumber)
                                         .keyboardType(.asciiCapable).textInputAutocapitalization(.characters).autocorrectionDisabled().privacySensitive()
-                                    Toggle("我同意为实名购票及入园核验加密保存姓名和身份证号码。可在此撤回授权，历史订单资料按原规则保留。", isOn: $identityConsent)
+                                    Toggle("我同意为实名票种购票、入园核验及实名消费券资格校验加密保存姓名和身份证号码。可在此撤回授权，历史订单资料按原规则保留。", isOn: $identityConsent)
                                         .font(.footnote)
                                     Button(busy ? "正在保存…" : "同意并保存实名资料") { startSaveProfile() }
                                         .buttonStyle(.borderedProminent).disabled(busy || loading)
                                     Button("取消填写") { clearEditor() }.disabled(busy)
                                 } else {
-                                    Button(profile["HasProfile"] as? Bool == true ? "重新授权实名资料" : "登记实名购票资料") {
+                                    Button(profile["HasProfile"] as? Bool == true ? "重新授权实名资料" : "登记实名资料") {
                                         clearEditor(); editorOpen = true; error = nil; notice = nil
                                     }.buttonStyle(.borderedProminent).disabled(busy || loading)
                                 }
@@ -111,7 +122,7 @@ struct NativeIdentityConsentView: View {
                 }
                 Button("暂不撤回", role: .cancel) { }
             } message: {
-                Text("撤回后，之后的实名购票需要重新授权；已产生订单的资料快照仍会保留。")
+                Text("撤回后，之后的实名票种和实名消费券业务都需重新授权；账号加密资料不会因此删除，已产生订单的资料快照仍按原规则保留。")
             }
             .task(id: principal) {
                 confirmRevoke = false
@@ -243,7 +254,7 @@ struct NativeIdentityConsentView: View {
             guard nativeTicketIdentitySaveReceiptValid(result, previousVersion: previousVersion) else {
                 throw MobileAPIError.unavailable("实名资料保存回执异常")
             }
-            profile = result; profileOwner = requestedPrincipal; notice = "实名购票资料已登记并授权。"
+            profile = result; profileOwner = requestedPrincipal; notice = "实名资料已登记并授权。"
         } catch {
             if isCurrent(requestedOperation, principal: requestedPrincipal) {
                 self.error = "保存结果暂未确认，请重新读取实名资料状态后再操作；如已登记需更正，请联系客服。"

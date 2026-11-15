@@ -58,6 +58,7 @@ struct CatalogModule: Identifiable {
     }
 
     func listPath(pageSize: Int, page: Int = 1) -> String {
+        if id == "routes" { return "\(path)?page=\(max(1, page))&pageSize=\(pageSize)&includeSessions=false" }
         if id != "articles" && id != "intangibleHeritage" { return "\(path)?page=\(max(1, page))&pageSize=\(pageSize)" }
         let categories = categoryIDs.filter { !$0.isEmpty && $0.allSatisfy(\.isNumber) }
         let scope = siteID.isEmpty ? "&siteid=1" : siteID.allSatisfy(\.isNumber) ? "&siteid=\(siteID)" : ""

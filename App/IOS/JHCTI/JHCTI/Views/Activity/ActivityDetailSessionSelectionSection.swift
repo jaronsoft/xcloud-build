@@ -4,6 +4,7 @@ struct ActivityDetailSessionSelectionSection: View {
     let sessions: [[String: Any]]
     let availabilityRows: [[String: Any]]
     let selectedSessionID: String
+    let registrationEnabled: Bool?
     let isBusy: Bool
     let now: Date
     let isBookable: ([String: Any]?, Date) -> Bool
@@ -15,7 +16,7 @@ struct ActivityDetailSessionSelectionSection: View {
         let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("选择活动场次")
+                Text(registrationEnabled == true ? "选择活动场次" : "活动场次")
                     .font(.system(size: NativeTypography.size(14), weight: .semibold))
                     .foregroundStyle(Brand.primary)
                 Spacer()
@@ -26,17 +27,18 @@ struct ActivityDetailSessionSelectionSection: View {
                     .padding(.vertical, 5)
                     .background(Brand.background, in: Capsule())
             }
-            Text("默认选择第一场，可点击其他场次切换。")
+            Text(registrationEnabled == true ? "默认选择第一场，可点击其他场次切换。"
+                 : registrationEnabled == false ? "活动报名暂未开放，可查看各场次安排。" : "正在确认报名状态。")
                 .font(.system(size: NativeTypography.size(10)))
                 .foregroundStyle(Brand.muted)
             LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(sessions.indices, id: \.self) { index in
                     let session = sessions[index]
                     let sessionID = session["Id"] as? String ?? ""
-                    let selected = selectedSessionID == sessionID
+                    let selected = registrationEnabled == true && selectedSessionID == sessionID
                     let availabilityRow = availabilityRows.first { $0["Id"] as? String == sessionID }
                     let seats = availabilityRow?["RemainingCapacity"] as? Int
-                    let bookable = isBookable(availabilityRow, now)
+                    let bookable = registrationEnabled == true && isBookable(availabilityRow, now)
                     Button {
                         onSelect(sessionID, seats)
                     } label: {
@@ -51,8 +53,9 @@ struct ActivityDetailSessionSelectionSection: View {
                                 .font(.system(size: NativeTypography.size(9)))
                                 .foregroundStyle(Brand.muted)
                                 .lineLimit(2)
-                            Text(bookable
-                                 ? (selected ? "已选择 · 剩余名额 \(seats ?? 0)" : "剩余名额 \(seats ?? 0)")
+                            Text(registrationEnabled == false ? "活动报名暂未开放"
+                                 : registrationEnabled == nil ? "正在确认报名状态"
+                                 : bookable ? (selected ? "已选择 · 剩余名额 \(seats ?? 0)" : "剩余名额 \(seats ?? 0)")
                                  : unavailableText(availabilityRow, now))
                                 .font(.system(size: NativeTypography.size(9), weight: selected ? .medium : .regular))
                                 .foregroundStyle(selected ? Brand.primary : Brand.muted)

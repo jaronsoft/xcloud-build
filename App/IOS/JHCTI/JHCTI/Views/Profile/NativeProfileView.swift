@@ -62,7 +62,6 @@ struct ProfileView: View {
     @State private var countdownGeneration = 0
     @State private var authRequestGeneration = 0
     @State private var captchaRequestGeneration = 0
-    @State private var consent = true
     @State private var agreements: [AgreementContent] = []
     @State private var shownAgreement: AgreementContent?
     @State private var error: String?
@@ -133,7 +132,7 @@ struct ProfileView: View {
         phone = ""; password = ""; smsCode = ""; captchaAnswer = ""; captchaKey = ""
         captchaImage = nil; recoveryPassword = ""; recoveryPasswordConfirm = ""
         smsMode = false; recoveryMode = false; countdown = 0; sendingPhoneCode = false
-        consent = true; shownAgreement = nil; error = nil
+        shownAgreement = nil; error = nil
     }
 
     private func openAccountService(_ name: String) {
@@ -235,7 +234,7 @@ struct ProfileView: View {
                                     shownAgreement = privacyAgreement
                                 }
                             }
-                            profileInfoRow("实名购票资料授权", detail: "查看记录 ›") {
+                            profileInfoRow("实名资料授权", detail: "查看记录 ›") {
                                 identityConsentOpen = true
                             }
                             profileInfoRow("清理缓存", detail: "\(ByteCountFormatter.string(fromByteCount: Int64(cacheBytes), countStyle: .file))  管理 ›") {
@@ -295,8 +294,13 @@ struct ProfileView: View {
                         .background(.white, in: RoundedRectangle(cornerRadius: 12))
                         if let session = store.session {
                             NativeProfileSessionActionsView(
+                                store: store,
                                 displayName: displayName,
                                 phone: profileRuntime.tourismProfile?["MaskedPhoneNumber"] as? String ?? session.userName,
+                                profileVersion: ((profileRuntime.tourismProfile?["Version"]
+                                    ?? profileRuntime.tourismProfile?["version"]) as? NSNumber)?.int64Value
+                                    ?? Int64((profileRuntime.tourismProfile?["Version"]
+                                        ?? profileRuntime.tourismProfile?["version"]) as? String ?? ""),
                                 loggingOut: loggingOut,
                                 busy: busy,
                                 onLogout: {
@@ -308,7 +312,9 @@ struct ProfileView: View {
                                         loggingOut = false
                                     }
                                 },
-                                onCancelAccount: { accountCancellationWarningOpen = true }
+                                onCancelAccount: { accountCancellationWarningOpen = true },
+                                onProfileUpdated: { _ in Task { await profileRuntime.load() } },
+                                onReloadProfile: { Task { await profileRuntime.load() } }
                             )
                         } else {
                             NativeProfileAuthenticationForm(
@@ -329,7 +335,6 @@ struct ProfileView: View {
                                 captchaAnswer: $captchaAnswer,
                                 recoveryPassword: $recoveryPassword,
                                 recoveryPasswordConfirm: $recoveryPasswordConfirm,
-                                consent: $consent,
                                 error: $error,
                                 onLoadCaptcha: { Task { await loadCaptcha() } },
                                 onSendPhoneCode: { Task { await sendPhoneCode() } },
@@ -347,9 +352,6 @@ struct ProfileView: View {
             await loadAgreements()
         }
         .task(id: store.session?.accessToken) { await profileRuntime.load() }
-        .onChange(of: authOpen) { _, isOpen in
-            if isOpen && store.session == nil { consent = true }
-        }
             .alert("服务提示", isPresented: Binding(
                 get: { serviceNotice != nil },
                 set: { if !$0 { serviceNotice = nil } }
@@ -565,6 +567,7 @@ struct ProfileView: View {
 
     private func login() async {
         guard !busy && !sendingPhoneCode else { return }
+        guard recoveryMode || agreements.count == 2 else { error = "当前协议尚未加载完成，请刷新后重试"; return }
         busy = true; error = nil
         var passwordResetRequestMayHaveReachedServer = false
         do {
@@ -647,7 +650,6 @@ struct ProfileView: View {
         guard phone.range(of: "^1[3-9][0-9]{9}$", options: .regularExpression) != nil else {
             error = "请输入有效的大陆手机号"; return
         }
-        guard recoveryMode || agreements.count == 2 && consent else { error = "请先同意当前协议"; return }
         authRequestGeneration &+= 1
         let requestGeneration = authRequestGeneration
         sendingPhoneCode = true; error = nil

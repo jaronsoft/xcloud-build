@@ -179,8 +179,8 @@ struct HotelPublicDetailView: View {
                             .background(Brand.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     }
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("查询房态与价格").font(.headline).foregroundStyle(Brand.ink)
                         if bookingEnabled {
+                        Text("查询房态与价格").font(.headline).foregroundStyle(Brand.ink)
                             HotelDateField(title: "入住日期", selection: $checkIn,
                                 range: HotelBusinessDate.offset(0)...HotelBusinessDate.offset(365))
                                 .onChange(of: checkIn) { _, value in
@@ -209,19 +209,19 @@ struct HotelPublicDetailView: View {
                                 .buttonStyle(.bordered).disabled(guestCount >= 20)
                             }
                             .onChange(of: guestCount) { _, _ in pointsByRoom = [:]; revision += 1 }
-                            Button(loading ? "正在查询…" : "查询所选日期") { revision += 1 }
-                                .buttonStyle(.borderedProminent).tint(Brand.primary).disabled(loading)
-                            if store.session == nil {
-                                Text("请先在个人中心登录并完成手机号验证，再提交预订。")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            } else {
-                                TextField("入住联系人姓名", text: $contactName).textContentType(.name)
-                                    .textFieldStyle(.roundedBorder).disabled(pendingIdempotencyKey != nil)
-                                TextField("联系电话（可含 + 国际区号）", text: $contactPhone).textContentType(.telephoneNumber)
-                                    .keyboardType(.phonePad).textFieldStyle(.roundedBorder).disabled(pendingIdempotencyKey != nil)
-                            }
+                        Button(loading ? "正在查询…" : "查询所选日期") { revision += 1 }
+                            .buttonStyle(.borderedProminent).tint(Brand.primary).disabled(loading || !bookingEnabled)
+                        if store.session == nil {
+                            Text("请先在个人中心登录并完成手机号验证，再提交预订。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else if bookingEnabled {
+                            TextField("入住联系人姓名", text: $contactName).textContentType(.name)
+                                .textFieldStyle(.roundedBorder).disabled(pendingIdempotencyKey != nil)
+                            TextField("联系电话（可含 + 国际区号）", text: $contactPhone).textContentType(.telephoneNumber)
+                                .keyboardType(.phonePad).textFieldStyle(.roundedBorder).disabled(pendingIdempotencyKey != nil)
+                        }
                         } else {
-                            Text("酒店预订暂未开放；仍可浏览住宿资料。")
+                            Text("酒店预订暂未开放；当前仅展示已发布住宿资料。")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         if pendingIdempotencyKey != nil {
@@ -274,7 +274,7 @@ struct HotelPublicDetailView: View {
                                 if let description = room["Description"] as? String, !description.isEmpty {
                                     Text(plainTextFromHTML(description)).font(.subheadline)
                                 }
-                                if let price = room["MinPrice"] as? NSNumber, price.doubleValue >= 0 {
+                                if bookingEnabled, let price = room["MinPrice"] as? NSNumber, price.doubleValue >= 0 {
                                     Text("参考起价 ¥\(price.stringValue)/晚").font(.subheadline.weight(.semibold)).foregroundStyle(Brand.primary)
                                 }
                                 let roomId = Self.validID(room["Id"])
@@ -387,7 +387,7 @@ struct HotelPublicDetailView: View {
         }
         .task(id: "\(store.session?.accessToken ?? "")-\(pointsSummaryRevision)") { await loadPointsSummary() }
         .task(id: "\(currentQueryKey)-\(revision)") {
-            loading = true; error = nil; detail = nil
+            loading = true; error = nil; detail = nil; bookingEnabled = false
             do {
                 guard !id.isEmpty, id.allSatisfy(\.isNumber) else { throw MobileAPIError.unavailable("住宿编号无效") }
                 guard await MobileAPI(store: store).featureEnabled("MODULE-HOTEL") else {

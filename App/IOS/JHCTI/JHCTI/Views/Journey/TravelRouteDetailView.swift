@@ -271,7 +271,8 @@ struct TravelRouteDetailView: View {
             pointsToUse = "0"
             loading = true; error = nil
             if hadCurrentDetail { availabilityStale = true }
-            if !hadCurrentDetail { bookingEnabled = false }
+            // 刷新期间先隐藏旧的班期和预订入口，确认开关开放后再重新显示。
+            bookingEnabled = false
             do {
                 guard !id.isEmpty, id.allSatisfy(\.isNumber) else { throw MobileAPIError.unavailable("线路编号无效") }
                 guard await MobileAPI(store: store).featureEnabled("MODULE-TRAVEL-ROUTE") else {
@@ -279,7 +280,7 @@ struct TravelRouteDetailView: View {
                 }
                 bookingEnabled = await MobileAPI(store: store).featureEnabled("F-DST-002")
                 let loaded = try await MobileAPI(store: store).getPublicCached(
-                    "/api/JHCTITravelRoute/GetPublicDetail?id=\(id)&guests=1", forceRefresh: revision > 0) as? [String: Any]
+                    "/api/JHCTITravelRoute/GetPublicDetail?id=\(id)&guests=1&includeSessions=\(bookingEnabled)", forceRefresh: revision > 0) as? [String: Any]
                 guard let loaded, nativeTravelRouteDetailIsValid(loaded, expectedID: id) else {
                     throw MobileAPIError.unavailable("线路资料格式异常，请重试")
                 }

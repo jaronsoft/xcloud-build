@@ -21,6 +21,9 @@ struct MerchantTourismReservationsView: View {
     @State private var total = 0
     @State private var loading = false
     @State private var checkingIn = false
+    @State private var outcomeUnknown = false
+    @State private var checkInWindowUnavailableFor = ""
+    @State private var resolvingOutcome = false
     @State private var scannerOpen = false
     @State private var cameraAvailable = false
     @State private var credentialCode = ""
@@ -71,7 +74,7 @@ struct MerchantTourismReservationsView: View {
             checkInOperation += 1
             requestSequence += 1
             reservationPageTask?.cancel(); reservationPageTask = nil
-            rows = []; total = 0; credentialCode = ""; identityNumber = ""
+            rows = []; total = 0; credentialCode = ""; identityNumber = ""; outcomeUnknown = false; checkInWindowUnavailableFor = ""; resolvingOutcome = false
             receipt = nil; error = nil; loading = false; checkingIn = false; scannerOpen = false; scannerSessionToken = ""
         }
         .onChange(of: merchantID) { _, newMerchantID in
@@ -81,18 +84,19 @@ struct MerchantTourismReservationsView: View {
             requestSequence += 1
             reservationPageTask?.cancel(); reservationPageTask = nil
             rows = []; total = 0; page = 1; loading = false
-            checkingIn = false; confirmingCheckIn = false
+            checkingIn = false; resolvingOutcome = false; outcomeUnknown = false; checkInWindowUnavailableFor = ""; confirmingCheckIn = false
             credentialCode = ""; identityNumber = ""; receipt = nil; error = nil
             scannerOpen = false; scannerSessionToken = ""; scannerMerchantID = ""
         }
         .onChange(of: status) { _, _ in
             requestSequence += 1
             reservationPageTask?.cancel(); reservationPageTask = nil
-            rows = []; total = 0; page = 1; loading = false; error = nil
+            rows = []; total = 0; page = 1; loading = false; error = nil; outcomeUnknown = false; checkInWindowUnavailableFor = ""; resolvingOutcome = false
         }
         .onChange(of: store.session?.accessToken) { _, _ in
             scannerOperation += 1
             scannerOpen = false; scannerSessionToken = ""; scannerMerchantID = ""; credentialCode = ""; identityNumber = ""; receipt = nil
+            outcomeUnknown = false; checkInWindowUnavailableFor = ""; resolvingOutcome = false
         }
         .onDisappear {
             scannerOperation += 1
@@ -100,6 +104,7 @@ struct MerchantTourismReservationsView: View {
             reservationPageTask?.cancel(); reservationPageTask = nil
             rows = []; total = 0; page = 1; loading = false; error = nil
             credentialCode = ""; identityNumber = ""; receipt = nil; scannerOpen = false; scannerSessionToken = ""; scannerMerchantID = ""
+            outcomeUnknown = false; checkInWindowUnavailableFor = ""; resolvingOutcome = false
         }
         .sheet(isPresented: $scannerOpen) {
             let presentedMerchantID = scannerMerchantID
@@ -110,8 +115,8 @@ struct MerchantTourismReservationsView: View {
                       activeMerchantID == presentedMerchantID,
                       store.session?.accessToken == presentedToken else { return }
                 let value = scanned.trimmingCharacters(in: .whitespacesAndNewlines)
-                if (10...40).contains(value.count) { credentialCode = value; error = nil; receipt = nil }
-                else { credentialCode = ""; receipt = nil; error = "二维码内容不是有效的预约凭证码，请手动核对。" }
+                if (10...40).contains(value.count) { credentialCode = value; checkInWindowUnavailableFor = ""; error = nil; receipt = nil }
+                else { credentialCode = ""; checkInWindowUnavailableFor = ""; receipt = nil; error = "二维码内容不是有效的预约凭证码，请手动核对。" }
                 scannerOpen = false; scannerSessionToken = ""; scannerMerchantID = ""
             }, onFailure: { message in
                 guard scannerOperation == presentedOperation,
@@ -136,28 +141,36 @@ struct MerchantTourismReservationsView: View {
             if DataScannerViewController.isSupported {
                 Button("扫描预约二维码") { Task { await requestScannerAccess() } }
                     .buttonStyle(.borderedProminent).tint(Brand.primary)
-                    .frame(maxWidth: .infinity).disabled(checkingIn)
+                    .frame(maxWidth: .infinity).disabled(checkingIn || outcomeUnknown || resolvingOutcome)
             } else {
                 Text("当前设备不支持二维码扫描，请手动输入凭证码。")
                     .font(.caption).foregroundStyle(Brand.muted)
             }
             TextField("预约凭证码（10 至 40 个字符）", text: $credentialCode)
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
-                .textFieldStyle(.roundedBorder).disabled(checkingIn)
-                .onChange(of: credentialCode) { _, _ in receipt = nil }
+                .textFieldStyle(.roundedBorder).disabled(checkingIn || outcomeUnknown || resolvingOutcome)
+                .onChange(of: credentialCode) { _, value in
+                    if checkInWindowUnavailableFor != value.trimmingCharacters(in: .whitespacesAndNewlines) { checkInWindowUnavailableFor = "" }
+                    receipt = nil
+                }
             TextField("现场身份证号（实名预约填写）", text: $identityNumber)
                 .textInputAutocapitalization(.characters).autocorrectionDisabled()
-                .textFieldStyle(.roundedBorder).disabled(checkingIn)
+                .textFieldStyle(.roundedBorder).disabled(checkingIn || outcomeUnknown || resolvingOutcome)
                 .onChange(of: identityNumber) { _, value in
                     let normalized = String(value.filter { $0.isASCII && $0.isLetter || $0.isASCII && $0.isNumber }.prefix(18))
                     if normalized != value { identityNumber = normalized }
                     receipt = nil
                 }
             if let error { Text(error).font(.system(size: NativeTypography.size(14))).foregroundStyle(.red) }
+            if outcomeUnknown || checkInWindowUnavailableFor == credentialCode.trimmingCharacters(in: .whitespacesAndNewlines) {
+                Button(resolvingOutcome ? "正在查询…" : outcomeUnknown ? "查询预约当前状态" : "重新查询预约状态") { Task { await resolveCheckInOutcome() } }
+                    .buttonStyle(.bordered).frame(maxWidth: .infinity).disabled(resolvingOutcome)
+            }
             Button(checkingIn ? "正在核验…" : "核验入园") { confirmingCheckIn = true }
                 .buttonStyle(.borderedProminent).tint(Brand.primary)
                 .frame(maxWidth: .infinity)
-                .disabled(checkingIn || !(10...40).contains(credentialCode.trimmingCharacters(in: .whitespacesAndNewlines).count))
+                .disabled(checkingIn || outcomeUnknown || resolvingOutcome || !(10...40).contains(credentialCode.trimmingCharacters(in: .whitespacesAndNewlines).count)
+                    || checkInWindowUnavailableFor == credentialCode.trimmingCharacters(in: .whitespacesAndNewlines))
             if let receipt {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("预约核验成功").font(.system(size: NativeTypography.size(16), weight: .semibold)).foregroundStyle(Brand.primary)
@@ -237,15 +250,16 @@ struct MerchantTourismReservationsView: View {
             .foregroundStyle(selected ? .white : Brand.primary)
             .padding(.horizontal, 14).padding(.vertical, 9)
             .background(selected ? Brand.primary : Brand.primary.opacity(0.08), in: Capsule())
-            .disabled(checkingIn)
+            .disabled(checkingIn || outcomeUnknown || resolvingOutcome)
     }
 
     private func switchMode(_ verify: Bool) {
-        guard verifyMode != verify, !checkingIn else { return }
+        guard verifyMode != verify, !checkingIn, !outcomeUnknown, !resolvingOutcome else { return }
         requestSequence += 1
         reservationPageTask?.cancel(); reservationPageTask = nil
         loading = false
         verifyMode = verify; error = nil; credentialCode = ""; identityNumber = ""; receipt = nil
+        outcomeUnknown = false; checkInWindowUnavailableFor = ""; resolvingOutcome = false
     }
 
     @MainActor private func loadReservations(page targetPage: Int) async {
@@ -324,11 +338,13 @@ struct MerchantTourismReservationsView: View {
     @MainActor private func checkIn() async {
         let code = credentialCode.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canVerify, (10...40).contains(code.count), let token = store.session?.accessToken,
-              let requestedPrincipal = nativeTourismPrincipal(token), principal == requestedPrincipal, !checkingIn else { return }
+              let requestedPrincipal = nativeTourismPrincipal(token), principal == requestedPrincipal,
+              !checkingIn, !outcomeUnknown, !resolvingOutcome else { return }
+        guard checkInWindowUnavailableFor != code else { error = "该预约当前不可核验，请先重新查询状态；若持续不可核验，请联系商户管理员。"; return }
         let requestedMerchantID = merchantID
         checkInOperation += 1
         let operation = checkInOperation
-        checkingIn = true; error = nil; receipt = nil
+        checkingIn = true; outcomeUnknown = false; error = nil; receipt = nil
         var body: [String: Any] = ["CredentialCode": code]
         let identity = identityNumber.trimmingCharacters(in: .whitespacesAndNewlines)
         if !identity.isEmpty { body["IdentityNumber"] = identity }
@@ -358,8 +374,8 @@ struct MerchantTourismReservationsView: View {
                     outcomeUnknown = true
                 }
                 if outcomeUnknown {
-                    credentialCode = ""; identityNumber = ""
-                    self.error = "核验结果无法确认：\(error.localizedDescription)。凭证已清除，请返回预约记录刷新核实后再重新扫码。"
+                    self.outcomeUnknown = true
+                    self.error = "核验结果无法确认：\(error.localizedDescription)。请先查询凭证状态，不要重复提交。"
                 } else {
                     self.error = error.localizedDescription
                 }
@@ -368,6 +384,62 @@ struct MerchantTourismReservationsView: View {
         guard checkInOperation == operation, activeMerchantID == requestedMerchantID,
               nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal else { return }
         checkingIn = false; confirmingCheckIn = false
+    }
+
+    @MainActor private func resolveCheckInOutcome() async {
+        let code = credentialCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (outcomeUnknown || checkInWindowUnavailableFor == code), !resolvingOutcome, (10...40).contains(code.count), canVerify,
+              let token = store.session?.accessToken,
+              let requestedPrincipal = nativeTourismPrincipal(token), principal == requestedPrincipal else { return }
+        let requestedMerchantID = merchantID
+        checkInOperation += 1
+        let operation = checkInOperation
+        resolvingOutcome = true; error = "正在查询预约当前状态…"
+        do {
+            guard let response = try await MobileAPI(store: store).post(
+                "/api/JHCTITourismReservation/GetMerchantCheckInStatus?merchantId=\(requestedMerchantID)",
+                body: ["CredentialCode": code], authenticated: true, expectedPrincipal: requestedPrincipal
+            ) as? [String: Any] else { throw MobileAPIError.unavailable("状态查询回执无效。") }
+            guard checkInOperation == operation, activeMerchantID == requestedMerchantID,
+                  nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal else { return }
+            let status = Self.consistentString(response, "Status") ?? ""
+            let canCheckInNow = response["CanCheckInNow"] as? Bool
+            guard Self.positiveStringID(Self.consistentString(response, "Id")) != nil,
+                  !(Self.consistentString(response, "ResourceName") ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !(Self.consistentString(response, "SessionName") ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  Self.isValidReservationDate(Self.consistentString(response, "ReservationDate")),
+                  ["Reserved", "CheckedIn", "Cancelled"].contains(status),
+                  status != "Reserved" || canCheckInNow != nil else {
+                throw MobileAPIError.unavailable("状态查询回执不完整。")
+            }
+            switch status {
+            case "CheckedIn":
+                outcomeUnknown = false; checkInWindowUnavailableFor = ""; credentialCode = ""; identityNumber = ""; receipt = response
+                error = "查询确认该预约已核验入园。"
+            case "Reserved":
+                outcomeUnknown = false
+                if canCheckInNow == false {
+                    checkInWindowUnavailableFor = code
+                    error = "查询确认该预约仍未核验，但服务端当前不允许核验。请稍后重新查询；若持续不可核验，请联系商户管理员。"
+                } else {
+                    checkInWindowUnavailableFor = ""
+                    error = "查询确认该预约仍未核验。核对游客凭证及所需身份证后，可重新提交核验。"
+                }
+            default:
+                outcomeUnknown = false; checkInWindowUnavailableFor = ""; credentialCode = ""; identityNumber = ""; receipt = nil
+                error = "该预约已取消，不能核验入园。"
+            }
+        } catch is CancellationError {
+            // 页面离开或请求取消时保留原状态，不把主动取消呈现为查询失败。
+        } catch {
+            if checkInOperation == operation, activeMerchantID == requestedMerchantID,
+               nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal {
+                self.error = "\(error.localizedDescription)。请稍后重试查询，不要重复提交核验。"
+            }
+        }
+        guard checkInOperation == operation, activeMerchantID == requestedMerchantID,
+              nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal else { return }
+        resolvingOutcome = false
     }
 
     @MainActor private func requestScannerAccess() async {

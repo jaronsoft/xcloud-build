@@ -19,7 +19,6 @@ struct NativeProfileAuthenticationForm: View {
     @Binding var captchaAnswer: String
     @Binding var recoveryPassword: String
     @Binding var recoveryPasswordConfirm: String
-    @Binding var consent: Bool
     @Binding var error: String?
     let onLoadCaptcha: () -> Void
     let onSendPhoneCode: () -> Void
@@ -97,7 +96,7 @@ struct NativeProfileAuthenticationForm: View {
                         .frame(minWidth: 88, minHeight: 44)
                         .contentShape(Rectangle())
                     }
-                    .disabled(busy || sendingPhoneCode || countdown > 0 || !captchaKeyPresent || captchaAnswer.isEmpty || (!recoveryMode && !consent))
+                    .disabled(busy || sendingPhoneCode || countdown > 0 || !captchaKeyPresent || captchaAnswer.isEmpty)
                 }
                 if recoveryMode {
                     SecureField("设置新密码", text: $recoveryPassword)
@@ -125,11 +124,6 @@ struct NativeProfileAuthenticationForm: View {
                         if value.unicodeScalars.count > 128 { password = String(value.unicodeScalars.prefix(128)) }
                     }
             }
-            if !recoveryMode {
-                Toggle("我已阅读并同意用户协议与隐私政策", isOn: $consent)
-                    .font(.system(size: NativeTypography.size(14))).tint(Brand.primary)
-                    .disabled(busy || sendingPhoneCode)
-            }
             if let error { Text(error).font(.system(size: NativeTypography.size(14))).foregroundStyle(.red) }
             if !loginEnabled && !smsEnabled && !recoveryEnabled {
                 Text("文旅账号登录暂未开放")
@@ -143,12 +137,12 @@ struct NativeProfileAuthenticationForm: View {
                 .frame(maxWidth: .infinity).frame(minHeight: 48)
                 .contentShape(RoundedRectangle(cornerRadius: 9))
             }
-            .disabled(!(recoveryMode ? recoveryEnabled : smsMode ? smsEnabled : loginEnabled) || busy || sendingPhoneCode || (!recoveryMode && (!consent || !agreementsAccepted)) || phone.isEmpty ||
+            .disabled(!(recoveryMode ? recoveryEnabled : smsMode ? smsEnabled : loginEnabled) || busy || sendingPhoneCode || (!recoveryMode && !agreementsAccepted) || phone.isEmpty ||
                       (recoveryMode ? smsCode.count != 6 || recoveryPassword.isEmpty || recoveryPasswordConfirm.isEmpty : smsMode ? smsCode.count != 6 : password.isEmpty))
             .font(.system(size: NativeTypography.size(14), weight: .semibold))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .background((recoveryMode ? recoveryEnabled : smsMode ? smsEnabled : loginEnabled) && !busy && (recoveryMode || consent && agreementsAccepted) && !phone.isEmpty &&
+            .background((recoveryMode ? recoveryEnabled : smsMode ? smsEnabled : loginEnabled) && !busy && (recoveryMode || agreementsAccepted) && !phone.isEmpty &&
                         (recoveryMode ? smsCode.count == 6 && !recoveryPassword.isEmpty && !recoveryPasswordConfirm.isEmpty : smsMode ? smsCode.count == 6 : !password.isEmpty) ? Brand.primary : Brand.muted,
                         in: RoundedRectangle(cornerRadius: 9))
             .buttonStyle(.plain)

@@ -207,7 +207,8 @@ struct HomeView: View {
             }
             return
         }
-        let key = (item["InternalPageKey"] as? String ?? item["internalPageKey"] as? String ?? "").lowercased()
+        let key = (item["InternalPageKey"] as? String ?? item["internalPageKey"] as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let title = item["Title"] as? String ?? item["title"] as? String
         if key == "intangible-heritage" || (key == "articles" && title?.trimmingCharacters(in: .whitespacesAndNewlines) == "非遗文化") {
             showCatalog(.init(id: "intangibleHeritage", title: "非遗文化", path: "/api/app/articles/List", featureID: "MODULE-GUIDE", categoryValue: "非遗文化"))
@@ -221,7 +222,8 @@ struct HomeView: View {
     }
 
     private func openQuickEntryPage(key: String, index: Int) {
-        if key == "profile" { onProfile() }
+        if key == "discover" { onBrowse() }
+        else if key == "profile" { onProfile() }
         else if key == "coupon-center" { onCouponCenter() }
         else if key == "group-buy" { showPendingFeature("F-FNB-007") }
         else if key == "flash-sale" { showPendingFeature("F-OPS-005") }
@@ -288,10 +290,6 @@ struct HomeView: View {
         }
     }
 
-    private let shortcuts = [
-        "景区门票", "文旅地图", "特色美食", "酒店民宿",
-        "促销活动", "非遗文化", "旅游攻略", "旅游线路"
-    ]
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -448,35 +446,15 @@ struct HomeView: View {
 
     private var shortcutGrid: some View {
         let shortcutIndices = quickEntriesConfigured ? Array(quickEntries.indices) : fallbackShortcutIndices
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 18) {
-            ForEach(shortcutIndices.indices, id: \.self) { position in
-                let shortcutIndex = shortcutIndices[position]
-                let entry = quickEntries.indices.contains(position) ? quickEntries[position] : nil
-                let configuredImage = entry?["ImageUrl"] as? String ?? entry?["imageUrl"] as? String
-                Button {
-                    if let entry { openQuickEntry(entry, index: position) }
-                    else { openQuickEntryPage(key: "", index: shortcutIndex) }
-                } label: {
-                    VStack(spacing: 4) {
-                        if let configuredImage, !configuredImage.isEmpty {
-                            remoteImage(configuredImage, height: 42, fallback: "Quick\(shortcutIndex % 8)")
-                                .frame(width: 42, height: 42)
-                        } else {
-                            Image("Quick\(shortcutIndex % 8)").resizable().scaledToFit().frame(width: 42, height: 42)
-                        }
-                        VStack(spacing: 2) {
-                            Text(entry?["Title"] as? String ?? entry?["title"] as? String ?? (entry == nil ? shortcuts[shortcutIndex] : "文旅服务"))
-                                .font(.system(size: NativeTypography.size(12), weight: .medium)).foregroundStyle(Brand.ink)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.vertical, 20).padding(.horizontal, 12)
-        .background(.white, in: RoundedRectangle(cornerRadius: 14))
-        .padding(.horizontal, 16)
+        return NativeHomeQuickEntrySection(
+            store: store,
+            shortcutIndices: shortcutIndices,
+            entries: quickEntries,
+            titleForEntry: { entry, index in NativeHomeQuickEntryPresentation.fallbackTitle(for: entry, index: index) },
+            iconIndexForEntry: { entry, index in NativeHomeQuickEntryPresentation.iconIndex(for: entry, fallback: index) },
+            onOpenEntry: { entry, index in openQuickEntry(entry, index: index) },
+            onOpenFallback: { key, index in openQuickEntryPage(key: key, index: index) }
+        )
     }
 
     private var orderedHomeSections: [HomeSectionView] {
@@ -645,7 +623,14 @@ struct HomeView: View {
                 ["Key": "featured", "Title": "精选推荐", "IsEnabled": true, "SortOrder": 0],
                 ["Key": "activities", "Title": "最新活动", "IsEnabled": true, "SortOrder": 1]
             ]
-            let candidates = rawModules.compactMap(CatalogModule.init).sorted { $0.sortOrder < $1.sortOrder }
+            let moduleKeyCounts = Dictionary(grouping: rawModules.compactMap { row in
+                (row["Key"] as? String ?? row["key"] as? String)?.lowercased()
+            }, by: { $0 }).mapValues(\.count)
+            let uniqueModules = rawModules.filter { row in
+                guard let key = row["Key"] as? String ?? row["key"] as? String else { return false }
+                return moduleKeyCounts[key.lowercased()] == 1
+            }
+            let candidates = uniqueModules.compactMap(CatalogModule.init).sorted { $0.sortOrder < $1.sortOrder }
             var enabled: [CatalogModule] = []
             var published: [String: [[String: Any]]] = [:]
             var catalogErrors: [String: String] = [:]
@@ -685,12 +670,12 @@ struct HomeView: View {
             catalogs = enabled
             moduleRows = published
             moduleErrors = catalogErrors
-            let featuredModule = rawModules.first {
+            let featuredModule = uniqueModules.first {
                 ($0["Key"] as? String ?? $0["key"] as? String) == "featured"
                     && ($0["IsEnabled"] as? Bool ?? $0["isEnabled"] as? Bool ?? false)
             }
             featuredSortOrder = featuredModule?["SortOrder"] as? Int ?? featuredModule?["sortOrder"] as? Int ?? 0
-            configuredOrder = rawModules.enumerated().filter {
+            configuredOrder = uniqueModules.enumerated().filter {
                 $0.element["IsEnabled"] as? Bool ?? $0.element["isEnabled"] as? Bool ?? false
             }
                 .sorted { left, right in

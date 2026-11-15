@@ -24,6 +24,7 @@ struct NativeTicketOrdersView: View {
     @State private var operationBusy = false
     @State private var operationNotice: String?
     @State private var paymentNotice: String?
+    @State private var ticketBookingOpen = false
     @State private var detailID = ""
     @State private var detailOwner = ""
     @State private var pageVisible = true
@@ -61,6 +62,11 @@ struct NativeTicketOrdersView: View {
                 if scenePhase == .active && pageVisible {
                     if detailID.isEmpty { await loadOrders(reset: true) } else { await loadOrder(id: detailID) }
                 }
+            }
+            .task(id: "\(store.session?.accessToken ?? "")-\(detailID)-\(scenePhase)") {
+                ticketBookingOpen = false
+                guard !detailID.isEmpty, scenePhase == .active else { return }
+                ticketBookingOpen = await MobileAPI(store: store).featureAccessState("F-TKT-002", forceRefresh: true) == .open
             }
             .task(id: scenePhase) {
                 guard scenePhase == .active && pageVisible else { return }
@@ -260,7 +266,10 @@ struct NativeTicketOrdersView: View {
             Text("支付宝将通过安全网页打开，返回应用后自动核对订单状态。")
                 .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
             if let paymentNotice { Text(paymentNotice).font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.primary) }
-            if canResume {
+            if !ticketBookingOpen {
+                Text("门票订购功能暂未开放，当前订单可查询状态或按规则取消。")
+                    .font(.system(size: NativeTypography.size(14))).foregroundStyle(.orange)
+            } else if canResume {
                 Button(operationBusy ? "正在准备支付…" : "使用支付宝支付") { Task { await startTicketAlipayPayment(orderId: orderId) } }
                     .disabled(operationBusy || loading || orderId.isEmpty)
                     .frame(maxWidth: .infinity).padding(.vertical, 8)
@@ -276,6 +285,12 @@ struct NativeTicketOrdersView: View {
     }
 
     private func startTicketAlipayPayment(orderId: String) async {
+        guard await MobileAPI(store: store).featureAccessState("F-TKT-002", forceRefresh: true) == .open else {
+            ticketBookingOpen = false
+            paymentNotice = "门票订购功能暂未开放，当前订单可查询状态或按规则取消。"
+            return
+        }
+        ticketBookingOpen = true
         let paymentStatus = selectedOrder?["PaymentStatus"] as? String ?? ""
         let paymentProvider = (selectedOrder?["PaymentProvider"] as? String ?? "").lowercased()
         let paymentScene = (selectedOrder?["PaymentScene"] as? String ?? "").lowercased()

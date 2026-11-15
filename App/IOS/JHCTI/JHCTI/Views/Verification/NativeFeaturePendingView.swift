@@ -61,12 +61,14 @@ struct NativeFeaturePendingView: View {
     @MainActor private func load() async {
         loading = true; failed = false
         do {
-            guard let value = try await MobileAPI(store: store).get("/api/JHCTIFeatureAccess/GetPublicStatus?featureId=\(featureId)") as? [String: Any],
-                  let configured = value["IsConfigured"] as? Bool, let enabled = value["IsEnabled"] as? Bool else {
-                throw MobileAPIError.unavailable("开放状态回执无效")
-            }
+            let accessState = await MobileAPI(store: store).featureAccessState(featureId, forceRefresh: true)
             try Task.checkCancellation()
-            status = enabled && configured ? "Open" : configured ? "Closed" : "PendingConfirmation"
+            switch accessState {
+            case .open: status = "Open"
+            case .closed: status = "Closed"
+            case .pendingConfirmation: status = "PendingConfirmation"
+            case .unavailable: throw MobileAPIError.unavailable("开放状态回执无效")
+            }
         } catch is CancellationError {
             return
         } catch {

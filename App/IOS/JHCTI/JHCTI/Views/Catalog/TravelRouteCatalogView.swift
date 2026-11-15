@@ -165,7 +165,7 @@ struct TravelRouteCatalogView: View {
             guard await MobileAPI(store: store).featureEnabled("MODULE-TRAVEL-ROUTE") else {
                 throw MobileAPIError.unavailable("旅游线路暂未开放")
             }
-            let path = "/api/JHCTITravelRoute/GetPublicPage?page=\(requestedPage)&pageSize=\(pageSize)&guests=1"
+            let path = "/api/JHCTITravelRoute/GetPublicPage?page=\(requestedPage)&pageSize=\(pageSize)&guests=1&includeSessions=false"
             let value = try await MobileAPI(store: store).getPublicCached(path, forceRefresh: true) as? [String: Any]
             guard sequence == requestSequence else { return }
             guard let value,
@@ -194,13 +194,10 @@ struct TravelRouteCatalogView: View {
     @MainActor private func loadBookingStatus() async {
         bookingStatus = "loading"; bookingNote = "正在确认预订服务状态…"
         do {
-            guard let value = try await MobileAPI(store: store).get("/api/JHCTIFeatureAccess/GetPublicStatus?featureId=F-DST-002") as? [String: Any] else {
-                throw MobileAPIError.unavailable("服务状态响应格式异常")
-            }
-            let configured = value["IsConfigured"] as? Bool ?? value["isConfigured"] as? Bool ?? false
-            let enabled = value["IsEnabled"] as? Bool ?? value["isEnabled"] as? Bool ?? false
-            bookingStatus = configured && enabled ? "open" : "closed"
-            bookingNote = configured && enabled
+            let isOpen = await MobileAPI(store: store).featureAccessState("F-DST-002", forceRefresh: true) == .open
+            guard !Task.isCancelled else { return }
+            bookingStatus = isOpen ? "open" : "closed"
+            bookingNote = isOpen
                 ? "预订服务已开放；可订班期以线路详情实时信息为准，订单可在“我的旅游线路”查看。"
                 : "当前仅提供线路浏览，预订与支付暂未开放。"
         } catch is CancellationError {

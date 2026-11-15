@@ -15,6 +15,7 @@ struct ResourceDetailView: View {
     @State private var revision = 0
     @State private var detailSequence = 0
     @State private var selectedDetailTab = "details"
+    @State private var guideAccessState: NativePublicFeatureAccessState = .unavailable
     @State private var imagePage = 0
     @State private var summaryExpanded = false
     @State private var reservationOpen = false
@@ -113,6 +114,7 @@ struct ResourceDetailView: View {
                     scenicRecoveryPanel
                     NativeResourceOverviewSection(store: store, item: item, detail: detail,
                         initialGuideRouteID: initialGuideRouteID,
+                        guideAccessState: guideAccessState,
                         ticketBookingEnabled: ticketBookingEnabled,
                         reservationUnavailable: scenicRecoveryPending || scenicRecoveryChecking,
                         selectedDetailTab: $selectedDetailTab, summaryExpanded: $summaryExpanded,
@@ -726,7 +728,7 @@ struct ResourceDetailView: View {
     private func load() async {
         detailSequence += 1; let operation = detailSequence
         let token = store.session?.accessToken
-        loading = true; error = nil; detail = nil; isFavorited = false; selectedDetailTab = "details"; summaryExpanded = false
+        loading = true; error = nil; detail = nil; guideAccessState = .unavailable; isFavorited = false; selectedDetailTab = "details"; summaryExpanded = false
         do {
             guard await MobileAPI(store: store).featureEnabled("MODULE-SCENIC") else {
                 throw MobileAPIError.unavailable("景点模块暂未开放")
@@ -743,7 +745,11 @@ struct ResourceDetailView: View {
                 result["Id"] as? String == item.id else {
                 throw MobileAPIError.unavailable("景点详情数据异常，请重试")
             }
-            detail = result
+            guideAccessState = isFacility ? .closed
+                : await MobileAPI(store: store).featureAccessState("MODULE-GUIDE", forceRefresh: true)
+            var visibleDetail = result
+            if guideAccessState != .open { visibleDetail.removeValue(forKey: "Routes") }
+            detail = visibleDetail
             isFavorited = result["IsFavorited"] as? Bool ?? false
             let ticketEnabled = await MobileAPI(store: store).featureEnabled("F-TKT-002", forceRefresh: true)
             guard operation == detailSequence, store.session?.accessToken == token else { return }

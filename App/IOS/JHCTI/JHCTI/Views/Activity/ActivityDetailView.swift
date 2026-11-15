@@ -160,7 +160,7 @@ struct ActivityDetailView: View {
                                          fallbackLabel: "主题插画")
                         .frame(maxWidth: .infinity)
                     ActivityDetailSummarySection(store: store, activityID: id, detail: detail,
-                                                 hasSessions: !sessions.isEmpty)
+                                                 hasSessions: !sessions.isEmpty, registrationEnabled: registrationEnabled)
                     let description = detail["Description"] as? String ?? ""
                     let html = detail["ContentHtml"] as? String ?? ""
                     ActivityDetailContentSection(selectedTab: $selectedContentTab,
@@ -173,6 +173,7 @@ struct ActivityDetailView: View {
                                     sessions: sessions,
                                     availabilityRows: availability?["Sessions"] as? [[String: Any]] ?? [],
                                     selectedSessionID: selectedSessionID,
+                                    registrationEnabled: registrationEnabled,
                                     isBusy: busy,
                                     now: context.date,
                                     isBookable: sessionIsBookable,

@@ -495,7 +495,7 @@ struct JourneyView: View {
                 throw MobileAPIError.unavailable("旅游线路暂未开放")
             }
             let response = try await MobileAPI(store: store).getPublicCached(
-                "/api/JHCTITravelRoute/GetPublicPage?page=1&pageSize=3&guests=1",
+                "/api/JHCTITravelRoute/GetPublicPage?page=1&pageSize=3&guests=1&includeSessions=false",
                 forceRefresh: routeRevision > 0) as? [String: Any]
             routes = response?["data"] as? [[String: Any]] ?? response?["Data"] as? [[String: Any]] ?? []
         } catch { routeError = error.localizedDescription }
