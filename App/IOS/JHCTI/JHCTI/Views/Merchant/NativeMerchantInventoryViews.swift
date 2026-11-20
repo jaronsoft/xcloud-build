@@ -137,15 +137,13 @@ struct MerchantStockView: View {
             "Id": Self.idString(row["Id"] ?? row["id"] ?? "0"), "Version": Self.intValue(row["Version"] ?? row["version"]),
             "MerchantId": merchantID, "StoreId": storeID, "SkuId": skuID, "Stock": stock
         ]
-        var committed = false
         do {
             _ = try await MobileAPI(store: store).post("/api/JHCTIMerchant/SetStoreSkuStock", body: body, authenticated: true,
                 expectedPrincipal: expectedPrincipal)
-            committed = true
             guard store.session?.accessToken == token else { return }
             await load(page: page)
         } catch is CancellationError {
-            if store.session?.accessToken == token { error = committed ? "库存已保存，但刷新被取消；请重新读取确认当前状态。" : "库存保存结果未确认，请刷新库存并核对版本后再操作。" }
+            if store.session?.accessToken == token { error = "库存保存结果未确认，请刷新库存并核对版本后再操作。" }
         } catch { if store.session?.accessToken == token { self.error = "\(error.localizedDescription)；请刷新库存并核对版本后重试。" } }
         saving = false
     }
@@ -357,15 +355,13 @@ struct MerchantProductsView: View {
             "MediaUrls": row["MediaUrls"] ?? [], "Attributes": row["Attributes"] ?? [],
             "Specifications": row["Specifications"] ?? [], "SortOrder": Self.intValue(row["SortOrder"]), "Skus": saveSkus
         ]
-        var committed = false
         do {
             _ = try await MobileAPI(store: store).post("/api/JHCTIProduct/Save", body: body, authenticated: true,
                 expectedPrincipal: expectedPrincipal)
-            committed = true
             guard store.session?.accessToken == token else { return }
             await load(page: page)
         } catch is CancellationError {
-            if store.session?.accessToken == token { error = committed ? "商品已保存，但刷新被取消；请重新读取确认当前状态。" : "商品保存结果未确认，请重新读取商品并核对版本后再操作。" }
+            if store.session?.accessToken == token { error = "商品保存结果未确认，请重新读取商品并核对版本后再操作。" }
         } catch { if store.session?.accessToken == token { self.error = "\(error.localizedDescription)；请重新读取商品并核对版本后再操作。" } }
         saving = false
     }
@@ -378,15 +374,13 @@ struct MerchantProductsView: View {
         let path: String
         if pending.action == "review" { path = "/api/JHCTIProduct/SubmitReview" }
         else { path = "/api/JHCTIProduct/UpdateStatus"; body["Status"] = pending.action }
-        var committed = false
         do {
             _ = try await MobileAPI(store: store).post(path, body: body, authenticated: true,
                 expectedPrincipal: expectedPrincipal)
-            committed = true
             guard store.session?.accessToken == token else { return }
             await load(page: page)
         } catch is CancellationError {
-            if store.session?.accessToken == token { error = committed ? "商品操作已提交，但刷新被取消；请重新读取确认当前状态。" : "商品操作结果未确认，请刷新商品状态后再操作。" }
+            if store.session?.accessToken == token { error = "商品操作结果未确认，请刷新商品状态后再操作。" }
         } catch { if store.session?.accessToken == token { self.error = "\(error.localizedDescription)；请刷新商品状态后再操作。" } }
         saving = false
     }

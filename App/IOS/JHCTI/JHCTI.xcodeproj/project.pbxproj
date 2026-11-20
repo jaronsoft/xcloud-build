@@ -7,10 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        B6E700000000000000000001 /* NativeResourceBrowseEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E700000000000000000002 /* NativeResourceBrowseEmptyState.swift */; };
         B6A800000000000000000001 /* NativeHomeQuickEntryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A800000000000000000002 /* NativeHomeQuickEntryPresentation.swift */; };
         B6A600000000000000000001 /* ActivityRegistrationCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A600000000000000000002 /* ActivityRegistrationCard.swift */; };
         B6A700000000000000000001 /* NativeHomeQuickEntrySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A700000000000000000002 /* NativeHomeQuickEntrySection.swift */; };
         B6A500000000000000000001 /* ActivityRegistrationFormSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A500000000000000000002 /* ActivityRegistrationFormSection.swift */; };
+        B6D600000000000000000001 /* ActivityRegistrationInputSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D600000000000000000002 /* ActivityRegistrationInputSupport.swift */; };
+        B6D700000000000000000001 /* DiningPublicQueueActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D700000000000000000002 /* DiningPublicQueueActions.swift */; };
+        B6D800000000000000000001 /* NativeTicketBookingCatalogActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D800000000000000000002 /* NativeTicketBookingCatalogActions.swift */; };
+        B6D900000000000000000001 /* NativeProfileAuthenticationActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D900000000000000000002 /* NativeProfileAuthenticationActions.swift */; };
+        B6E100000000000000000001 /* NativeNearbyResourceQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E100000000000000000002 /* NativeNearbyResourceQuery.swift */; };
+        B6E200000000000000000001 /* NativeHomeDataLoading.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E200000000000000000002 /* NativeHomeDataLoading.swift */; };
+        B6E300000000000000000001 /* NativeScenicReservationRecoveryActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E300000000000000000002 /* NativeScenicReservationRecoveryActions.swift */; };
         B69E00000000000000000001 /* ActivityDetailSessionSelectionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69E00000000000000000002 /* ActivityDetailSessionSelectionSection.swift */; };
         B69D00000000000000000001 /* NativeResourceBrowseMapControlsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69D00000000000000000002 /* NativeResourceBrowseMapControlsSection.swift */; };
         B69C00000000000000000001 /* NativeResourceBrowseResultsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B69C00000000000000000002 /* NativeResourceBrowseResultsSection.swift */; };
@@ -41,9 +49,13 @@
         B66D00000000000000000001 /* ResourceDetailSupportingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66D00000000000000000002 /* ResourceDetailSupportingViews.swift */; };
         B66C00000000000000000001 /* NativeHomeRecommendationRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66C00000000000000000002 /* NativeHomeRecommendationRules.swift */; };
         B66B00000000000000000001 /* NativeBookingPresentationRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66B00000000000000000002 /* NativeBookingPresentationRules.swift */; };
+        B6D100000000000000000001 /* NativeTicketCatalogSelectionRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D100000000000000000002 /* NativeTicketCatalogSelectionRules.swift */; };
         B64C00000000000000000001 /* HotelPublicDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64C00000000000000000002 /* HotelPublicDetailView.swift */; };
+		B6E400000000000000000001 /* HotelPublicDetailSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E400000000000000000002 /* HotelPublicDetailSupport.swift */; };
+		B6E500000000000000000001 /* HotelPublicDetailValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E500000000000000000002 /* HotelPublicDetailValidation.swift */; };
         B64D00000000000000000001 /* NativeBookingOrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64D00000000000000000002 /* NativeBookingOrdersView.swift */; };
         B64E00000000000000000001 /* NativeTradeCheckoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64E00000000000000000002 /* NativeTradeCheckoutView.swift */; };
+        B6E600000000000000000001 /* NativeTradeCheckoutActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E600000000000000000002 /* NativeTradeCheckoutActions.swift */; };
         B64F00000000000000000001 /* NativeCouponsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64F00000000000000000002 /* NativeCouponsView.swift */; };
         B65000000000000000000001 /* TravelRouteDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65000000000000000000002 /* TravelRouteDetailView.swift */; };
         B65200000000000000000001 /* NativeVerificationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65200000000000000000002 /* NativeVerificationViews.swift */; };
@@ -51,18 +63,22 @@
         B65400000000000000000001 /* NativeCartViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65400000000000000000002 /* NativeCartViews.swift */; };
         B65500000000000000000001 /* NativeMerchantInventoryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65500000000000000000002 /* NativeMerchantInventoryViews.swift */; };
         B65600000000000000000001 /* NativeMerchantStaffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65600000000000000000002 /* NativeMerchantStaffView.swift */; };
-        B65700000000000000000001 /* NativeMerchantOperationsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65700000000000000000002 /* NativeMerchantOperationsViews.swift */; };
+        B6C600000000000000000001 /* MerchantActivityWorkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C600000000000000000002 /* MerchantActivityWorkView.swift */; };
+        B6C700000000000000000001 /* MerchantScenicWorkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C700000000000000000002 /* MerchantScenicWorkView.swift */; };
         B65800000000000000000001 /* NativeMerchantOrderViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65800000000000000000002 /* NativeMerchantOrderViews.swift */; };
+        B6C800000000000000000001 /* NativeMerchantAfterSalesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C800000000000000000002 /* NativeMerchantAfterSalesView.swift */; };
         B65900000000000000000001 /* NativeMerchantTicketViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65900000000000000000002 /* NativeMerchantTicketViews.swift */; };
         B66000000000000000000001 /* NativeMerchantHotelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66000000000000000000002 /* NativeMerchantHotelsView.swift */; };
         B66100000000000000000001 /* NativeMerchantWorkbenchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66100000000000000000002 /* NativeMerchantWorkbenchView.swift */; };
         B66200000000000000000001 /* NativeRestaurantWorkbenchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66200000000000000000002 /* NativeRestaurantWorkbenchViews.swift */; };
+        B6C900000000000000000001 /* NativeRestaurantSupplementaryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C900000000000000000002 /* NativeRestaurantSupplementaryViews.swift */; };
         B66300000000000000000001 /* DiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66300000000000000000002 /* DiscoverView.swift */; };
         B66400000000000000000001 /* NativeCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66400000000000000000002 /* NativeCatalogView.swift */; };
         B66500000000000000000001 /* HotelCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66500000000000000000002 /* HotelCatalogView.swift */; };
         B66600000000000000000001 /* TravelRouteCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66600000000000000000002 /* TravelRouteCatalogView.swift */; };
         B66700000000000000000001 /* ProductCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66700000000000000000002 /* ProductCatalogView.swift */; };
         B66800000000000000000001 /* NativeProductDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66800000000000000000002 /* NativeProductDetailView.swift */; };
+        B6D500000000000000000001 /* NativePublicProductReviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D500000000000000000002 /* NativePublicProductReviews.swift */; };
         B67C00000000000000000001 /* NativeProductMediaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67C00000000000000000002 /* NativeProductMediaViews.swift */; };
         B66900000000000000000001 /* ArticleDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66900000000000000000002 /* ArticleDetailView.swift */; };
         B66A00000000000000000001 /* NativePageResponseRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66A00000000000000000002 /* NativePageResponseRules.swift */; };
@@ -81,19 +97,30 @@
         B6A400000000000000000001 /* NativeHomeBannerDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A400000000000000000002 /* NativeHomeBannerDestination.swift */; };
         B68400000000000000000001 /* ActivityRegistrationSelfCheckIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68400000000000000000002 /* ActivityRegistrationSelfCheckIn.swift */; };
         B68500000000000000000001 /* NativeHomeFeaturedSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68500000000000000000002 /* NativeHomeFeaturedSection.swift */; };
+        B6D300000000000000000001 /* NativeHomeSectionList.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D300000000000000000002 /* NativeHomeSectionList.swift */; };
         B64800000000000000000001 /* NativeHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64800000000000000000002 /* NativeHomeView.swift */; };
         B64600000000000000000001 /* NativeCommerceOrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64600000000000000000002 /* NativeCommerceOrdersView.swift */; };
+		B6CE00000000000000000001 /* NativeCommerceDigitalDeliverySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6CE00000000000000000002 /* NativeCommerceDigitalDeliverySection.swift */; };
+		B6CA00000000000000000001 /* NativeCommerceOrderItemsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6CA00000000000000000002 /* NativeCommerceOrderItemsSection.swift */; };
 		B6C100000000000000000001 /* NativeCommerceShipmentCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C100000000000000000002 /* NativeCommerceShipmentCard.swift */; };
         B64700000000000000000001 /* NativeCommerceOrderSupportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64700000000000000000002 /* NativeCommerceOrderSupportViews.swift */; };
         B64400000000000000000001 /* ActivityRegistrationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64400000000000000000002 /* ActivityRegistrationsView.swift */; };
+        B6E800000000000000000001 /* MyActivityRegistrationRecordCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E800000000000000000002 /* MyActivityRegistrationRecordCard.swift */; };
+        B6D200000000000000000001 /* ActivityRegistrationConfirmationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D200000000000000000002 /* ActivityRegistrationConfirmationOverlay.swift */; };
         B64500000000000000000001 /* NativeActivityQrScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64500000000000000000002 /* NativeActivityQrScanner.swift */; };
         B64100000000000000000001 /* NativeSupportTicketsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64100000000000000000002 /* NativeSupportTicketsView.swift */; };
+        B6D400000000000000000001 /* NativeSupportTicketDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D400000000000000000002 /* NativeSupportTicketDetailView.swift */; };
         B64000000000000000000001 /* NativeMerchantOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64000000000000000000002 /* NativeMerchantOnboardingView.swift */; };
         B63900000000000000000001 /* NativeFavoritesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63900000000000000000002 /* NativeFavoritesView.swift */; };
         B63800000000000000000001 /* DiscoveryCategoryGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63800000000000000000002 /* DiscoveryCategoryGrid.swift */; };
         B63700000000000000000001 /* ResourceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63700000000000000000002 /* ResourceDetailView.swift */; };
+		B6CD00000000000000000001 /* NativeScenicReservationRecoveryRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6CD00000000000000000002 /* NativeScenicReservationRecoveryRules.swift */; };
         B63600000000000000000001 /* ActivityDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63600000000000000000002 /* ActivityDetailView.swift */; };
         B63500000000000000000001 /* NativeDiningPackageOrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63500000000000000000002 /* NativeDiningPackageOrdersView.swift */; };
+        B6C200000000000000000001 /* NativeDiningPackageRefundValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C200000000000000000002 /* NativeDiningPackageRefundValidation.swift */; };
+        B6C300000000000000000001 /* NativeDiningPackageOrderValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C300000000000000000002 /* NativeDiningPackageOrderValidation.swift */; };
+        B6C400000000000000000001 /* NativeMerchantTicketsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C400000000000000000002 /* NativeMerchantTicketsView.swift */; };
+        B6C500000000000000000001 /* NativeTradePaymentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C500000000000000000002 /* NativeTradePaymentView.swift */; };
         B63400000000000000000001 /* NativeDiningPackagePurchaseViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63400000000000000000002 /* NativeDiningPackagePurchaseViews.swift */; };
         B63300000000000000000001 /* DiningPublicDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63300000000000000000002 /* DiningPublicDetailView.swift */; };
         B63200000000000000000001 /* RestaurantMenuManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63200000000000000000002 /* RestaurantMenuManagementView.swift */; };
@@ -133,10 +160,18 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        B6E700000000000000000002 /* NativeResourceBrowseEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeResourceBrowseEmptyState.swift; sourceTree = "<group>"; };
         B6A800000000000000000002 /* NativeHomeQuickEntryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeQuickEntryPresentation.swift; sourceTree = "<group>"; };
         B6A600000000000000000002 /* ActivityRegistrationCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationCard.swift; sourceTree = "<group>"; };
         B6A700000000000000000002 /* NativeHomeQuickEntrySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeQuickEntrySection.swift; sourceTree = "<group>"; };
         B6A500000000000000000002 /* ActivityRegistrationFormSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationFormSection.swift; sourceTree = "<group>"; };
+        B6D600000000000000000002 /* ActivityRegistrationInputSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationInputSupport.swift; sourceTree = "<group>"; };
+        B6D700000000000000000002 /* DiningPublicQueueActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiningPublicQueueActions.swift; sourceTree = "<group>"; };
+        B6D800000000000000000002 /* NativeTicketBookingCatalogActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketBookingCatalogActions.swift; sourceTree = "<group>"; };
+        B6D900000000000000000002 /* NativeProfileAuthenticationActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProfileAuthenticationActions.swift; sourceTree = "<group>"; };
+        B6E100000000000000000002 /* NativeNearbyResourceQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNearbyResourceQuery.swift; sourceTree = "<group>"; };
+        B6E200000000000000000002 /* NativeHomeDataLoading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeDataLoading.swift; sourceTree = "<group>"; };
+        B6E300000000000000000002 /* NativeScenicReservationRecoveryActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeScenicReservationRecoveryActions.swift; sourceTree = "<group>"; };
         B69E00000000000000000002 /* ActivityDetailSessionSelectionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDetailSessionSelectionSection.swift; sourceTree = "<group>"; };
         B69D00000000000000000002 /* NativeResourceBrowseMapControlsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeResourceBrowseMapControlsSection.swift; sourceTree = "<group>"; };
         B69C00000000000000000002 /* NativeResourceBrowseResultsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeResourceBrowseResultsSection.swift; sourceTree = "<group>"; };
@@ -167,9 +202,13 @@
         B66D00000000000000000002 /* ResourceDetailSupportingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDetailSupportingViews.swift; sourceTree = "<group>"; };
         B66C00000000000000000002 /* NativeHomeRecommendationRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeRecommendationRules.swift; sourceTree = "<group>"; };
         B66B00000000000000000002 /* NativeBookingPresentationRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBookingPresentationRules.swift; sourceTree = "<group>"; };
+        B6D100000000000000000002 /* NativeTicketCatalogSelectionRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketCatalogSelectionRules.swift; sourceTree = "<group>"; };
         B64C00000000000000000002 /* HotelPublicDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotelPublicDetailView.swift; sourceTree = "<group>"; };
+        B6E400000000000000000002 /* HotelPublicDetailSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotelPublicDetailSupport.swift; sourceTree = "<group>"; };
+		B6E500000000000000000002 /* HotelPublicDetailValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotelPublicDetailValidation.swift; sourceTree = "<group>"; };
         B64D00000000000000000002 /* NativeBookingOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBookingOrdersView.swift; sourceTree = "<group>"; };
         B64E00000000000000000002 /* NativeTradeCheckoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTradeCheckoutView.swift; sourceTree = "<group>"; };
+        B6E600000000000000000002 /* NativeTradeCheckoutActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTradeCheckoutActions.swift; sourceTree = "<group>"; };
         B64F00000000000000000002 /* NativeCouponsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCouponsView.swift; sourceTree = "<group>"; };
         B65000000000000000000002 /* TravelRouteDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelRouteDetailView.swift; sourceTree = "<group>"; };
         B65200000000000000000002 /* NativeVerificationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeVerificationViews.swift; sourceTree = "<group>"; };
@@ -177,18 +216,22 @@
         B65400000000000000000002 /* NativeCartViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCartViews.swift; sourceTree = "<group>"; };
         B65500000000000000000002 /* NativeMerchantInventoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantInventoryViews.swift; sourceTree = "<group>"; };
         B65600000000000000000002 /* NativeMerchantStaffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantStaffView.swift; sourceTree = "<group>"; };
-        B65700000000000000000002 /* NativeMerchantOperationsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantOperationsViews.swift; sourceTree = "<group>"; };
+        B6C600000000000000000002 /* MerchantActivityWorkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantActivityWorkView.swift; sourceTree = "<group>"; };
+        B6C700000000000000000002 /* MerchantScenicWorkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantScenicWorkView.swift; sourceTree = "<group>"; };
         B65800000000000000000002 /* NativeMerchantOrderViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantOrderViews.swift; sourceTree = "<group>"; };
+        B6C800000000000000000002 /* NativeMerchantAfterSalesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantAfterSalesView.swift; sourceTree = "<group>"; };
         B65900000000000000000002 /* NativeMerchantTicketViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantTicketViews.swift; sourceTree = "<group>"; };
         B66000000000000000000002 /* NativeMerchantHotelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantHotelsView.swift; sourceTree = "<group>"; };
         B66100000000000000000002 /* NativeMerchantWorkbenchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantWorkbenchView.swift; sourceTree = "<group>"; };
         B66200000000000000000002 /* NativeRestaurantWorkbenchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRestaurantWorkbenchViews.swift; sourceTree = "<group>"; };
+        B6C900000000000000000002 /* NativeRestaurantSupplementaryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRestaurantSupplementaryViews.swift; sourceTree = "<group>"; };
         B66300000000000000000002 /* DiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverView.swift; sourceTree = "<group>"; };
         B66400000000000000000002 /* NativeCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCatalogView.swift; sourceTree = "<group>"; };
         B66500000000000000000002 /* HotelCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotelCatalogView.swift; sourceTree = "<group>"; };
         B66600000000000000000002 /* TravelRouteCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelRouteCatalogView.swift; sourceTree = "<group>"; };
         B66700000000000000000002 /* ProductCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductCatalogView.swift; sourceTree = "<group>"; };
         B66800000000000000000002 /* NativeProductDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProductDetailView.swift; sourceTree = "<group>"; };
+        B6D500000000000000000002 /* NativePublicProductReviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePublicProductReviews.swift; sourceTree = "<group>"; };
         B67C00000000000000000002 /* NativeProductMediaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeProductMediaViews.swift; sourceTree = "<group>"; };
         B6A300000000000000000002 /* ActivityRegistrationCredential.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationCredential.swift; sourceTree = "<group>"; };
         B6A400000000000000000002 /* NativeHomeBannerDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeBannerDestination.swift; sourceTree = "<group>"; };
@@ -207,19 +250,30 @@
         B6A200000000000000000002 /* DiningPublicPackagesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiningPublicPackagesSection.swift; sourceTree = "<group>"; };
         B68400000000000000000002 /* ActivityRegistrationSelfCheckIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationSelfCheckIn.swift; sourceTree = "<group>"; };
         B68500000000000000000002 /* NativeHomeFeaturedSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeFeaturedSection.swift; sourceTree = "<group>"; };
+        B6D300000000000000000002 /* NativeHomeSectionList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeSectionList.swift; sourceTree = "<group>"; };
         B64800000000000000000002 /* NativeHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeView.swift; sourceTree = "<group>"; };
         B64600000000000000000002 /* NativeCommerceOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceOrdersView.swift; sourceTree = "<group>"; };
+		B6CE00000000000000000002 /* NativeCommerceDigitalDeliverySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceDigitalDeliverySection.swift; sourceTree = "<group>"; };
+		B6CA00000000000000000002 /* NativeCommerceOrderItemsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceOrderItemsSection.swift; sourceTree = "<group>"; };
 		B6C100000000000000000002 /* NativeCommerceShipmentCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceShipmentCard.swift; sourceTree = "<group>"; };
         B64700000000000000000002 /* NativeCommerceOrderSupportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceOrderSupportViews.swift; sourceTree = "<group>"; };
         B64400000000000000000002 /* ActivityRegistrationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationsView.swift; sourceTree = "<group>"; };
+        B6E800000000000000000002 /* MyActivityRegistrationRecordCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyActivityRegistrationRecordCard.swift; sourceTree = "<group>"; };
+        B6D200000000000000000002 /* ActivityRegistrationConfirmationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationConfirmationOverlay.swift; sourceTree = "<group>"; };
         B64500000000000000000002 /* NativeActivityQrScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeActivityQrScanner.swift; sourceTree = "<group>"; };
         B64100000000000000000002 /* NativeSupportTicketsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSupportTicketsView.swift; sourceTree = "<group>"; };
+        B6D400000000000000000002 /* NativeSupportTicketDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSupportTicketDetailView.swift; sourceTree = "<group>"; };
         B64000000000000000000002 /* NativeMerchantOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantOnboardingView.swift; sourceTree = "<group>"; };
         B63900000000000000000002 /* NativeFavoritesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeFavoritesView.swift; sourceTree = "<group>"; };
         B63800000000000000000002 /* DiscoveryCategoryGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryCategoryGrid.swift; sourceTree = "<group>"; };
         B63700000000000000000002 /* ResourceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDetailView.swift; sourceTree = "<group>"; };
+		B6CD00000000000000000002 /* NativeScenicReservationRecoveryRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeScenicReservationRecoveryRules.swift; sourceTree = "<group>"; };
         B63600000000000000000002 /* ActivityDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDetailView.swift; sourceTree = "<group>"; };
         B63500000000000000000002 /* NativeDiningPackageOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningPackageOrdersView.swift; sourceTree = "<group>"; };
+        B6C200000000000000000002 /* NativeDiningPackageRefundValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningPackageRefundValidation.swift; sourceTree = "<group>"; };
+        B6C300000000000000000002 /* NativeDiningPackageOrderValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningPackageOrderValidation.swift; sourceTree = "<group>"; };
+        B6C400000000000000000002 /* NativeMerchantTicketsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantTicketsView.swift; sourceTree = "<group>"; };
+        B6C500000000000000000002 /* NativeTradePaymentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTradePaymentView.swift; sourceTree = "<group>"; };
         B63400000000000000000002 /* NativeDiningPackagePurchaseViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningPackagePurchaseViews.swift; sourceTree = "<group>"; };
         B63300000000000000000002 /* DiningPublicDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiningPublicDetailView.swift; sourceTree = "<group>"; };
         B63200000000000000000002 /* RestaurantMenuManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestaurantMenuManagementView.swift; sourceTree = "<group>"; };
@@ -296,6 +350,7 @@
 				B61900000000000000000003 /* BookingDomain */,
 				B6A300000000000000000003 /* ActivityDomain */,
 				B62000000000000000000003 /* CatalogDomain */,
+				B6E000000000000000000003 /* ResourceDomain */,
 				B62100000000000000000003 /* ReportsDomain */,
 				B63100000000000000000003 /* RestaurantDomain */,
 				B66A00000000000000000003 /* ValidationDomain */,
@@ -345,6 +400,7 @@
 		B68900000000000000000003 /* RecoveryDomain */ = {
 			isa = PBXGroup;
 			children = (
+				B6CD00000000000000000002 /* NativeScenicReservationRecoveryRules.swift */,
 				B68900000000000000000002 /* NativeRecoveryRecords.swift */,
 			);
 			path = Domain/Recovery;
@@ -355,6 +411,7 @@
 			children = (
 				B61900000000000000000002 /* NativeBookingPaymentRules.swift */,
 				B66B00000000000000000002 /* NativeBookingPresentationRules.swift */,
+				B6D100000000000000000002 /* NativeTicketCatalogSelectionRules.swift */,
 			);
 			path = Domain/Booking;
 			sourceTree = "<group>";
@@ -365,6 +422,14 @@
 				B62000000000000000000002 /* NativePublicCatalogRules.swift */,
 			);
 			path = Domain/Catalog;
+			sourceTree = "<group>";
+		};
+		B6E000000000000000000003 /* ResourceDomain */ = {
+			isa = PBXGroup;
+			children = (
+				B6E100000000000000000002 /* NativeNearbyResourceQuery.swift */,
+			);
+			path = Domain/Resource;
 			sourceTree = "<group>";
 		};
 		B6A300000000000000000003 /* ActivityDomain */ = {
@@ -397,6 +462,7 @@
 			isa = PBXGroup;
 			children = (
 				B62300000000000000000002 /* NativeProfileView.swift */,
+				B6D900000000000000000002 /* NativeProfileAuthenticationActions.swift */,
 				B69000000000000000000002 /* NativeProfileAuthenticationForm.swift */,
 				B68200000000000000000002 /* NativeProfileInformationViews.swift */,
 				B68300000000000000000002 /* NativeProfileSummaryRuntime.swift */,
@@ -410,6 +476,7 @@
 		B64100000000000000000003 /* SupportViews */ = {
 			isa = PBXGroup;
 			children = (
+				B6D400000000000000000002 /* NativeSupportTicketDetailView.swift */,
 				B64100000000000000000002 /* NativeSupportTicketsView.swift */,
 			);
 			path = Views/Support;
@@ -430,12 +497,17 @@
 			children = (
 				B65400000000000000000002 /* NativeCartViews.swift */,
 				B64F00000000000000000002 /* NativeCouponsView.swift */,
+				B6E600000000000000000002 /* NativeTradeCheckoutActions.swift */,
 				B64E00000000000000000002 /* NativeTradeCheckoutView.swift */,
 				B64600000000000000000002 /* NativeCommerceOrdersView.swift */,
+				B6CE00000000000000000002 /* NativeCommerceDigitalDeliverySection.swift */,
+				B6CA00000000000000000002 /* NativeCommerceOrderItemsSection.swift */,
 				B6C100000000000000000002 /* NativeCommerceShipmentCard.swift */,
 				B64700000000000000000002 /* NativeCommerceOrderSupportViews.swift */,
+				B6C500000000000000000002 /* NativeTradePaymentView.swift */,
 				B62500000000000000000002 /* NativeProductReviewsView.swift */,
 				B66800000000000000000002 /* NativeProductDetailView.swift */,
+				B6D500000000000000000002 /* NativePublicProductReviews.swift */,
 				B67C00000000000000000002 /* NativeProductMediaViews.swift */,
 			);
 			path = Views/Commerce;
@@ -445,12 +517,14 @@
 			isa = PBXGroup;
 			children = (
 				B69400000000000000000002 /* NativeHomeOperationComponent.swift */,
+				B6D300000000000000000002 /* NativeHomeSectionList.swift */,
 				B6A700000000000000000002 /* NativeHomeQuickEntrySection.swift */,
 				B68500000000000000000002 /* NativeHomeFeaturedSection.swift */,
 				B67600000000000000000002 /* NativeHomeCatalogSection.swift */,
 				B67500000000000000000002 /* NativeHomeSupportingViews.swift */,
 				B67100000000000000000002 /* NativeHomeHeroView.swift */,
 				B64800000000000000000002 /* NativeHomeView.swift */,
+				B6E200000000000000000002 /* NativeHomeDataLoading.swift */,
 			);
 			path = Views/Home;
 			sourceTree = "<group>";
@@ -460,6 +534,7 @@
 			children = (
 				B69B00000000000000000002 /* NativeTicketSelectionSection.swift */,
 				B69800000000000000000002 /* NativeTicketAttendeeFormSection.swift */,
+				B6D800000000000000000002 /* NativeTicketBookingCatalogActions.swift */,
 				B64D00000000000000000002 /* NativeBookingOrdersView.swift */,
 				B64A00000000000000000002 /* NativeTicketBookingView.swift */,
 				B62600000000000000000002 /* NativeTicketOrdersView.swift */,
@@ -500,9 +575,12 @@
 			children = (
 				B65500000000000000000002 /* NativeMerchantInventoryViews.swift */,
 				B65600000000000000000002 /* NativeMerchantStaffView.swift */,
-				B65700000000000000000002 /* NativeMerchantOperationsViews.swift */,
+				B6C600000000000000000002 /* MerchantActivityWorkView.swift */,
+				B6C700000000000000000002 /* MerchantScenicWorkView.swift */,
 				B65800000000000000000002 /* NativeMerchantOrderViews.swift */,
+				B6C800000000000000000002 /* NativeMerchantAfterSalesView.swift */,
 				B65900000000000000000002 /* NativeMerchantTicketViews.swift */,
+				B6C400000000000000000002 /* NativeMerchantTicketsView.swift */,
 				B66000000000000000000002 /* NativeMerchantHotelsView.swift */,
 				B66100000000000000000002 /* NativeMerchantWorkbenchView.swift */,
 			);
@@ -512,6 +590,8 @@
 		B64C00000000000000000003 /* HotelViews */ = {
 			isa = PBXGroup;
 			children = (
+				B6E400000000000000000002 /* HotelPublicDetailSupport.swift */,
+				B6E500000000000000000002 /* HotelPublicDetailValidation.swift */,
 				B64C00000000000000000002 /* HotelPublicDetailView.swift */,
 			);
 			path = Views/Hotel;
@@ -520,13 +600,16 @@
 		B63600000000000000000003 /* ActivityViews */ = {
 			isa = PBXGroup;
 			children = (
+				B6D600000000000000000002 /* ActivityRegistrationInputSupport.swift */,
 				B6A600000000000000000002 /* ActivityRegistrationCard.swift */,
+				B6D200000000000000000002 /* ActivityRegistrationConfirmationOverlay.swift */,
 				B6A500000000000000000002 /* ActivityRegistrationFormSection.swift */,
 				B69E00000000000000000002 /* ActivityDetailSessionSelectionSection.swift */,
 				B69700000000000000000002 /* ActivityDetailContentSection.swift */,
 				B69600000000000000000002 /* ActivityDetailSummarySection.swift */,
 				B63600000000000000000002 /* ActivityDetailView.swift */,
 				B64400000000000000000002 /* ActivityRegistrationsView.swift */,
+				B6E800000000000000000002 /* MyActivityRegistrationRecordCard.swift */,
 				B68400000000000000000002 /* ActivityRegistrationSelfCheckIn.swift */,
 			);
 			path = Views/Activity;
@@ -545,6 +628,8 @@
 				B68000000000000000000002 /* NativeResourceBrowseLocation.swift */,
 				B68100000000000000000002 /* TourismResourceItem.swift */,
 				B64900000000000000000002 /* NativeResourceBrowseView.swift */,
+				B6E700000000000000000002 /* NativeResourceBrowseEmptyState.swift */,
+				B6E300000000000000000002 /* NativeScenicReservationRecoveryActions.swift */,
 				B63700000000000000000002 /* ResourceDetailView.swift */,
 				B68600000000000000000002 /* ResourceDetailReviewRuntime.swift */,
 				B67200000000000000000002 /* ResourceDetailReviewForm.swift */,
@@ -581,13 +666,17 @@
 				B63000000000000000000002 /* RestaurantQueueManagementView.swift */,
 				B63200000000000000000002 /* RestaurantMenuManagementView.swift */,
 				B63300000000000000000002 /* DiningPublicDetailView.swift */,
+				B6D700000000000000000002 /* DiningPublicQueueActions.swift */,
 				B6A100000000000000000002 /* DiningPublicMenuSection.swift */,
 				B6A200000000000000000002 /* DiningPublicPackagesSection.swift */,
                 B69200000000000000000002 /* DiningPublicQueuePanel.swift */,
                 B69300000000000000000002 /* DiningPublicReservationPanel.swift */,
 				B63400000000000000000002 /* NativeDiningPackagePurchaseViews.swift */,
 				B63500000000000000000002 /* NativeDiningPackageOrdersView.swift */,
+				B6C200000000000000000002 /* NativeDiningPackageRefundValidation.swift */,
+				B6C300000000000000000002 /* NativeDiningPackageOrderValidation.swift */,
 				B66200000000000000000002 /* NativeRestaurantWorkbenchViews.swift */,
+				B6C900000000000000000002 /* NativeRestaurantSupplementaryViews.swift */,
 			);
 			path = Views/Restaurant;
 			sourceTree = "<group>";
@@ -700,20 +789,26 @@
 				B63100000000000000000001 /* NativeDiningQueuePage.swift in Sources */,
 				B63200000000000000000001 /* RestaurantMenuManagementView.swift in Sources */,
 				B63300000000000000000001 /* DiningPublicDetailView.swift in Sources */,
+				B6D700000000000000000001 /* DiningPublicQueueActions.swift in Sources */,
 				B6A100000000000000000001 /* DiningPublicMenuSection.swift in Sources */,
 				B6A200000000000000000001 /* DiningPublicPackagesSection.swift in Sources */,
                 B69200000000000000000001 /* DiningPublicQueuePanel.swift in Sources */,
                 B69300000000000000000001 /* DiningPublicReservationPanel.swift in Sources */,
 				B63400000000000000000001 /* NativeDiningPackagePurchaseViews.swift in Sources */,
 				B63500000000000000000001 /* NativeDiningPackageOrdersView.swift in Sources */,
+				B6C200000000000000000001 /* NativeDiningPackageRefundValidation.swift in Sources */,
+				B6C300000000000000000001 /* NativeDiningPackageOrderValidation.swift in Sources */,
 				B66200000000000000000001 /* NativeRestaurantWorkbenchViews.swift in Sources */,
+				B6C900000000000000000001 /* NativeRestaurantSupplementaryViews.swift in Sources */,
 				B63600000000000000000001 /* ActivityDetailView.swift in Sources */,
 				B6A600000000000000000001 /* ActivityRegistrationCard.swift in Sources */,
 				B6A500000000000000000001 /* ActivityRegistrationFormSection.swift in Sources */,
+				B6D600000000000000000001 /* ActivityRegistrationInputSupport.swift in Sources */,
 				B69E00000000000000000001 /* ActivityDetailSessionSelectionSection.swift in Sources */,
 				B69700000000000000000001 /* ActivityDetailContentSection.swift in Sources */,
 				B69600000000000000000001 /* ActivityDetailSummarySection.swift in Sources */,
 				B63700000000000000000001 /* ResourceDetailView.swift in Sources */,
+				B6CD00000000000000000001 /* NativeScenicReservationRecoveryRules.swift in Sources */,
 				B69B00000000000000000001 /* NativeTicketSelectionSection.swift in Sources */,
 				B69A00000000000000000001 /* NativeScenicRecoveryPanel.swift in Sources */,
 				B69900000000000000000001 /* NativeResourceReservationSheet.swift in Sources */,
@@ -728,34 +823,48 @@
 				B66600000000000000000001 /* TravelRouteCatalogView.swift in Sources */,
 				B66700000000000000000001 /* ProductCatalogView.swift in Sources */,
 				B66800000000000000000001 /* NativeProductDetailView.swift in Sources */,
+				B6D500000000000000000001 /* NativePublicProductReviews.swift in Sources */,
 				B67C00000000000000000001 /* NativeProductMediaViews.swift in Sources */,
 				B66900000000000000000001 /* ArticleDetailView.swift in Sources */,
 				B66A00000000000000000001 /* NativePageResponseRules.swift in Sources */,
 				B66B00000000000000000001 /* NativeBookingPresentationRules.swift in Sources */,
+				B6D100000000000000000001 /* NativeTicketCatalogSelectionRules.swift in Sources */,
 				B61800000000000000000001 /* NativeHTMLContent.swift in Sources */,
 				B61900000000000000000001 /* NativeBookingPaymentRules.swift in Sources */,
 				B62000000000000000000001 /* NativePublicCatalogRules.swift in Sources */,
 				B62100000000000000000001 /* NativeMerchantReportRules.swift in Sources */,
 				B62200000000000000000001 /* NativeMerchantSharedViews.swift in Sources */,
 				B62300000000000000000001 /* NativeProfileView.swift in Sources */,
+				B6D900000000000000000001 /* NativeProfileAuthenticationActions.swift in Sources */,
+				B6E100000000000000000001 /* NativeNearbyResourceQuery.swift in Sources */,
 				B69000000000000000000001 /* NativeProfileAuthenticationForm.swift in Sources */,
 				B63900000000000000000001 /* NativeFavoritesView.swift in Sources */,
 				B64000000000000000000001 /* NativeMerchantOnboardingView.swift in Sources */,
 				B64100000000000000000001 /* NativeSupportTicketsView.swift in Sources */,
+				B6D400000000000000000001 /* NativeSupportTicketDetailView.swift in Sources */,
 				B64400000000000000000001 /* ActivityRegistrationsView.swift in Sources */,
+				B6E800000000000000000001 /* MyActivityRegistrationRecordCard.swift in Sources */,
+				B6D200000000000000000001 /* ActivityRegistrationConfirmationOverlay.swift in Sources */,
 				B68400000000000000000001 /* ActivityRegistrationSelfCheckIn.swift in Sources */,
 				B6A300000000000000000001 /* ActivityRegistrationCredential.swift in Sources */,
 				B64500000000000000000001 /* NativeActivityQrScanner.swift in Sources */,
 				B64600000000000000000001 /* NativeCommerceOrdersView.swift in Sources */,
+				B6CE00000000000000000001 /* NativeCommerceDigitalDeliverySection.swift in Sources */,
+				B6CA00000000000000000001 /* NativeCommerceOrderItemsSection.swift in Sources */,
 				B6C100000000000000000001 /* NativeCommerceShipmentCard.swift in Sources */,
 				B64700000000000000000001 /* NativeCommerceOrderSupportViews.swift in Sources */,
+				B6C500000000000000000001 /* NativeTradePaymentView.swift in Sources */,
 				B64800000000000000000001 /* NativeHomeView.swift in Sources */,
+				B6E200000000000000000001 /* NativeHomeDataLoading.swift in Sources */,
 				B6A800000000000000000001 /* NativeHomeQuickEntryPresentation.swift in Sources */,
 				B6A700000000000000000001 /* NativeHomeQuickEntrySection.swift in Sources */,
 				B6A400000000000000000001 /* NativeHomeBannerDestination.swift in Sources */,
 				B69400000000000000000001 /* NativeHomeOperationComponent.swift in Sources */,
 				B68500000000000000000001 /* NativeHomeFeaturedSection.swift in Sources */,
+				B6D300000000000000000001 /* NativeHomeSectionList.swift in Sources */,
 				B64900000000000000000001 /* NativeResourceBrowseView.swift in Sources */,
+				B6E700000000000000000001 /* NativeResourceBrowseEmptyState.swift in Sources */,
+				B6E300000000000000000001 /* NativeScenicReservationRecoveryActions.swift in Sources */,
 				B69D00000000000000000001 /* NativeResourceBrowseMapControlsSection.swift in Sources */,
 				B69C00000000000000000001 /* NativeResourceBrowseResultsSection.swift in Sources */,
 				B69500000000000000000001 /* NearbyActivitySection.swift in Sources */,
@@ -767,10 +876,14 @@
 				B6A000000000000000000001 /* NativeProfileOverviewSections.swift in Sources */,
 				B64A00000000000000000001 /* NativeTicketBookingView.swift in Sources */,
 				B69800000000000000000001 /* NativeTicketAttendeeFormSection.swift in Sources */,
+				B6D800000000000000000001 /* NativeTicketBookingCatalogActions.swift in Sources */,
 				B64B00000000000000000001 /* NativeJourneyView.swift in Sources */,
 				B64C00000000000000000001 /* HotelPublicDetailView.swift in Sources */,
+				B6E400000000000000000001 /* HotelPublicDetailSupport.swift in Sources */,
+				B6E500000000000000000001 /* HotelPublicDetailValidation.swift in Sources */,
 				B64D00000000000000000001 /* NativeBookingOrdersView.swift in Sources */,
 				B64E00000000000000000001 /* NativeTradeCheckoutView.swift in Sources */,
+				B6E600000000000000000001 /* NativeTradeCheckoutActions.swift in Sources */,
 				B64F00000000000000000001 /* NativeCouponsView.swift in Sources */,
 				B65000000000000000000001 /* TravelRouteDetailView.swift in Sources */,
 				B65200000000000000000001 /* NativeVerificationViews.swift in Sources */,
@@ -786,9 +899,12 @@
 				B65400000000000000000001 /* NativeCartViews.swift in Sources */,
 				B65500000000000000000001 /* NativeMerchantInventoryViews.swift in Sources */,
 				B65600000000000000000001 /* NativeMerchantStaffView.swift in Sources */,
-				B65700000000000000000001 /* NativeMerchantOperationsViews.swift in Sources */,
+				B6C600000000000000000001 /* MerchantActivityWorkView.swift in Sources */,
+				B6C700000000000000000001 /* MerchantScenicWorkView.swift in Sources */,
 				B65800000000000000000001 /* NativeMerchantOrderViews.swift in Sources */,
+				B6C800000000000000000001 /* NativeMerchantAfterSalesView.swift in Sources */,
 				B65900000000000000000001 /* NativeMerchantTicketViews.swift in Sources */,
+				B6C400000000000000000001 /* NativeMerchantTicketsView.swift in Sources */,
 				B66000000000000000000001 /* NativeMerchantHotelsView.swift in Sources */,
 				B66100000000000000000001 /* NativeMerchantWorkbenchView.swift in Sources */,
 				B62400000000000000000001 /* NativeMemberLedgerView.swift in Sources */,

@@ -312,7 +312,6 @@ struct MerchantStaffView: View {
             error = "员工授权必须指定当前管理员可管理的门店。"; return
         }
         saving = true; error = nil; notice = nil
-        var committed = false
         do {
             var body: [String: Any] = [
                 "Id": editing.map { Self.text($0["Id"]) } ?? "0",
@@ -325,7 +324,6 @@ struct MerchantStaffView: View {
             if let editing { body["Id"] = Self.text(editing["Id"]) }
             _ = try await MobileAPI(store: store).post("/api/JHCTIMerchant/SaveStaff", body: body, authenticated: true,
                 expectedPrincipal: principal)
-            committed = true
             guard store.session.map({ nativeTourismPrincipalFromToken($0.accessToken) }) == Optional(principal) else {
                 self.error = "账号已变化，保存结果请返回工作台确认。"; return
             }
@@ -335,8 +333,7 @@ struct MerchantStaffView: View {
             let persisted = markStaffWriteOutcomeUnknown()
             if store.session.map({ nativeTourismPrincipalFromToken($0.accessToken) }) == Optional(principal) {
                 error = persisted
-                    ? (committed ? "服务端已确认员工授权保存；请先刷新授权列表核对，再继续操作。"
-                        : "员工授权保存结果未确认；已暂停写入，请先刷新授权列表核对。")
+                    ? "员工授权保存结果未确认；已暂停写入，请先刷新授权列表核对。"
                     : "员工授权结果未知，且本机保护标记未能保存。请勿退出应用；先刷新并核对授权状态。"
             }
         } catch {
@@ -367,11 +364,9 @@ struct MerchantStaffView: View {
             URLQueryItem(name: "version", value: String(Self.integer(row["Version"]))),
             URLQueryItem(name: "reason", value: "通过原生商户工作台撤销")
         ]
-        var committed = false
         do {
             _ = try await MobileAPI(store: store).post(components.string ?? "/api/JHCTIMerchant/RevokeStaff", body: [:], authenticated: true,
                 expectedPrincipal: principal)
-            committed = true
             guard store.session.map({ nativeTourismPrincipalFromToken($0.accessToken) }) == Optional(principal) else {
                 self.error = "账号已变化，撤销结果请返回工作台确认。"; return
             }
@@ -380,8 +375,7 @@ struct MerchantStaffView: View {
             let persisted = markStaffWriteOutcomeUnknown()
             if store.session.map({ nativeTourismPrincipalFromToken($0.accessToken) }) == Optional(principal) {
                 error = persisted
-                    ? (committed ? "服务端已确认撤销；请先刷新授权列表核对，再继续操作。"
-                        : "员工授权撤销结果未确认；已暂停写入，请先刷新授权列表核对。")
+                    ? "员工授权撤销结果未确认；已暂停写入，请先刷新授权列表核对。"
                     : "员工授权撤销结果未知，且本机保护标记未能保存。请勿退出应用；先刷新并核对授权状态。"
             }
         } catch {

@@ -186,166 +186,39 @@ struct NativeCommerceOrdersView: View {
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                     .background(.white, in: RoundedRectangle(cornerRadius: 11))
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("商品明细").font(.system(size: NativeTypography.size(14), weight: .semibold))
-                    ForEach(items.indices, id: \.self) { index in
-                        let item = items[index]
-                        let itemId = item["Id"] as? String ?? ""
-                        let reviewPhotoCount = reviewMediaUrls.count
-                        let reviewPhotoPickerTitle = uploadingReviewPhotos
-                            ? "图片上传中…" : "添加图片（\(reviewPhotoCount)/9）"
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text("\(item["ProductName"] as? String ?? "商品") × \(item["Quantity"] as? Int ?? 1)")
-                                .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.ink)
-                            if order["Status"] as? String == "Completed", !itemId.isEmpty {
-                                if reviewedOrderItemIds.contains(itemId) {
-                                    Text("已评价").font(.system(size: NativeTypography.size(14), weight: .semibold)).foregroundStyle(Brand.primary)
-                                } else if reviewsEnabled {
-                                    if reviewDraftItemId == itemId {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text("商品评分").font(.system(size: NativeTypography.size(14), weight: .medium))
-                                            Picker("商品评分", selection: $reviewRating) {
-                                                ForEach(1...5, id: \.self) { value in Text("\(value) 星").tag(value) }
-                                            }.pickerStyle(.segmented).disabled(submittingReview || uploadingReviewPhotos)
-                                            TextField("评价内容（2 至 2000 字）", text: $reviewContent, axis: .vertical)
-                                                .lineLimit(3...6).textFieldStyle(.roundedBorder)
-                                                .disabled(submittingReview || uploadingReviewPhotos)
-                                            HStack(spacing: 8) {
-                                                PhotosPicker(selection: $selectedReviewPhotos, maxSelectionCount: max(1, 9 - reviewPhotoCount), matching: .images) {
-                                                    Text(reviewPhotoPickerTitle)
-                                                }.disabled(submittingReview || uploadingReviewPhotos || reviewMediaUrls.count >= 9)
-                                                Button("取消", role: .cancel) { clearReviewDraft(queueImages: true) }
-                                                    .disabled(submittingReview || uploadingReviewPhotos)
-                                            }
-                                            ForEach(reviewMediaUrls, id: \.self) { url in
-                                                HStack {
-                                                    Text("已添加评价图片").font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-                                                    Spacer()
-                                                    Button("移除") { removeReviewImage(url) }
-                                                        .font(.system(size: NativeTypography.size(12))).disabled(submittingReview || uploadingReviewPhotos)
-                                                }
-                                            }
-                                            if let reviewMessage {
-                                                Text(reviewMessage).font(.system(size: NativeTypography.size(14)))
-                                                    .foregroundStyle(reviewNeedsVerification ? .orange : .red)
-                                            }
-                                            HStack {
-                                                if reviewNeedsVerification {
-                                                    Button("核对评价状态") { reviewReadTask?.cancel(); reviewReadTask = Task { await verifyReviewSubmission() } }
-                                                        .disabled(submittingReview || uploadingReviewPhotos || reviewStatusLoading)
-                                                }
-                                                Spacer()
-                                                Button(submittingReview ? "正在提交…" : reviewNeedsVerification ? "确认未提交后重试" : "提交评价") {
-                                                    startReviewSubmission(itemId: itemId)
-                                                }
-                                                .disabled(submittingReview || uploadingReviewPhotos || reviewContent.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count < 2
-                                                    || reviewContent.utf16.count > 2000 || (reviewNeedsVerification && reviewStatusLoading))
-                                            }
-                                        }
-                                        .padding(10).background(Brand.background, in: RoundedRectangle(cornerRadius: 8))
-                                    } else {
-                                        Button("评价商品") {
-                                            startReviewDraft(itemId: itemId)
-                                        }.font(.system(size: NativeTypography.size(14), weight: .semibold))
-                                    }
-                                } else if reviewStatusLoading {
-                                    Text("正在读取评价状态…").font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-                                } else if let reviewStatusError {
-                                    Text(reviewStatusError).font(.system(size: NativeTypography.size(12))).foregroundStyle(.red)
-                                    Button("重新读取评价状态") {
-                                        reviewReadTask?.cancel()
-                                        reviewReadTask = Task { await loadReviewStatus(for: order) }
-                                    }
-                                        .font(.system(size: NativeTypography.size(12))).disabled(reviewStatusLoading)
-                                }
-                            }
-                        }
-                    }
-                }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 11))
+                NativeCommerceOrderItemsSection(
+                    orderStatus: order["Status"] as? String ?? "",
+                    items: items,
+                    reviewsEnabled: reviewsEnabled,
+                    reviewStatusLoading: reviewStatusLoading,
+                    reviewStatusError: reviewStatusError,
+                    reviewedOrderItemIds: reviewedOrderItemIds,
+                    reviewDraftItemId: reviewDraftItemId,
+                    uploadingReviewPhotos: uploadingReviewPhotos,
+                    submittingReview: submittingReview,
+                    reviewNeedsVerification: reviewNeedsVerification,
+                    reviewMessage: reviewMessage,
+                    reviewRating: $reviewRating,
+                    reviewContent: $reviewContent,
+                    reviewMediaUrls: $reviewMediaUrls,
+                    selectedReviewPhotos: $selectedReviewPhotos,
+                    onClearDraft: { clearReviewDraft(queueImages: true) },
+                    onRemoveImage: removeReviewImage,
+                    onVerifyReview: {
+                        reviewReadTask?.cancel()
+                        reviewReadTask = Task { await verifyReviewSubmission() }
+                    },
+                    onStartReview: { startReviewSubmission(itemId: $0) },
+                    onStartDraft: startReviewDraft,
+                    onReloadStatus: {
+                        reviewReadTask?.cancel()
+                        reviewReadTask = Task { await loadReviewStatus(for: order) }
+                    })
                 if ["PendingShipment", "PendingPickup", "Shipped", "Completed"].contains(order["Status"] as? String ?? "") {
                     NativeBuyerAfterSaleView(store: store, order: order)
                 }
-                let digitalItemIndices = items.indices.filter {
-                    ["DigitalCode", "DigitalLink"].contains(items[$0]["DeliveryType"] as? String ?? "")
-                }
-                if !digitalItemIndices.isEmpty {
-                    VStack(alignment: .leading, spacing: 9) {
-                        Text("虚拟商品交付").font(.system(size: NativeTypography.size(14), weight: .semibold))
-                        if let digitalDeliveryNotice {
-                            Text(digitalDeliveryNotice).font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.primary)
-                        }
-                        ForEach(digitalItemIndices, id: \.self) { index in
-                            let item = items[index]
-                            let deliveryType = item["DeliveryType"] as? String ?? ""
-                            let deliveries = item["DigitalDeliveries"] as? [[String: Any]] ?? []
-                            VStack(alignment: .leading, spacing: 7) {
-                                Text("\(item["ProductName"] as? String ?? "虚拟商品") × \(item["Quantity"] as? Int ?? 1)")
-                                    .font(.system(size: NativeTypography.size(14), weight: .semibold))
-                                if deliveries.isEmpty {
-                                    Text(order["Status"] as? String == "PendingPayment"
-                                         ? "支付成功后自动发放，可在此查看。"
-                                         : "交付信息暂不可用，请刷新订单后重试。")
-                                        .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-                                }
-                                ForEach(deliveries.indices, id: \.self) { deliveryIndex in
-                                    let delivery = deliveries[deliveryIndex]
-                                    let status = delivery["Status"] as? String ?? ""
-                                    let type = delivery["DeliveryType"] as? String ?? deliveryType
-                                    let content = delivery["Content"] as? String ?? ""
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text("\(type == "DigitalLink" ? "交付链接" : "电子券码") · \(nativeDigitalDeliveryStatus(status))")
-                                            .font(.system(size: NativeTypography.size(12), weight: .medium)).foregroundStyle(Brand.muted)
-                                        if status == "Revoked" {
-                                            Text("退款后已作废").font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
-                                        } else if !["Issued", "Redeemed"].contains(status) {
-                                            Text("凭证状态无法识别，暂不显示交付内容，请联系平台。")
-                                                .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-                                        } else if !["DigitalCode", "DigitalLink"].contains(type) {
-                                            Text("交付类型无法识别，暂不显示交付内容，请联系平台。")
-                                                .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-                                        } else if content.isEmpty {
-                                            Text("交付内容暂不可用，请刷新订单后重试。")
-                                                .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-                                        } else if type == "DigitalLink" {
-                                            if let components = URLComponents(string: content),
-                                               components.scheme?.lowercased() == "https",
-                                               let host = components.host, !host.isEmpty,
-                                               components.user == nil, components.password == nil,
-                                               let url = components.url {
-                                                Text(content).font(.system(size: NativeTypography.size(12), design: .monospaced))
-                                                    .textSelection(.enabled).foregroundStyle(Brand.ink)
-                                                HStack {
-                                                    Link("打开交付链接", destination: url).font(.system(size: NativeTypography.size(12), weight: .semibold))
-                                                    Button("复制链接") {
-                                                        UIPasteboard.general.string = content
-                                                        digitalDeliveryNotice = "交付链接已复制。"
-                                                    }.font(.system(size: NativeTypography.size(12), weight: .semibold))
-                                                }
-                                            } else {
-                                                Text("交付链接格式无效，请联系商户。").font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-                                            }
-                                        } else {
-                                            Text(content).font(.system(size: NativeTypography.size(14), weight: .semibold, design: .monospaced))
-                                                .textSelection(.enabled).foregroundStyle(Brand.ink)
-                                            Button("复制券码") {
-                                                UIPasteboard.general.string = content
-                                                digitalDeliveryNotice = "电子券码已复制。"
-                                            }.font(.system(size: NativeTypography.size(12), weight: .semibold))
-                                        }
-                                        if status == "Redeemed", let redeemedAt = delivery["RedeemedAt"] as? String, !redeemedAt.isEmpty {
-                                            Text("核销时间：\(bookingBusinessDateTime(redeemedAt) ?? "—")")
-                                                .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-                                        }
-                                    }
-                                    .padding(9).frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Brand.background, in: RoundedRectangle(cornerRadius: 8))
-                                }
-                            }
-                            .padding(9).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 9))
-                        }
-                    }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 11))
-                }
+                NativeCommerceDigitalDeliverySection(orderStatus: order["Status"] as? String ?? "",
+                    items: items, notice: $digitalDeliveryNotice)
                 VStack(alignment: .leading, spacing: 10) {
                     Text("履约与物流轨迹").font(.system(size: NativeTypography.size(14), weight: .semibold))
                     if shipments.isEmpty { Text("暂无履约记录").font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted) }
@@ -385,15 +258,6 @@ struct NativeCommerceOrdersView: View {
         case "Unknown", "PaidUnmatched": return "原支付结果待核对，请勿重复付款；可刷新订单查看最新状态。"
         case "Failed", "Closed": return "原支付尝试已结束。请刷新订单核对后再处理，当前不支持再次发起支付。"
         default: return "支付状态与待付款订单不一致，请刷新订单核对；当前不支持再次发起支付。"
-        }
-    }
-
-    private func nativeDigitalDeliveryStatus(_ status: String) -> String {
-        switch status {
-        case "Issued": return "待使用"
-        case "Redeemed": return "已核销"
-        case "Revoked": return "已作废"
-        default: return "状态待核对"
         }
     }
 

@@ -217,17 +217,15 @@ struct MerchantHotelsView: View {
             "IsClosed": draft.isClosed
         ]
         saving = true; error = nil
-        var committed = false
         do {
             _ = try await MobileAPI(store: store).post("/api/JHCTIHotel/SaveInventory?hotelId=\(hotelID)", body: body, authenticated: true,
                 expectedPrincipal: expectedPrincipal)
-            committed = true
             guard store.session?.accessToken == token else { return }
             await load()
             if error != nil { error = "房态已保存，但刷新失败；请重新读取确认当前状态。" }
         } catch is CancellationError {
             if store.session?.accessToken == token {
-                error = committed ? "房态已保存，但刷新被取消；请重新读取确认当前状态。" : "房态保存结果未确认；请重新读取版本后再操作。"
+                error = "房态保存结果未确认；请重新读取版本后再操作。"
             }
         } catch {
             if store.session?.accessToken == token {

@@ -1,6 +1,53 @@
 import Foundation
 import CryptoKit
 
+@MainActor enum NativeTradeRecoveryStore {
+    private static func validKey(_ key: String) -> Bool {
+        let prefix = "jhcti.native.trade-order-attempt.v1."
+        let suffix = String(key.dropFirst(prefix.count))
+        return key.hasPrefix(prefix) && suffix.count == 64 && suffix.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil
+    }
+
+    static func read(_ key: String) -> (exists: Bool, attempt: NativeTradeOrderAttempt?) {
+        guard validKey(key), UserDefaults.standard.object(forKey: key) != nil else { return (false, nil) }
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let value = try? JSONDecoder().decode(NativeTradeOrderAttempt.self, from: data), value.isValid else { return (true, nil) }
+        return (true, value)
+    }
+
+    static func save(_ key: String, legacyKey: String? = nil, attempt: NativeTradeOrderAttempt) -> Bool {
+        guard validKey(key), attempt.isValid else { return false }
+        let current = read(key)
+        if current.exists { return current.attempt == attempt }
+        if let legacyKey, read(legacyKey).exists { return false }
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        guard let data = try? encoder.encode(attempt) else { return false }
+        UserDefaults.standard.set(data, forKey: key)
+        return UserDefaults.standard.data(forKey: key) == data
+    }
+
+    static func clear(_ key: String, expected: NativeTradeOrderAttempt) -> Bool {
+        guard read(key).attempt == expected else { return false }
+        UserDefaults.standard.removeObject(forKey: key)
+        return UserDefaults.standard.object(forKey: key) == nil
+    }
+}
+
+struct NativeTradeOrderAttempt: Codable, Equatable {
+    let idempotencyKey: String
+    let quoteID: String
+    let addressID: String
+    var expectedOrderDigest: String? = nil
+
+    var isValid: Bool {
+        idempotencyKey.range(of: "^[A-Za-z0-9._:-]{16,100}$", options: .regularExpression)?.upperBound == idempotencyKey.endIndex
+            && Int64(quoteID).map { $0 > 0 && String($0) == quoteID } == true
+            && (addressID == "0" || Int64(addressID).map { $0 > 0 && String($0) == addressID } == true)
+            && (expectedOrderDigest == nil || (expectedOrderDigest?.count == 64
+                && expectedOrderDigest?.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil))
+    }
+}
+
 struct NativeTicketOrderAttempt: Codable {
     let idempotencyKey: String
     let resourceID: String

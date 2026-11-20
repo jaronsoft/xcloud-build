@@ -1,6 +1,6 @@
 import SwiftUI
 
-private struct ActivityRegistrationQrRetry: Equatable {
+struct ActivityRegistrationQrRetry: Equatable {
     let registrationID: String
     let title: String
     let token: String
@@ -198,89 +198,23 @@ struct ActivityRegistrationsView: View {
             }
             .onAppear { pageVisible = true }
             .overlay {
-                if let pendingDeletion {
-                    ZStack {
-                        Color.black.opacity(0.48).ignoresSafeArea()
-                            .onTapGesture { self.pendingDeletion = nil }
-                        VStack(spacing: 0) {
-                            Text("删除过期报名")
-                                .font(.system(size: NativeTypography.size(17), weight: .semibold))
-                                .foregroundStyle(Color(red: 0.15, green: 0.23, blue: 0.21))
-                                .padding(.top, 22)
-                            Text("该活动场次已结束，删除后将从报名记录中移除。")
-                                .font(.system(size: NativeTypography.size(14)))
-                                .foregroundStyle(Color(red: 0.54, green: 0.56, blue: 0.55))
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 22).padding(.vertical, 16)
-                            Rectangle().fill(Color(red: 0.91, green: 0.92, blue: 0.92)).frame(height: 1)
-                            HStack(spacing: 0) {
-                                Button("保留") { self.pendingDeletion = nil }
-                                    .font(.system(size: NativeTypography.size(15), weight: .medium))
-                                    .foregroundStyle(Color(red: 0.15, green: 0.23, blue: 0.21))
-                                    .frame(maxWidth: .infinity, minHeight: 54)
-                                Rectangle().fill(Color(red: 0.91, green: 0.92, blue: 0.92)).frame(width: 1, height: 54)
-                                Button(deleteBusyId == (pendingDeletion["Id"] as? String ?? "") ? "正在删除…" : "删除", role: .destructive) {
-                                    let token = store.session?.accessToken ?? ""
-                                    deletionToken = token
-                                    Task { await deleteExpired(pendingDeletion, expectedToken: token) }
-                                }
-                                .font(.system(size: NativeTypography.size(15), weight: .semibold))
-                                .foregroundStyle(Color(red: 0.70, green: 0.34, blue: 0.29))
-                                .frame(maxWidth: .infinity, minHeight: 54)
-                                .disabled(!deleteBusyId.isEmpty)
-                            }
-                        }
-                        .frame(maxWidth: 340)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 18))
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
-                        .padding(.horizontal, 24)
-                        .accessibilityElement(children: .contain)
+                ActivityRegistrationConfirmationOverlay(
+                    pendingDeletion: pendingDeletion,
+                    pendingCancellation: pendingCancellation,
+                    deleteBusy: !deleteBusyId.isEmpty,
+                    cancelBusy: !cancelBusyId.isEmpty,
+                    onKeepDeletion: { self.pendingDeletion = nil },
+                    onConfirmDeletion: { item in
+                        let token = store.session?.accessToken ?? ""
+                        deletionToken = token
+                        Task { await deleteExpired(item, expectedToken: token) }
+                    },
+                    onKeepCancellation: { self.pendingCancellation = nil },
+                    onConfirmCancellation: { item in
+                        let token = cancellationToken
+                        Task { await cancel(item, expectedToken: token) }
                     }
-                    .transition(.opacity)
-                    .zIndex(100)
-                } else if let pendingCancellation {
-                    let rawActivityName = pendingCancellation["ActivityName"] as? String ?? ""
-                    let activityName = rawActivityName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    ZStack {
-                        Color.black.opacity(0.48).ignoresSafeArea()
-                            .onTapGesture { if cancelBusyId.isEmpty { self.pendingCancellation = nil } }
-                        VStack(spacing: 0) {
-                            Text("取消活动报名")
-                                .font(.system(size: NativeTypography.size(17), weight: .semibold))
-                                .foregroundStyle(Color(red: 0.15, green: 0.23, blue: 0.21))
-                                .padding(.top, 22)
-                            Text("确定取消“\(activityName.isEmpty ? "文旅活动" : activityName)”的报名吗？取消后将按活动规则释放名额。")
-                                .font(.system(size: NativeTypography.size(14)))
-                                .foregroundStyle(Color(red: 0.54, green: 0.56, blue: 0.55))
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 22).padding(.vertical, 16)
-                            Rectangle().fill(Color(red: 0.91, green: 0.92, blue: 0.92)).frame(height: 1)
-                            HStack(spacing: 0) {
-                                Button("暂不取消") { self.pendingCancellation = nil }
-                                    .font(.system(size: NativeTypography.size(15), weight: .medium))
-                                    .foregroundStyle(Color(red: 0.15, green: 0.23, blue: 0.21))
-                                    .frame(maxWidth: .infinity, minHeight: 54)
-                                    .disabled(!cancelBusyId.isEmpty)
-                                Rectangle().fill(Color(red: 0.91, green: 0.92, blue: 0.92)).frame(width: 1, height: 54)
-                                Button(cancelBusyId.isEmpty ? "确认取消" : "正在取消…", role: .destructive) {
-                                    let token = cancellationToken
-                                    Task { await cancel(pendingCancellation, expectedToken: token) }
-                                }
-                                .font(.system(size: NativeTypography.size(15), weight: .semibold))
-                                .foregroundStyle(Color(red: 0.70, green: 0.34, blue: 0.29))
-                                .frame(maxWidth: .infinity, minHeight: 54)
-                                .disabled(!cancelBusyId.isEmpty)
-                            }
-                        }
-                        .frame(maxWidth: 340)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 18))
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
-                        .padding(.horizontal, 24)
-                        .accessibilityElement(children: .contain)
-                    }
-                    .transition(.opacity)
-                    .zIndex(100)
-                }
+                )
             }
         }
     }
@@ -292,121 +226,45 @@ struct ActivityRegistrationsView: View {
     }
 
     @ViewBuilder private func registrationCard(_ item: [String: Any]) -> some View {
-        let id = item["Id"] as? String ?? ""
-        let status = item["Status"] as? String ?? ""
-        let expectedToken = store.session?.accessToken
-        let expired = activityRegistrationExpired(item, now: credentialClock)
-        let expiryUnknown = activityRegistrationExpiryUnknown(item)
-        let credentialUnavailable = activityRegistrationCredentialUnavailable(item, now: credentialClock)
-        let statusText = expired ? "已过期" : expiryUnknown ? "确认状态中" : status == "Registered" ? "已报名" : status == "CheckedIn" ? "已签到" : status == "Cancelled" ? "已取消" : "待核对"
-        let statusColor: Color = expired ? Color(red: 0.70, green: 0.34, blue: 0.29)
-            : expiryUnknown ? Color(red: 0.70, green: 0.47, blue: 0.10)
-            : status == "Cancelled" ? .gray
-            : status == "CheckedIn" ? Color(red: 0.16, green: 0.48, blue: 0.37)
-            : Brand.primary
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                Text(item["ActivityName"] as? String ?? "活动报名").font(.system(size: NativeTypography.size(16), weight: .semibold)).foregroundStyle(Brand.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer()
-                Text(statusText).font(.system(size: NativeTypography.size(12), weight: .semibold)).foregroundStyle(statusColor)
-                    .padding(.horizontal, 9).padding(.vertical, 5)
-                    .background(statusColor.opacity(0.10), in: Capsule())
-            }
-            if let session = item["SessionName"] as? String, !session.isEmpty {
-                Label(session, systemImage: "calendar")
-                    .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
-            }
-            HStack(spacing: 14) {
-                Label("\(item["Quantity"] as? Int ?? 1) 人", systemImage: "person.2")
-                Label(activityRegistrationBusinessDateTime(item["CreateTime"]) ?? "—", systemImage: "clock")
-                    .lineLimit(1).minimumScaleFactor(0.85)
-            }
-            .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-            if let participants = item["Participants"] as? [[String: Any]] {
-                ForEach(Array(participants.enumerated()), id: \.offset) { index, participant in
-                    let name = (participant["DisplayName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-                        ?? "参与者 \(participant["ParticipantNo"] as? Int ?? index + 1)"
-                    let participantStatus = activityRegistrationParticipantStatus(participant["Status"])
-                    let checkedInAt = activityRegistrationBusinessDateTime(participant["CheckedInAt"])
-                    Text("\(name)：\(participantStatus)\(checkedInAt.map { " · \($0)" } ?? "")")
-                        .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
+        MyActivityRegistrationRecordCard(
+            item: item,
+            credentialClock: credentialClock,
+            expectedToken: store.session?.accessToken,
+            qrBusyId: qrBusyId,
+            qrRetry: qrRetry,
+            loading: loading,
+            cancelBusyId: cancelBusyId,
+            deleteBusyId: deleteBusyId,
+            onCopyCode: { id, code, expectedToken in
+                guard pageVisible, scenePhase == .active,
+                      let expectedToken, !expectedToken.isEmpty,
+                      store.session?.accessToken == expectedToken, loadedToken == expectedToken,
+                      let currentItem = rows.first(where: { $0["Id"] as? String == id }),
+                      currentItem["Status"] as? String == "Registered",
+                      currentItem["CredentialCode"] as? String == code,
+                      !activityRegistrationCredentialUnavailable(currentItem, now: Date()) else {
+                    cancellationNotice = "签到凭证已变化或过期，请刷新报名记录。"
+                    revision += 1
+                    return
                 }
-            }
-            if let cancelledAt = activityRegistrationBusinessDateTime(item["CancelledAt"]) {
-                Text("取消时间：\(cancelledAt)").font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-            }
-            if let checkedInAt = activityRegistrationBusinessDateTime(item["CheckedInAt"]) {
-                Text("签到时间：\(checkedInAt)").font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-            }
-            if status == "Registered" && !credentialUnavailable {
-                if let code = item["CredentialCode"] as? String, !code.isEmpty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "ticket").foregroundStyle(Brand.primary)
-                        Text("签到码").font(.system(size: NativeTypography.size(14), weight: .medium)).foregroundStyle(Brand.muted)
-                        Text(code).font(.system(size: NativeTypography.size(14), weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Brand.primary).lineLimit(1).minimumScaleFactor(0.75).textSelection(.enabled)
-                        Button("复制") {
-                            guard pageVisible, scenePhase == .active,
-                                  let expectedToken, !expectedToken.isEmpty,
-                                  store.session?.accessToken == expectedToken, loadedToken == expectedToken,
-                                  let currentItem = rows.first(where: { $0["Id"] as? String == id }),
-                                  currentItem["Status"] as? String == "Registered",
-                                  currentItem["CredentialCode"] as? String == code,
-                                  !activityRegistrationCredentialUnavailable(currentItem, now: Date()) else {
-                                cancellationNotice = "签到凭证已变化或过期，请刷新报名记录。"
-                                revision += 1
-                                return
-                            }
-                            UIPasteboard.general.string = code
-                            cancellationNotice = "签到凭证已复制。"
-                        }
-                        .font(.system(size: NativeTypography.size(12), weight: .semibold))
-                        .tint(Brand.primary)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 9)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Brand.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))
-                    HStack {
-                        Button(qrBusyId == id ? "正在生成…" : "出示签到二维码") { Task { await showQr(id: id, title: item["ActivityName"] as? String ?? "活动报名") } }
-                            .disabled(!qrBusyId.isEmpty)
-                        Spacer()
-                        if item["CanCancel"] as? Bool == true {
-                            Button("取消报名", role: .destructive) {
-                                cancellationToken = store.session?.accessToken ?? ""; pendingCancellation = item
-                            }.disabled(loading || !cancelBusyId.isEmpty || !deleteBusyId.isEmpty)
-                        }
-                    }.font(.system(size: NativeTypography.size(14), weight: .semibold)).tint(Brand.primary)
-                    if let qrRetry, qrRetry.registrationID == id, qrRetry.token == expectedToken {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(qrRetry.message).font(.system(size: NativeTypography.size(12))).foregroundStyle(.red)
-                            Button("重试显示二维码") {
-                                guard store.session?.accessToken == qrRetry.token else { self.qrRetry = nil; return }
-                                Task { await showQr(id: qrRetry.registrationID, title: qrRetry.title) }
-                            }
-                            .accessibilityLabel("重试显示\(qrRetry.title)签到二维码")
-                            .disabled(!qrBusyId.isEmpty)
-                        }
-                    }
-                }
-            } else if status == "Registered" && expired {
-                Text("活动已结束，签到凭证已失效。")
-                    .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
-                Button(deleteBusyId == id ? "正在删除…" : "删除记录", role: .destructive) {
-                    deletionToken = store.session?.accessToken ?? ""
-                    pendingDeletion = item
-                }.disabled(loading || !deleteBusyId.isEmpty || !cancelBusyId.isEmpty)
-            } else if status == "Registered" && expiryUnknown {
-                Text("签到凭证有效期暂无法确认，请刷新报名状态。")
-                    .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
-                Button("刷新状态") { revision += 1 }.disabled(loading)
-            } else if status == "Registered" && item["CanCancel"] as? Bool != true {
-                Text("已超过取消时限或已有参与者签到，不可取消")
-                    .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
-            }
-        }
-        .padding(13).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                UIPasteboard.general.string = code
+                cancellationNotice = "签到凭证已复制。"
+            },
+            onShowQr: { id, title in Task { await showQr(id: id, title: title) } },
+            onRequestCancellation: { item in
+                cancellationToken = store.session?.accessToken ?? ""
+                pendingCancellation = item
+            },
+            onRetryQr: { retry in
+                guard store.session?.accessToken == retry.token else { qrRetry = nil; return }
+                Task { await showQr(id: retry.registrationID, title: retry.title) }
+            },
+            onRequestDeletion: { item in
+                deletionToken = store.session?.accessToken ?? ""
+                pendingDeletion = item
+            },
+            onRefresh: { revision += 1 }
+        )
     }
 
     @MainActor private func load(reset: Bool, preserveQr: Bool = false) async {
@@ -709,11 +567,11 @@ private struct ActivityCancellationStatusBanner: View {
     }
 }
 
-private func activityRegistrationBusinessDateTime(_ value: Any?) -> String? {
+func activityRegistrationBusinessDateTime(_ value: Any?) -> String? {
     bookingBusinessDateTime(value)
 }
 
-private func activityRegistrationParticipantStatus(_ value: Any?) -> String {
+func activityRegistrationParticipantStatus(_ value: Any?) -> String {
     switch value as? String {
     case "Registered": return "已报名"
     case "CheckedIn": return "已签到"

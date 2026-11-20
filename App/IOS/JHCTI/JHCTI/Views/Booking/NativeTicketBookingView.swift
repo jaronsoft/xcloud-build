@@ -3,17 +3,17 @@ import SwiftUI
 struct NativeTicketBookingView: View {
     @ObservedObject var store: SessionStore
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.scenePhase) var scenePhase
     let resourceId: String
     let resourceName: String
     let admissionType: String
     var initialTicketTypeID: String? = nil
-    @State private var tickets: [[String: Any]] = []
-    @State private var ticketId = ""
-    @State private var sessionId = ""
-    @State private var quantity = 1
-    @State private var attendees: [[String: String]] = [[:]]
-    @State private var identityConsent = false
+    @State var tickets: [[String: Any]] = []
+    @State var ticketId = ""
+    @State var sessionId = ""
+    @State var quantity = 1
+    @State var attendees: [[String: String]] = [[:]]
+    @State var identityConsent = false
     @State private var identityProfileOpen = false
     @State private var ticketIdentityProfile: [String: Any]?
     @State private var ticketIdentityOwner = ""
@@ -22,34 +22,34 @@ struct NativeTicketBookingView: View {
     @State private var ticketIdentitySequence = 0
     @State private var ticketIdentityRevision = 0
     @State private var pendingTicketIdentityConfirmation: String?
-    @State private var loading = true
+    @State var loading = true
     @State private var submitting = false
-    @State private var error: String?
+    @State var error: String?
     @State private var receipt: [String: Any]?
     @State private var ticketOrdersOpen = false
     @State private var idempotencyKey = ""
-    @State private var pendingBody: [String: Any]?
+    @State var pendingBody: [String: Any]?
     @State private var pendingExpectedAmountCents: Int?
     @State private var pendingRecoveryData: Data?
     @State private var submitSequence = 0
-    @State private var pageVisible = true
-    @State private var recoveryStorageKey = ""
-    @State private var recoveryNotice: String?
-    @State private var recoveryBlocked = false
+    @State var pageVisible = true
+    @State var recoveryStorageKey = ""
+    @State var recoveryNotice: String?
+    @State var recoveryBlocked = false
     @State private var pointsToUse = "0"
     @State private var pointsBalance: Int64?
     @State private var pointsDebt: Int64?
     @State private var pointsSummaryError = false
     @State private var pointsSummaryRevision = 0
-    @State private var catalogRevision = 0
-    @State private var catalogSequence = 0
-    @State private var catalogLoaded = false
-    @State private var catalogNotice = ""
-    @State private var nextSaleStartTime: Date?
-    @State private var nextSaleLookupPending = false
-    @State private var nextSaleLookupError: String?
+    @State var catalogRevision = 0
+    @State var catalogSequence = 0
+    @State var catalogLoaded = false
+    @State var catalogNotice = ""
+    @State var nextSaleStartTime: Date?
+    @State var nextSaleLookupPending = false
+    @State var nextSaleLookupError: String?
     @State private var bookingOwnerPrincipal: String?
-    @State private var catalogExpiresAt: Date?
+    @State var catalogExpiresAt: Date?
     @State private var dailyQuota: [String: Any]?
     @State private var dailyQuotaOwner = ""
     @State private var dailyQuotaLoading = false
@@ -435,104 +435,7 @@ struct NativeTicketBookingView: View {
         }
     }
 
-    private func expireCatalog(_ deadline: Date, now: Date = Date()) {
-        guard !Task.isCancelled, pageVisible, scenePhase == .active,
-              catalogExpiresAt == deadline, deadline <= now else { return }
-        // 仅在最近停售/开场边界重读一次，原待确认订单资料仍用于原请求恢复。
-        catalogExpiresAt = nil; catalogSequence += 1; tickets = []; loading = true; catalogRevision += 1
-    }
-
-    private func loadTickets() async {
-        catalogSequence += 1; let operation = catalogSequence
-        let previousTicketId = ticketId; let previousSessionId = sessionId; let previousQuantity = quantity
-        let previousAttendees = attendees; let previousIdentityConsent = identityConsent
-        let preserveSelection = catalogLoaded
-        let token = store.session?.accessToken
-        loading = true; error = nil; catalogNotice = ""; tickets = []; catalogExpiresAt = nil
-        nextSaleStartTime = nil; nextSaleLookupPending = false; nextSaleLookupError = nil
-        if let token = store.session?.accessToken { restorePendingAttempt(accessToken: token) }
-        do {
-            let featureState = await MobileAPI(store: store).featureAccessState("F-TKT-002", forceRefresh: true)
-            guard operation == catalogSequence,
-                  nativeTourismPrincipal(store.session?.accessToken) == nativeTourismPrincipal(token) else { return }
-            guard featureState == .open else {
-                throw MobileAPIError.unavailable(featureState.message(featureName: "景区门票", action: "请返回景点详情。"))
-            }
-            let value = try await MobileAPI(store: store).get("/api/JHCTITicket/GetPublicTicketTypes?resourceId=\(resourceId)")
-            guard operation == catalogSequence,
-                  nativeTourismPrincipal(store.session?.accessToken) == nativeTourismPrincipal(token) else { return }
-            guard let rows = value as? [[String: Any]] else { throw MobileAPIError.unavailable("门票目录数据异常，请重新查询。") }
-            guard let available = nativeTicketCatalogSnapshot(rows, resourceID: resourceId, now: Date(), parseTime: paymentDeadline) else {
-                throw MobileAPIError.unavailable("门票信息暂时无法确认，请重新查询。")
-            }
-            tickets = available
-            catalogExpiresAt = nativeTicketCatalogDeadline(available, parseTime: paymentDeadline)
-            if pendingBody == nil, !recoveryBlocked {
-                let selection = nativeTicketResumeSelection(tickets, ticketId: previousTicketId, sessionId: previousSessionId,
-                    quantity: previousQuantity, preserve: preserveSelection, preferredTicketID: initialTicketTypeID)
-                ticketId = selection.ticketId; sessionId = selection.sessionId; quantity = selection.quantity
-                if selection.ticketId == previousTicketId, selection.sessionId == previousSessionId,
-                   selection.quantity == previousQuantity {
-                    attendees = Array(previousAttendees.prefix(quantity))
-                        + Array(repeating: [:], count: max(0, quantity - previousAttendees.count))
-                    identityConsent = previousIdentityConsent
-                } else {
-                    attendees = Array(repeating: [:], count: quantity); identityConsent = false
-                }
-                catalogNotice = selection.notice
-            }
-            catalogLoaded = true
-        } catch {
-            if operation == catalogSequence,
-               nativeTourismPrincipal(store.session?.accessToken) == nativeTourismPrincipal(token) {
-                self.error = error.localizedDescription
-            }
-        }
-        if operation == catalogSequence {
-            loading = false
-            if error == nil { await loadNextSaleStartTime(sequence: operation) }
-        }
-    }
-
-    private func loadNextSaleStartTime(sequence: Int) async {
-        guard sequence == catalogSequence, pageVisible, scenePhase == .active else { return }
-        let requestStartedAt = Date()
-        nextSaleLookupPending = true
-        nextSaleLookupError = nil
-        do {
-            let value = try await MobileAPI(store: store).get(
-                "/api/JHCTITicket/GetNextPublicSaleStartTime?resourceId=\(resourceId)")
-            guard !Task.isCancelled, sequence == catalogSequence, pageVisible,
-                  scenePhase == .active else { return }
-            if let start = paymentDeadline(value), start > requestStartedAt {
-                nextSaleStartTime = start
-                if catalogExpiresAt == nil || start < catalogExpiresAt! { catalogExpiresAt = start }
-            }
-        } catch {
-            guard !Task.isCancelled, sequence == catalogSequence, pageVisible else { return }
-            nextSaleLookupError = "暂时无法确认下一次开售时间，请检查网络后重试。"
-        }
-        if sequence == catalogSequence { nextSaleLookupPending = false }
-    }
-
-    private func ticketCatalogEmptyMessage() -> String {
-        if let nextSaleStartTime {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "zh_CN")
-            formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
-            formatter.dateFormat = "yyyy-MM-dd HH:mm"
-            return "预计 \(formatter.string(from: nextSaleStartTime)) 开售，届时将自动刷新。"
-        }
-        if admissionType == "Paid" {
-            return "该景点实行收费入园，目前暂无可购买的门票。请稍后再来查看。"
-        }
-        if admissionType == "PaidReservation" {
-            return "该景点需预约并收费入园，目前暂无可购买的门票。请稍后再来查看。"
-        }
-        return "暂时没有可购买的门票，您可以稍后重新查询，或返回景点详情了解开放与预约信息。"
-    }
-
-    private func restorePendingAttempt(accessToken: String) {
+    func restorePendingAttempt(accessToken: String) {
         let key = nativeTicketOrderRecoveryStorageKey(accessToken: accessToken, resourceID: resourceId)
         recoveryStorageKey = key
         guard !key.isEmpty, store.hasTicketOrderAttempt(for: key) else { return }
@@ -728,48 +631,4 @@ struct NativeTicketBookingView: View {
     private static func money(_ value: Any?) -> String {
         String(format: "%.2f", (value as? NSNumber)?.doubleValue ?? 0)
     }
-}
-
-private func nativeTicketResumeSelection(_ tickets: [[String: Any]], ticketId: String, sessionId: String,
-                                       quantity: Int, preserve: Bool, now: Date = Date(), preferredTicketID: String? = nil)
-    -> (ticketId: String, sessionId: String, quantity: Int, notice: String) {
-    func id(_ item: [String: Any]) -> String {
-        guard let text = item["Id"] as? String, let number = Int64(text), number > 0, String(number) == text else { return "" }
-        return text
-    }
-    let ticket: [String: Any]?
-    if preserve { ticket = tickets.first { id($0) == ticketId && !ticketId.isEmpty } }
-    else if let preferredTicketID, !preferredTicketID.isEmpty {
-        ticket = tickets.first { id($0) == preferredTicketID }
-    } else { ticket = tickets.first { !id($0).isEmpty } }
-    guard let ticket else {
-        let notice = preserve && !ticketId.isEmpty ? "原选择票种已不可售，请重新选择票种和场次。"
-            : (!(preferredTicketID ?? "").isEmpty ? "搜索中的门票已不可售，请返回景点重新选择。" : "")
-        return ("", "", 1, notice)
-    }
-    let minimum = max(1, ticket["MinPerOrder"] as? Int ?? 1)
-    let sessions = nativeTicketSelectableSessions(ticket, minimumQuantity: minimum, now: now, parseTime: paymentDeadline)
-        .filter { !id($0).isEmpty }
-    let session = preserve ? sessions.first { id($0) == sessionId && !sessionId.isEmpty } : sessions.first
-    guard let session else {
-        let notice = preserve && !sessionId.isEmpty ? "原选择入园场次已不可售，请重新选择场次。"
-            : (!(preferredTicketID ?? "").isEmpty ? "搜索中的门票暂无可预约场次，请返回景点重新选择。" : "")
-        return (id(ticket), "", minimum, notice)
-    }
-    let maximum = min(ticket["MaxPerOrder"] as? Int ?? minimum, session["RemainingInventory"] as? Int ?? minimum)
-    return (id(ticket), id(session), preserve ? max(minimum, min(quantity, maximum)) : minimum, "")
-}
-
-private func nativeTicketSelectableSessions(_ ticket: [String: Any]?, minimumQuantity: Int, now: Date = Date(),
-                                            parseTime: (String) -> Date? = { paymentDeadline($0) }) -> [[String: Any]] {
-    (ticket?["Sessions"] as? [[String: Any]] ?? []).filter { session in
-        session["IsEnabled"] as? Bool == true
-            && (session["RemainingInventory"] as? Int ?? 0) >= minimumQuantity
-            && parseTime(session["StartTime"] as? String ?? "").map { $0 > now } == true
-    }
-}
-
-func nativeTourismReservationStatus(_ status: String, expired: Bool) -> String {
-    if status == "Reserved" && expired { return "已过期" }
-    return ["Reserved": "已预约", "CheckedIn": "已入园", "Cancelled": "已取消"][status] ?? "状态待核对"
 }

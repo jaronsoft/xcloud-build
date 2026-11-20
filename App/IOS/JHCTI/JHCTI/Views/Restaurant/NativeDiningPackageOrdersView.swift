@@ -171,23 +171,11 @@ struct NativeDiningPackageOrdersView: View {
             let response = try await MobileAPI(store: store).get("/api/JHCTIDiningPackage/GetMyOrderPage?page=\(targetPage)&pageSize=\(pageSize)", authenticated: true, expectedPrincipal: requestedPrincipal)
             try Task.checkCancellation()
             guard sequence == requestSequence, store.session?.accessToken == token else { return }
-            guard let data = response as? [String: Any],
-                  let list = data["data"] as? [[String: Any]] ?? data["Data"] as? [[String: Any]]
-                    ?? data["Items"] as? [[String: Any]] ?? data["items"] as? [[String: Any]] else {
-                throw MobileAPIError.unavailable("团购订单响应格式异常")
+            guard let parsed = validatedDiningPackageOrderPage(response, page: targetPage, pageSize: pageSize) else {
+                throw MobileAPIError.unavailable("团购订单分页回执或订单内容无效，请刷新后重试")
             }
-            guard let responsePage = data["page"] as? Int ?? data["Page"] as? Int,
-                  responsePage == targetPage,
-                  let responseSize = data["PageSize"] as? Int ?? data["pageSize"] as? Int,
-                  responseSize == pageSize,
-                  let count = data["dataCount"] as? Int ?? data["DataCount"] as? Int,
-                  count >= 0, list.count <= pageSize,
-                  list.allSatisfy({ (Int64($0["Id"] as? String ?? "") ?? 0) > 0 }),
-                  Set(list.compactMap { $0["Id"] as? String }).count == list.count else {
-                throw MobileAPIError.unavailable("团购订单分页回执无效")
-            }
-            rows = reset ? list : rows + list
-            total = count
+            rows = reset ? parsed.rows : rows + parsed.rows
+            total = parsed.total
             page = targetPage
         } catch is CancellationError {
             return
@@ -254,7 +242,10 @@ struct NativeDiningPackageOrdersView: View {
             let response = try await MobileAPI(store: store).get("/api/JHCTIDiningPackage/GetMyRefunds?orderId=\(orderID)", authenticated: true, expectedPrincipal: requestedPrincipal)
             try Task.checkCancellation()
             guard refundRequestSequence == sequence, store.session?.accessToken == token else { return }
-            refunds = response as? [[String: Any]] ?? []
+            guard let validated = validatedDiningPackageRefunds(response, expectedOrderID: orderID) else {
+                throw MobileAPIError.unavailable("团购退款记录无效或与当前订单不匹配，请刷新后重试。")
+            }
+            refunds = validated
             refundsOrderNo = orderNo
         } catch is CancellationError {
             return

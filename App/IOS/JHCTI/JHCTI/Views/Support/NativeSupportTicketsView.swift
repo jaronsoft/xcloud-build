@@ -267,76 +267,21 @@ struct NativeSupportTicketsView: View {
     }
 
     private var ticketDetail: some View {
-        Group {
-            if detailLoading { ProgressView("正在加载工单详情…") }
-            else if let detail {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text("\(categoryName(detail["Category"] as? String ?? "Other")) · \(statusName(detail["Status"] as? String ?? ""))")
-                                .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
-                            Text(detail["Title"] as? String ?? "客服工单").font(.system(size: NativeTypography.size(20), weight: .bold))
-                            Text("\(detail["TicketNo"] as? String ?? "") · 提交于 \(bookingBusinessDateTime(detail["CreateTime"]) ?? "时间未知")")
-                                .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(14)
-                        .background(Brand.background, in: RoundedRectangle(cornerRadius: 12))
-                        ForEach(Array((detail["Messages"] as? [[String: Any]] ?? [])
-                            .filter { $0["IsInternal"] as? Bool == false
-                                && ["User", "Support"].contains($0["SenderType"] as? String ?? "") }
-                            .enumerated()), id: \.offset) { _, message in
-                            VStack(alignment: .leading, spacing: 7) {
-                                Text("\((message["SenderType"] as? String) == "User" ? "我" : "客服") · \(bookingBusinessDateTime(message["CreateTime"]) ?? "时间未知")")
-                                    .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
-                                Text(message["Content"] as? String ?? "").font(.system(size: NativeTypography.size(14)))
-                                ForEach(Array((message["Attachments"] as? [String] ?? []).enumerated()), id: \.offset) { index, path in
-                                    if let url = MobileAPI(store: store).mediaURL(path) {
-                                        HStack(spacing: 8) {
-                                            Button { previewAttachment = url } label: {
-                                                CachedRemoteImage(url: url) { Color.gray.opacity(0.15) }
-                                                    .frame(width: 88, height: 88)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                            }
-                                            .buttonStyle(.plain)
-                                            .accessibilityLabel("预览附件图片 \(index + 1)")
-                                            Link("在浏览器打开", destination: url)
-                                                .font(.system(size: NativeTypography.size(14))).tint(Brand.primary)
-                                        }
-                                    }
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                            .background((message["SenderType"] as? String) == "User" ? Color(red: 0.91, green: 0.96, blue: 0.94) : Brand.background,
-                                        in: RoundedRectangle(cornerRadius: 12))
-                        }
-                        if let error { Text(error).foregroundStyle(.red).font(.system(size: NativeTypography.size(14))) }
-                        if (detail["Status"] as? String) != "Closed" {
-                            TextField("补充说明或回复客服", text: $reply, axis: .vertical)
-                                .lineLimit(4...8).padding(10).background(.white, in: RoundedRectangle(cornerRadius: 10))
-                                .onChange(of: reply) { _, value in
-                                    let limited = nativeLimitUtf16Text(value, maximum: 4000)
-                                    if limited != value { reply = limited }
-                                }
-                            Text("\(reply.utf16.count)/4000").font(.system(size: NativeTypography.size(12)))
-                                .foregroundStyle(Brand.muted).frame(maxWidth: .infinity, alignment: .trailing)
-                            attachmentPicker(target: .reply, urls: replyAttachments)
-                            Button(submitting ? "正在发送…" : "发送留言") { Task { await submitReply() } }
-                                .buttonStyle(.borderedProminent).tint(Brand.primary)
-                                .disabled(submitting || uploading || (reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && replyAttachments.isEmpty))
-                        } else {
-                            Text("工单已关闭，如仍需帮助，请重新提交问题。")
-                                .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted).frame(maxWidth: .infinity).padding()
-                        }
-                    }
-                    .padding(16)
-                }
-            } else {
-                VStack(spacing: 10) {
-                    ContentUnavailableView("无法读取工单", systemImage: "message", description: Text(error ?? "请返回列表后重试。"))
-                    if let detailId { Button("重试") { startDetailLoad(["Id": detailId]) } }
-                }
-            }
-        }
+        NativeSupportTicketDetailView(
+            store: store,
+            isLoading: detailLoading,
+            detail: detail,
+            error: error,
+            detailId: detailId,
+            reply: $reply,
+            replyAttachments: replyAttachments,
+            isSubmitting: submitting,
+            isUploading: uploading,
+            previewAttachment: $previewAttachment,
+            replyAttachmentPicker: AnyView(attachmentPicker(target: .reply, urls: replyAttachments)),
+            onRetry: { if let detailId { startDetailLoad(["Id": detailId]) } },
+            onSubmitReply: { Task { await submitReply() } }
+        )
     }
 
     private func load(reset: Bool, pageOverride: Int? = nil) async {

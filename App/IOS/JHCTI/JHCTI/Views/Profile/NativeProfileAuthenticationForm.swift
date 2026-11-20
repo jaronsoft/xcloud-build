@@ -4,6 +4,7 @@ import UIKit
 struct NativeProfileAuthenticationForm: View {
     let loginEnabled: Bool
     let smsEnabled: Bool
+    let memberRegistrationEnabled: Bool
     let recoveryEnabled: Bool
     let captchaImage: Data?
     let captchaKeyPresent: Bool
@@ -132,7 +133,7 @@ struct NativeProfileAuthenticationForm: View {
             Button(action: onSubmit) {
                 HStack(spacing: 8) {
                     if busy { ProgressView().controlSize(.small).tint(.white) }
-                    Text(busy ? (recoveryMode ? "正在重置…" : "正在登录…") : recoveryMode ? "重置密码" : smsMode ? "同意协议并登录或注册" : "同意协议并登录")
+                    Text(busy ? (recoveryMode ? "正在重置…" : "正在登录…") : recoveryMode ? "重置密码" : smsMode && memberRegistrationEnabled ? "同意协议并登录或注册" : "同意协议并登录")
                 }
                 .frame(maxWidth: .infinity).frame(minHeight: 48)
                 .contentShape(RoundedRectangle(cornerRadius: 9))
