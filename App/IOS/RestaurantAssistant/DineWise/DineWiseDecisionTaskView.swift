@@ -104,10 +104,13 @@ struct DineWiseDecisionTaskView: View {
     @State private var meetingDate = Date.now
     @State private var meetingTitle = ""
     @State private var meetingSteps = ""
+    @State private var meetingTemplateID = ""
+    @State private var meetingTemplates: [DineWiseTaskTemplate] = []
     @State private var meetingTargetRole = "manager"
     @State private var meetingAssignee = ""
     @State private var meetingDueDate = Date.now
     @State private var meetingHasDueDate = false
+    @State private var meetingDueDateManuallyEdited = false
     @State private var busy = false
     @State private var message = ""
     @State private var hasLoaded = false
@@ -120,12 +123,32 @@ struct DineWiseDecisionTaskView: View {
     private let api = DineWiseAPI()
     private let roles = ["manager", "chef", "purchaser", "operator"]
     private var accent: Color { DineWiseTheme.accent(for: colorScheme) }
+
+    private var meetingAssigneeNeedsManualDueDate: Bool {
+        !meetingAssignee.isEmpty && !meetingHasDueDate
+    }
+
+    private var meetingTimeZoneIsValid: Bool {
+        store.TimeZone.flatMap(TimeZone.init(identifier:)) != nil
+    }
+
     @State private var messageIsError = false
 
     private var requestScopeKey: String {
-        "\(store.Id):\(store.Mode):\(role):\(userID):\(token):\(focus?.type ?? ""):\(focus?.Id ?? "")"
+        "\(store.Id):\(store.Mode):\(store.TimeZone ?? ""):\(role):\(userID):\(token):\(focus?.type ?? ""):\(focus?.Id ?? "")"
     }
-    private var sessionScopeKey: String { "\(store.Id):\(store.Mode):\(role):\(userID):\(token)" }
+    private var sessionScopeKey: String {
+        "\(store.Id):\(store.Mode):\(store.TimeZone ?? ""):\(role):\(userID):\(token)"
+    }
+    private var meetingTimeZone: TimeZone {
+        TimeZone(identifier: store.TimeZone ?? "") ?? TimeZone(secondsFromGMT: 0)!
+    }
+    private var meetingCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = meetingTimeZone
+        return calendar
+    }
+    private var meetingLocalToday: Date { meetingCalendar.startOfDay(for: .now) }
 
     private var listScopeKey: String {
         let submissionVersions = submissions.map { "\($0.Id):\($0.Version)" }.joined(separator: ",")
@@ -174,7 +197,7 @@ struct DineWiseDecisionTaskView: View {
     private var selectedMeetingWeekStart: String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.firstWeekday = 2
-        calendar.timeZone = TimeZone(identifier: store.TimeZone ?? "") ?? .current
+        calendar.timeZone = meetingTimeZone
         let start = calendar.dateInterval(of: .weekOfYear, for: meetingWeek)?.start ?? meetingWeek
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -185,7 +208,7 @@ struct DineWiseDecisionTaskView: View {
     private var currentMeetingWeekStart: String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.firstWeekday = 2
-        calendar.timeZone = TimeZone(identifier: store.TimeZone ?? "") ?? .current
+        calendar.timeZone = meetingTimeZone
         let start = calendar.dateInterval(of: .weekOfYear, for: .now)?.start ?? .now
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -196,7 +219,7 @@ struct DineWiseDecisionTaskView: View {
     private var selectedMeetingWeekEnd: String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.firstWeekday = 2
-        calendar.timeZone = TimeZone(identifier: store.TimeZone ?? "") ?? .current
+        calendar.timeZone = meetingTimeZone
         let interval = calendar.dateInterval(of: .weekOfYear, for: meetingWeek)
         let end = interval?.end.addingTimeInterval(-1) ?? meetingWeek
         let formatter = DateFormatter()
@@ -353,14 +376,15 @@ struct DineWiseDecisionTaskView: View {
                             }
                         }
                         .onChange(of: sourceID) { _, _ in replacesID = "" }
-                        TextField("标题", text: $title).textFieldStyle(.roundedBorder)
+                        TextField("标题", text: binding(title, maximumUtf16Length: 120) { title = $0 })
+                            .textFieldStyle(.roundedBorder)
                         Text("\(title.utf16.count)/120")
                             .font(.caption).foregroundStyle(title.utf16.count > 120 ? .red : .secondary)
-                        TextField("依据与问题", text: $rationale, axis: .vertical)
+                        TextField("依据与问题", text: binding(rationale, maximumUtf16Length: 2000) { rationale = $0 }, axis: .vertical)
                             .lineLimit(3...6).textFieldStyle(.roundedBorder)
                         Text("\(rationale.utf16.count)/2000")
                             .font(.caption).foregroundStyle(rationale.utf16.count > 2000 ? .red : .secondary)
-                        TextField("计算口径", text: $calculationBasis, axis: .vertical)
+                        TextField("计算口径", text: binding(calculationBasis, maximumUtf16Length: 2000) { calculationBasis = $0 }, axis: .vertical)
                             .lineLimit(2...4).textFieldStyle(.roundedBorder)
                         Text("\(calculationBasis.utf16.count)/2000")
                             .font(.caption).foregroundStyle(calculationBasis.utf16.count > 2000 ? .red : .secondary)
@@ -370,11 +394,11 @@ struct DineWiseDecisionTaskView: View {
                             Text("中").tag("medium")
                             Text("低").tag("low")
                         }
-                        TextField("可信度判断依据", text: $confidenceReason, axis: .vertical)
+                        TextField("可信度判断依据", text: binding(confidenceReason, maximumUtf16Length: 1000) { confidenceReason = $0 }, axis: .vertical)
                             .lineLimit(2...4).textFieldStyle(.roundedBorder)
                         Text("\(confidenceReason.utf16.count)/1000")
                             .font(.caption).foregroundStyle(confidenceReason.utf16.count > 1000 ? .red : .secondary)
-                        TextField("人工执行步骤", text: $steps, axis: .vertical)
+                        TextField("人工执行步骤", text: binding(steps, maximumUtf16Length: 2000) { steps = $0 }, axis: .vertical)
                             .lineLimit(3...6).textFieldStyle(.roundedBorder)
                         Text("\(steps.utf16.count)/2000")
                             .font(.caption).foregroundStyle(steps.utf16.count > 2000 ? .red : .secondary)
@@ -504,7 +528,7 @@ struct DineWiseDecisionTaskView: View {
                     if role == "owner" && item.SourceInvalidatedAt == nil && !sourceVersionChanged(for: item)
                         && ["pending_decision", "postponed"].contains(item.Status) {
                         Rectangle().fill(Color.secondary.opacity(0.16)).frame(height: 1)
-                        TextField("决定说明", text: binding(reasons, key: item.Id) { reasons = $0 })
+                        TextField("决定说明", text: binding(reasons, key: item.Id, maximumUtf16Length: 1000) { reasons = $0 })
                             .textFieldStyle(.roundedBorder)
                         Picker("执行人", selection: binding(assignees, key: item.Id) { assignees = $0 }) {
                             Text("稍后分派").tag("")
@@ -585,6 +609,10 @@ struct DineWiseDecisionTaskView: View {
                 } else {
                     Text("正在读取会议事项进度…").font(.footnote).foregroundStyle(.secondary)
                 }
+                if !meetingTimeZoneIsValid {
+                    Text("门店时区无效，会议周次暂按 UTC 展示且可能不准确；请检查门店档案。")
+                        .font(.footnote).foregroundStyle(.orange)
+                }
             }
             if role == "owner", focus == nil, hasCurrentLists {
                 DisclosureGroup("新建会议事项", isExpanded: $isMeetingFormExpanded) {
@@ -592,8 +620,55 @@ struct DineWiseDecisionTaskView: View {
                         Text("直接记录会议交办，不需要先创建经营建议。未指定个人时，所选岗位的授权成员都能接收并由首位开始执行的人接单。")
                             .font(.footnote).foregroundStyle(.secondary)
                         DatePicker("会议日期", selection: $meetingDate, displayedComponents: .date)
+                            .environment(\.calendar, meetingCalendar)
+                            .environment(\.timeZone, meetingTimeZone)
+                            .onChange(of: meetingDate) { _, value in
+                                guard !meetingDueDateManuallyEdited else { return }
+                                if let item = meetingTemplates.first(where: { $0.Id == meetingTemplateID }),
+                                   let days = item.DefaultDueDays,
+                                   let dueDate = meetingCalendar.date(byAdding: .day, value: days, to: value) {
+                                    meetingDueDate = dueDate
+                                    meetingHasDueDate = true
+                                } else {
+                                    meetingDueDate = value
+                                    meetingHasDueDate = false
+                                }
+                            }
+                    if !meetingTemplates.isEmpty {
+                        Picker("平台任务模板", selection: $meetingTemplateID) {
+                            Text("不使用模板").tag("")
+                            ForEach(meetingTemplates) { item in Text(item.Name).tag(item.Id) }
+                        }
+                        .onChange(of: meetingTemplateID) { _, value in
+                            guard let item = meetingTemplates.first(where: { $0.Id == value }) else {
+                                if !meetingDueDateManuallyEdited {
+                                    meetingHasDueDate = false
+                                    meetingDueDate = meetingDate
+                                }
+                                return
+                            }
+                            meetingDueDateManuallyEdited = false
+                            meetingTargetRole = item.TargetRole
+                            meetingAssignee = ""
+                            meetingTitle = item.Title
+                            meetingSteps = item.Steps
+                            if let days = item.DefaultDueDays,
+                               let dueDate = meetingCalendar.date(byAdding: .day, value: days, to: meetingDate) {
+                                meetingDueDate = dueDate
+                                meetingHasDueDate = true
+                            } else {
+                                meetingHasDueDate = false
+                                meetingDueDate = meetingDate
+                            }
+                        }
+                    }
                         HStack(spacing: 8) {
                             Button("店长 · 周末排班") {
+                                meetingTemplateID = ""
+                                if !meetingDueDateManuallyEdited {
+                                    meetingHasDueDate = false
+                                    meetingDueDate = meetingDate
+                                }
                                 meetingTargetRole = "manager"
                                 meetingAssignee = ""
                                 meetingTitle = "确认周末排班方案"
@@ -601,6 +676,11 @@ struct DineWiseDecisionTaskView: View {
                             }
                             .buttonStyle(.bordered)
                             Button("采购 · 供应商报价") {
+                                meetingTemplateID = ""
+                                if !meetingDueDateManuallyEdited {
+                                    meetingHasDueDate = false
+                                    meetingDueDate = meetingDate
+                                }
                                 meetingTargetRole = "purchaser"
                                 meetingAssignee = ""
                                 meetingTitle = "核对两家供应商报价"
@@ -608,12 +688,20 @@ struct DineWiseDecisionTaskView: View {
                             }
                             .buttonStyle(.bordered)
                         }
-                        TextField("事项标题", text: $meetingTitle).textFieldStyle(.roundedBorder)
-                        TextField("完成标准与说明", text: $meetingSteps, axis: .vertical)
+                        TextField("事项标题", text: binding(meetingTitle, maximumUtf16Length: 120) { meetingTitle = $0 })
+                            .textFieldStyle(.roundedBorder)
+                        TextField("完成标准与说明", text: binding(meetingSteps, maximumUtf16Length: 2000) { meetingSteps = $0 }, axis: .vertical)
                             .lineLimit(3...6).textFieldStyle(.roundedBorder)
                         Picker("交办岗位", selection: $meetingTargetRole) {
                             Text("店长").tag("manager")
                             Text("采购").tag("purchaser")
+                        }
+                        .onChange(of: meetingTargetRole) { _, _ in
+                            meetingTemplateID = ""
+                            if !meetingDueDateManuallyEdited {
+                                meetingHasDueDate = false
+                                meetingDueDate = meetingDate
+                            }
                         }
                         if !members.contains(where: { $0.Enabled && $0.Role == meetingTargetRole }) {
                             Text("当前门店没有已授权的\(roleName(meetingTargetRole))成员；事项会留在老板端，完成岗位授权后才能接收。")
@@ -626,18 +714,43 @@ struct DineWiseDecisionTaskView: View {
                             }
                         }
                         .onChange(of: meetingAssignee) { _, assignee in
-                            meetingHasDueDate = !assignee.isEmpty
+                            if assignee.isEmpty && meetingTemplateID.isEmpty
+                                && !meetingDueDateManuallyEdited {
+                                meetingHasDueDate = false
+                            }
                         }
                         if meetingAssignee.isEmpty {
-                            Toggle("设置完成期限", isOn: $meetingHasDueDate)
+                            Toggle("设置完成期限", isOn: Binding(
+                                get: { meetingHasDueDate },
+                                set: { meetingHasDueDate = $0; meetingDueDateManuallyEdited = true }))
                         }
                         if meetingHasDueDate || !meetingAssignee.isEmpty {
-                            DatePicker("完成期限", selection: $meetingDueDate, displayedComponents: .date)
+                            DatePicker("完成期限", selection: Binding(
+                                get: { meetingDueDate },
+                                set: {
+                                    meetingDueDate = $0
+                                    meetingHasDueDate = true
+                                    meetingDueDateManuallyEdited = true
+                                }),
+                                displayedComponents: .date)
+                                .environment(\.calendar, meetingCalendar)
+                                .environment(\.timeZone, meetingTimeZone)
+                        }
+                        if meetingAssigneeNeedsManualDueDate {
+                            Text("指定具体负责人时，请确认完成期限。")
+                                .font(.footnote).foregroundStyle(.secondary)
+                            Button("按会议当天完成") {
+                                meetingDueDate = meetingDate
+                                meetingHasDueDate = true
+                                meetingDueDateManuallyEdited = true
+                            }
+                            .buttonStyle(.bordered)
                         }
                         Button("创建会议事项") { createMeetingTask() }
                             .buttonStyle(.borderedProminent)
-                            .disabled(busy || meetingTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                || meetingSteps.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .disabled(!meetingTimeZoneIsValid || busy || meetingTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                || meetingSteps.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                || meetingAssigneeNeedsManualDueDate)
                     }
                     .padding(.vertical, 6)
                 }
@@ -790,6 +903,8 @@ struct DineWiseDecisionTaskView: View {
                                     }
                                 }), displayedComponents: .date)
                                 .datePickerStyle(.compact)
+                                .environment(\.calendar, meetingCalendar)
+                                .environment(\.timeZone, meetingTimeZone)
                             if task.SourceType == "meeting",
                                !displayedDueOn.isEmpty {
                                 Button("清除完成期限") {
@@ -817,7 +932,7 @@ struct DineWiseDecisionTaskView: View {
                         let progressInput = role != "owner" && task.SourceType == "meeting" && task.Status == "in_progress"
                         if !roleQueueClaim {
                             TextField(progressInput ? "本次进度说明（可多次汇报）" : "实际回执或复核说明",
-                                      text: binding(taskNotes, key: task.Id) { taskNotes = $0 }, axis: .vertical)
+                                      text: binding(taskNotes, key: task.Id, maximumUtf16Length: 2000) { taskNotes = $0 }, axis: .vertical)
                                 .lineLimit(2...5).textFieldStyle(.roundedBorder)
                         }
                         if role == "owner" {
@@ -973,13 +1088,13 @@ struct DineWiseDecisionTaskView: View {
                                 }
                             }
                             if !invalidated {
-                                TextField("其他影响因素，未知填尚未核实", text: binding(reviewConfounders, key: review.Id) { reviewConfounders = $0 }, axis: .vertical)
+                                TextField("其他影响因素，未知填尚未核实", text: binding(reviewConfounders, key: review.Id, maximumUtf16Length: 1000) { reviewConfounders = $0 }, axis: .vertical)
                                     .lineLimit(2...4).textFieldStyle(.roundedBorder)
                             }
                             TextField(outcome == "reviewed" ? "人工结论" : "资料缺口原因",
-                                      text: binding(reviewConclusions, key: review.Id) { reviewConclusions = $0 }, axis: .vertical)
+                                      text: binding(reviewConclusions, key: review.Id, maximumUtf16Length: 1000) { reviewConclusions = $0 }, axis: .vertical)
                                 .lineLimit(2...4).textFieldStyle(.roundedBorder)
-                            TextField("下一步", text: binding(reviewNextSteps, key: review.Id) { reviewNextSteps = $0 }, axis: .vertical)
+                            TextField("下一步", text: binding(reviewNextSteps, key: review.Id, maximumUtf16Length: 1000) { reviewNextSteps = $0 }, axis: .vertical)
                                 .lineLimit(2...4).textFieldStyle(.roundedBorder)
                             Button("保存复盘") { finishReview(review) }
                                 .buttonStyle(.borderedProminent)
@@ -1003,6 +1118,10 @@ struct DineWiseDecisionTaskView: View {
         .padding(.vertical, 2)
         .task(id: requestScopeKey) {
             workspace = requestScopeKey
+            meetingDate = meetingLocalToday
+            meetingDueDate = meetingLocalToday
+            meetingHasDueDate = false
+            meetingDueDateManuallyEdited = false
             loadVersion += 1
             setMessage("")
             recommendations = []
@@ -1023,8 +1142,15 @@ struct DineWiseDecisionTaskView: View {
             reviewConfounders = [:]; reviewConclusions = [:]; reviewNextSteps = [:]
             validUntilOn = ""; replacesID = ""
             busy = false
+            meetingTemplates = []
+            meetingTemplateID = ""
+            meetingDueDateManuallyEdited = false
             hasLoaded = false
             listLoadFailed = false
+            if role == "owner" {
+                meetingTemplates = (try? await api.meetingTaskTemplates(
+                    storeID: store.Id, token: token, role: role)) ?? []
+            }
             refresh()
         }
         .task(id: "\(requestScopeKey):\(scenePhase)") {
@@ -1068,10 +1194,18 @@ struct DineWiseDecisionTaskView: View {
     }
 
     private func binding(_ values: [String: String], key: String,
+                         maximumUtf16Length: Int? = nil,
                          update: @escaping ([String: String]) -> Void) -> Binding<String> {
         Binding(get: { values[key] ?? "" }, set: { value in
-            var next = values; next[key] = value; update(next)
+            var next = values
+            next[key] = maximumUtf16Length.map { dineWiseLimitUtf16Length(value, maximum: $0) } ?? value
+            update(next)
         })
+    }
+
+    private func binding(_ value: String, maximumUtf16Length: Int,
+                         update: @escaping (String) -> Void) -> Binding<String> {
+        Binding(get: { value }, set: { update(dineWiseLimitUtf16Length($0, maximum: maximumUtf16Length)) })
     }
 
     private func countLabel(_ count: Int, hasOlder: Bool) -> String {
@@ -1401,7 +1535,7 @@ struct DineWiseDecisionTaskView: View {
     private func moveMeetingWeek(_ offset: Int) {
         var calendar = Calendar(identifier: .gregorian)
         calendar.firstWeekday = 2
-        calendar.timeZone = TimeZone(identifier: store.TimeZone ?? "") ?? .current
+        calendar.timeZone = meetingTimeZone
         meetingProgress = nil
         meetingTaskFilter = "all"
         taskNotificationFocusID = ""
@@ -1418,7 +1552,7 @@ struct DineWiseDecisionTaskView: View {
     private func dateFromMeetingOn(_ value: String) -> Date? {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: store.TimeZone ?? "") ?? .current
+        formatter.timeZone = meetingTimeZone
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.date(from: value)
     }
@@ -1690,6 +1824,14 @@ struct DineWiseDecisionTaskView: View {
     }
 
     private func createMeetingTask() {
+        guard meetingTimeZoneIsValid else {
+            setMessage("门店时区无效，请先检查门店档案后再创建会议事项。", isError: true)
+            return
+        }
+        guard !meetingAssigneeNeedsManualDueDate else {
+            setMessage("请先确认具体负责人的完成期限。", isError: true)
+            return
+        }
         let requestedWorkspace = requestScopeKey
         let requestStoreID = store.Id
         let requestToken = token
@@ -1701,6 +1843,11 @@ struct DineWiseDecisionTaskView: View {
         let detail = meetingSteps.trimmingCharacters(in: .whitespacesAndNewlines)
         var payload = ["MeetingOn": meetingOn, "Title": name,
                        "Steps": detail, "TargetRole": target]
+        let template = meetingTemplates.first { $0.Id == meetingTemplateID }
+        if let template {
+            payload["TemplateId"] = template.Id
+            payload["TemplateVersion"] = String(template.Version)
+        }
         if let assignee { payload["AssignedUserId"] = assignee }
         if let dueOn { payload["DueOn"] = dueOn }
         let retry = pendingWriteRetryKey(
@@ -1712,7 +1859,9 @@ struct DineWiseDecisionTaskView: View {
                 let result = try await api.createMeetingTask(storeID: requestStoreID,
                     token: requestToken, role: "owner", meetingOn: meetingOn,
                     title: name, steps: detail, targetRole: target,
-                    assignedUserID: assignee, dueOn: dueOn, idempotencyKey: retry.key)
+                    assignedUserID: assignee, dueOn: dueOn,
+                    templateID: template?.Id, templateVersion: template?.Version,
+                    idempotencyKey: retry.key)
                 guard result.StoreId == requestStoreID, result.Mode == store.Mode else {
                     throw DineWiseDecisionTaskScopeError.mismatch
                 }
@@ -1720,7 +1869,10 @@ struct DineWiseDecisionTaskView: View {
                    await refreshAfterMutation(workspace: requestedWorkspace, token: requestToken,
                                               successMessage: "会议事项已创建。") {
                     meetingTitle = ""; meetingSteps = ""; meetingAssignee = ""
+                    meetingTemplateID = ""
                     meetingHasDueDate = false
+                    meetingDueDateManuallyEdited = false
+                    meetingDueDate = meetingDate
                     isMeetingFormExpanded = false
                     clearPendingWriteRetryKey(retry)
                 }
@@ -1733,7 +1885,7 @@ struct DineWiseDecisionTaskView: View {
     }
 
     private func localDateString(_ date: Date) -> String {
-        let parts = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        let parts = meetingCalendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 1, parts.day ?? 1)
     }
 

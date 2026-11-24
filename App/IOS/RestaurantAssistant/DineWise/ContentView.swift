@@ -426,6 +426,7 @@ struct ContentView: View {
                         return false
                     }
                 }
+                .id("\(token):\(reviewStoreID):\(reviewRole):\(item.Id):\(reviewWorkspaceGeneration)")
             }
         }
         .task {
@@ -629,8 +630,8 @@ struct ContentView: View {
                         .background(DineWiseTheme.inset,
                                     in: RoundedRectangle(cornerRadius: 12))
                     Text(authMode == "register"
-                        ? "用户名需为 3–80 位；密码需为 12–128 位。无需邮箱验证，注册后由管理员开通账号。"
-                        : "用户名需为 3–80 位，密码最多 128 位。")
+                        ? "用户名为 3–80 位字母、数字或 _-.；密码需为 12–128 位。无需邮箱验证，注册后由管理员开通账号。"
+                        : "用户名为 3–80 位字母、数字或 _-.；密码最多 128 位。")
                         .font(.footnote).foregroundStyle(.secondary)
                     Button(authMode == "register" ? "注册并等待开通" : "登录并查看门店") {
                         perform {
@@ -1606,7 +1607,7 @@ struct ContentView: View {
                     if selectedTab == "suggestions" {
                         DineWiseNoticeView(store: selected, token: token, role: selectedRole,
                             userID: sessionUserID)
-                            .id("\(token):\(selected.Id):owner:notices")
+                            .id("\(token):\(selected.Id):owner:notices:\(workspaceGeneration)")
                         DineWiseDecisionTaskView(store: selected, token: token, role: selectedRole,
                             userID: sessionUserID, submissions: submissions,
                             submissionLoadState: submissionLoadState, members: members,
@@ -1623,7 +1624,7 @@ struct ContentView: View {
                                 perform { try await refreshSubmissionPage(storeID: selected.Id,
                                     token: token, role: selectedRole) }
                             })
-                            .id("\(token):\(selected.Id):owner:tasks")
+                            .id("\(token):\(selected.Id):owner:tasks:\(workspaceGeneration)")
                     } else if selectedTab == "report" {
                         let requestedWorkspaceGeneration = workspaceGeneration
                         DineWiseDailyReportView(store: selected, token: token, userID: sessionUserID,
@@ -1644,11 +1645,11 @@ struct ContentView: View {
                             onViewPurchases: { plan in
                                 openLinkedPurchases(plan, storeID: selected.Id, token: token)
                             })
-                            .id("\(token):\(selected.Id):owner:preparation")
+                            .id("\(token):\(selected.Id):owner:preparation:\(workspaceGeneration)")
                         memberSection(store: selected, token: token)
                         DineWiseCustomerConsentView(store: selected, token: token,
                             role: "owner", userID: sessionUserID)
-                            .id("\(token):\(selected.Id):owner:customer-consents")
+                            .id("\(token):\(selected.Id):owner:customer-consents:\(workspaceGeneration)")
                     } else {
                         DineWiseOwnerTodayView(store: selected, token: token) { tab, focus, statusFilter in
                             todayFocus = focus
@@ -1663,10 +1664,10 @@ struct ContentView: View {
                                     token: token, role: role) }
                             }
                         }
-                            .id("\(token):\(selected.Id):owner:today")
+                            .id("\(token):\(selected.Id):owner:today:\(workspaceGeneration)")
                         DineWiseWeatherView(token: token, storeLatitude: selected.Latitude,
                             storeLongitude: selected.Longitude, storeTimeZone: selected.TimeZone)
-                            .id("\(token):\(selected.Id):owner:weather")
+                            .id("\(token):\(selected.Id):owner:weather:\(workspaceGeneration)")
                         DineWiseFeedbackView(store: selected, token: token, role: "owner",
                             onOpenSubmission: { submissionID in
                                 submissionPlanFilter = ""
@@ -1678,7 +1679,7 @@ struct ContentView: View {
                                 perform { try await refreshSubmissionPage(storeID: selected.Id,
                                     token: token, role: "owner", focusID: submissionID) }
                             })
-                            .id("\(token):\(selected.Id):owner:feedback")
+                            .id("\(token):\(selected.Id):owner:feedback:\(workspaceGeneration)")
                     }
                 } else if selectedRole == "marketer" {
                     DineWiseInterviewView(store: selected, token: token, section: selectedTab,
@@ -1689,21 +1690,21 @@ struct ContentView: View {
                                 selectedTab = "records"
                             }
                         })
-                    .id("\(token):\(selected.Id):marketer")
+                    .id("\(token):\(selected.Id):marketer:\(workspaceGeneration)")
                 } else if selectedRole == "operator" && selectedTab == "private" {
                     DineWiseCustomerConsentView(store: selected, token: token,
                         role: selectedRole, userID: sessionUserID)
-                        .id("\(token):\(selected.Id):operator:customer-consents")
+                        .id("\(token):\(selected.Id):operator:customer-consents:\(workspaceGeneration)")
                 } else if selectedTab == "upload" {
                     submissionSection(store: selected, token: token)
                 } else if selectedTab == "messages" {
                     DineWiseNoticeView(store: selected, token: token, role: selectedRole,
                         userID: sessionUserID)
-                        .id("\(token):\(selected.Id):\(selectedRole):notices")
+                        .id("\(token):\(selected.Id):\(selectedRole):notices:\(workspaceGeneration)")
                 } else if !selectedRole.isEmpty {
                     if selectedRole == "manager" {
                         DineWiseFeedbackView(store: selected, token: token, role: "manager")
-                            .id("\(token):\(selected.Id):manager:feedback")
+                            .id("\(token):\(selected.Id):manager:feedback:\(workspaceGeneration)")
                     }
                     DineWiseDecisionTaskView(store: selected, token: token, role: selectedRole,
                         userID: sessionUserID, submissions: submissions,
@@ -1720,7 +1721,7 @@ struct ContentView: View {
                             perform { try await refreshSubmissionPage(storeID: selected.Id,
                                 token: token, role: selectedRole) }
                         })
-                        .id("\(token):\(selected.Id):\(selectedRole):tasks")
+                        .id("\(token):\(selected.Id):\(selectedRole):tasks:\(workspaceGeneration)")
                     if selectedRole == "chef" || selectedRole == "purchaser" {
                         DineWisePreparationPlanView(store: selected, token: token,
                             role: selectedRole, userID: sessionUserID, onRecordPurchase: { plan in
@@ -1742,7 +1743,7 @@ struct ContentView: View {
                             }, onViewPurchases: { plan in
                                 openLinkedPurchases(plan, storeID: selected.Id, token: token)
                             })
-                            .id("\(token):\(selected.Id):\(selectedRole):preparation")
+                            .id("\(token):\(selected.Id):\(selectedRole):preparation:\(workspaceGeneration)")
                     }
                 }
             }
@@ -3113,12 +3114,21 @@ private struct DineWiseStoreProfileEditor: View {
                 VStack(alignment: .leading, spacing: 10) {
                     DineWisePlaceholderField("门店名称", isEmpty: name.isEmpty) {
                         TextField("", text: $name).textFieldStyle(.plain)
+                            .onChange(of: name) { _, value in
+                                name = dineWiseLimitUtf16Length(value, maximum: 120)
+                            }
                     }
                     DineWisePlaceholderField("餐饮业态", isEmpty: businessType.isEmpty) {
                         TextField("", text: $businessType).textFieldStyle(.plain)
+                            .onChange(of: businessType) { _, value in
+                                businessType = dineWiseLimitUtf16Length(value, maximum: 80)
+                            }
                     }
                     DineWisePlaceholderField("门店地址", isEmpty: address.isEmpty) {
                         TextField("", text: $address).textFieldStyle(.plain)
+                            .onChange(of: address) { _, value in
+                                address = dineWiseLimitUtf16Length(value, maximum: 300)
+                            }
                     }
                     Text("定位仅在您点选并授权后获取；地址仍可手动填写。")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -3140,6 +3150,9 @@ private struct DineWiseStoreProfileEditor: View {
                                              alignment: .topLeading, topPadding: 8) {
                         TextField("", text: $introduction, axis: .vertical)
                             .lineLimit(2...5).textFieldStyle(.plain)
+                            .onChange(of: introduction) { _, value in
+                                introduction = dineWiseLimitUtf16Length(value, maximum: 2000)
+                            }
                     }
                     ForEach(Array(paymentOptions.keys.sorted()), id: \.self) { key in
                         Toggle(paymentOptions[key] ?? key, isOn: Binding(

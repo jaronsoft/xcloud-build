@@ -114,14 +114,23 @@ struct DineWiseOperatorStoreView: View {
             Text("开设试用门店").font(.headline)
             Text("老板账号须已由管理员开通。门店创建后会授予该账号老板岗位。")
                 .font(.footnote).foregroundStyle(.secondary)
-            TextField("门店名称", text: $name).onChange(of: name) { _, _ in resetRequest() }
+            TextField("门店名称", text: $name).onChange(of: name) { _, value in
+                name = dineWiseLimitUtf16Length(value, maximum: 120); resetRequest()
+            }
             TextField("餐饮类型，例如火锅、中餐", text: $businessType)
-                .onChange(of: businessType) { _, _ in resetRequest() }
+                .onChange(of: businessType) { _, value in
+                    businessType = dineWiseLimitUtf16Length(value, maximum: 80); resetRequest()
+                }
             TextField("老板用户名或已验证邮箱", text: $ownerEmail)
                 .textInputAutocapitalization(.never)
-                .onChange(of: ownerEmail) { _, _ in resetRequest() }
+                .onChange(of: ownerEmail) { _, value in
+                    ownerEmail = dineWiseLimitUtf16Length(value, maximum: value.contains("@") ? 160 : 80)
+                    resetRequest()
+                }
             TextField("门店地址", text: $address)
-                .onChange(of: address) { _, _ in resetRequest() }
+                .onChange(of: address) { _, value in
+                    address = dineWiseLimitUtf16Length(value, maximum: 300); resetRequest()
+                }
             Button("使用当前位置") {
                 locationTokenGeneration = tokenGeneration
                 location.request(requireFreshFix: true)
@@ -144,7 +153,9 @@ struct DineWiseOperatorStoreView: View {
             }
             TextField("门店介绍", text: $introduction, axis: .vertical)
                 .lineLimit(3...6)
-                .onChange(of: introduction) { _, _ in resetRequest() }
+                .onChange(of: introduction) { _, value in
+                    introduction = dineWiseLimitUtf16Length(value, maximum: 2000); resetRequest()
+                }
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) { scheduleExpanded.toggle() }
             } label: {

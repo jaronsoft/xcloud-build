@@ -51,7 +51,7 @@ struct DineWiseWeatherView: View {
                     ? "门店位置数据不完整或无效；可改用当前位置，或更新门店档案。"
                     : "按当前位置查看区域预报；需要您允许定位。")
                 .font(.footnote).foregroundStyle(.secondary)
-            Text("仅在您点按后获取附近天气；使用当前位置时需要您允许定位。坐标按约 10 公里范围处理，同一区域每天最多请求一次上游预报。")
+            Text("仅在您点按后获取附近天气；使用当前位置时需要您允许定位。餐有数按约 10 公里精度查询天气，缓存未命中时后端会向 WeatherAPI.com 发送区域坐标；每个区域每天最多请求一次上游预报。")
                 .font(.footnote).foregroundStyle(.secondary)
             if let coordinates = validStoreCoordinates {
                 Button(loading ? "获取中…" : forecast == nil ? "查看门店附近天气" : "再次查看门店附近天气") {

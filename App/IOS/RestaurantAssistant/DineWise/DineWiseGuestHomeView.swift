@@ -276,17 +276,17 @@ struct DineWiseGuestHomeView: View {
                         let change = item.PriceChangePercent.map {
                             " · \($0 >= 0 ? "+" : "")\(NSDecimalNumber(decimal: $0).stringValue)%"
                         } ?? ""
-                        Text("近两周前次同口径参考价 ¥\(previousValue) / \(item.Unit)\(change) · \(dineWiseFormatTimestamp(previousAt, timeZoneID: nil))")
+                        Text("近两周前次同口径参考价 ¥\(previousValue) / \(item.Unit)\(change) · \(dineWiseFormatTimestamp(previousAt, timeZoneID: nil, timeZoneLabel: "设备本地时间"))")
                             .font(.caption).foregroundStyle(readableSecondary)
                     }
-                    Text("来源：\(item.SourceName) · 采集于 \(dineWiseFormatTimestamp(item.ObservedAtUtc, timeZoneID: nil))")
+                    Text("来源：\(item.SourceName) · 采集于 \(dineWiseFormatTimestamp(item.ObservedAtUtc, timeZoneID: nil, timeZoneLabel: "设备本地时间"))")
                         .font(.caption).foregroundStyle(readableSecondary)
                     HStack {
                         if let source = item.SourceUrl, let url = URL(string: source) {
                             Link("查看来源", destination: url).font(.caption)
                         }
                         Spacer()
-                        Text("有效至 \(dineWiseFormatTimestamp(item.ExpiresAtUtc, timeZoneID: nil))")
+                        Text("有效至 \(dineWiseFormatTimestamp(item.ExpiresAtUtc, timeZoneID: nil, timeZoneLabel: "设备本地时间"))")
                             .font(.caption2).foregroundStyle(readableSecondary)
                     }
                 }
@@ -323,7 +323,7 @@ struct DineWiseGuestHomeView: View {
                     Text(item.BodyZh).font(.subheadline)
                     Text("\(item.LocationName) · 来源：\(item.SourceName)")
                         .font(.caption).foregroundStyle(readableSecondary)
-                    Text("核实于 \(dineWiseFormatTimestamp(item.VerifiedAtUtc, timeZoneID: nil)) · 有效至 \(dineWiseFormatTimestamp(item.ExpiresAtUtc, timeZoneID: nil))")
+                    Text("核实于 \(dineWiseFormatTimestamp(item.VerifiedAtUtc, timeZoneID: nil, timeZoneLabel: "设备本地时间")) · 有效至 \(dineWiseFormatTimestamp(item.ExpiresAtUtc, timeZoneID: nil, timeZoneLabel: "设备本地时间"))")
                         .font(.caption2).foregroundStyle(readableSecondary)
                     if let source = item.SourceUrl, let url = URL(string: source) {
                         Link("查看来源", destination: url).font(.caption)

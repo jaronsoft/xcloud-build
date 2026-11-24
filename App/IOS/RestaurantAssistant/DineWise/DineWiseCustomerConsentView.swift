@@ -457,6 +457,10 @@ struct DineWiseCustomerConsentView: View {
                 .font(.caption.weight(.semibold))
             TextField("门店营业日，例如 2026-11-10", text: $outcomeBusinessDate)
                 .keyboardType(.numbersAndPunctuation).textFieldStyle(.roundedBorder)
+            if outcomeBusinessDate.isEmpty {
+                Text("门店时区无效，暂不能登记营业日；请联系老板检查门店档案。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             TextField("POS 小票号或平台核销编号", text: $outcomeEvidenceReference)
                 .textInputAutocapitalization(.characters).autocorrectionDisabled()
                 .textFieldStyle(.roundedBorder)
@@ -916,9 +920,8 @@ struct DineWiseCustomerConsentView: View {
 
     private func currentStoreBusinessDate() -> String {
         var calendar = Calendar(identifier: .gregorian)
-        if let timeZone = store.TimeZone.flatMap(TimeZone.init(identifier:)) {
-            calendar.timeZone = timeZone
-        }
+        guard let timeZone = store.TimeZone.flatMap(TimeZone.init(identifier:)) else { return "" }
+        calendar.timeZone = timeZone
         let cutoff = TimeInterval(store.BusinessDayCutoffMinutes ?? 0) * 60
         let date = calendar.startOfDay(for: Date().addingTimeInterval(-cutoff))
         let formatter = DateFormatter()

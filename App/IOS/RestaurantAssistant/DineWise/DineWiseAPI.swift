@@ -19,21 +19,38 @@ struct DineWiseBusinessHoursDay: Codable {
 let dineWiseWeekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 private let dineWiseReadRequestTimeout: TimeInterval = 30
 
-func dineWiseFormatTimestamp(_ value: String, timeZoneID: String?) -> String {
+func dineWiseLimitUtf16Length(_ value: String, maximum: Int) -> String {
+    var length = 0
+    var end = value.startIndex
+    while end < value.endIndex {
+        let next = value.index(after: end)
+        let characterLength = value[end..<next].utf16.count
+        guard length + characterLength <= maximum else { break }
+        length += characterLength
+        end = next
+    }
+    return String(value[..<end])
+}
+
+func dineWiseFormatTimestamp(_ value: String, timeZoneID: String?, timeZoneLabel: String = "门店时间") -> String {
     let parser = ISO8601DateFormatter()
     parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let date = parser.date(from: value) ?? {
         parser.formatOptions = [.withInternetDateTime]
         return parser.date(from: value)
     }()
-    guard let date else { return "\(value) UTC" }
+    guard let date else { return timeZoneLabel == "设备本地时间" ? value : "\(value) UTC" }
 
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "zh_CN")
     formatter.dateFormat = "yyyy-MM-dd HH:mm"
     if let timeZoneID, let timeZone = TimeZone(identifier: timeZoneID) {
         formatter.timeZone = timeZone
-        return "\(formatter.string(from: date))（门店时间）"
+        return "\(formatter.string(from: date))（\(timeZoneLabel)）"
+    }
+    if timeZoneLabel == "设备本地时间" {
+        formatter.timeZone = .current
+        return "\(formatter.string(from: date))（设备本地时间）"
     }
     formatter.timeZone = TimeZone(secondsFromGMT: 0)
     return "\(formatter.string(from: date)) UTC"
@@ -422,6 +439,8 @@ struct DineWiseTask: Decodable, Identifiable {
     let Mode: String
     let SourceType: String?
     let MeetingOn: String?
+    let TemplateId: String?
+    let TemplateVersion: Int?
     let Title: String
     let Steps: String
     let TargetRole: String
@@ -439,6 +458,19 @@ struct DineWiseTask: Decodable, Identifiable {
     let SourceInvalidatedAt: String?
     let InvalidationReason: String?
 
+    var id: String { Id }
+}
+
+struct DineWiseTaskTemplate: Decodable, Identifiable {
+    let Id: String
+    let Name: String
+    let Title: String
+    let TargetRole: String
+    let Steps: String
+    let DefaultDueDays: Int?
+    let EscalationRule: String
+    let Enabled: Bool
+    let Version: Int
     var id: String { Id }
 }
 
@@ -1929,13 +1961,20 @@ struct DineWiseAPI {
     func createMeetingTask(storeID: String, token: String, role: String,
                            meetingOn: String, title: String, steps: String,
                            targetRole: String, assignedUserID: String?, dueOn: String?,
+                           templateID: String?, templateVersion: Int?,
                            idempotencyKey: String) async throws -> DineWiseTask {
         var body: [String: Any] = ["MeetingOn": meetingOn, "Title": title,
                                    "Steps": steps, "TargetRole": targetRole]
         if let assignedUserID { body["AssignedUserId"] = assignedUserID }
         if let dueOn { body["DueOn"] = dueOn }
+        if let templateID { body["TemplateId"] = templateID }
+        if let templateVersion { body["TemplateVersion"] = templateVersion }
         return try await request("/stores/\(storeID)/tasks", method: "POST", body: body,
                                  token: token, idempotencyKey: idempotencyKey, role: role)
+    }
+
+    func meetingTaskTemplates(storeID: String, token: String, role: String) async throws -> [DineWiseTaskTemplate] {
+        try await request("/stores/\(storeID)/tasks/templates", token: token, role: role)
     }
 
     func preparationPlans(storeID: String, token: String,
