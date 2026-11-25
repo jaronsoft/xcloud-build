@@ -19,6 +19,7 @@ struct NativeBookingOrdersView: View {
     @State private var cancellingOrderId = ""
     @State private var busyPaymentOrderId = ""
     @State private var paymentNotice: String?
+    @State private var bookingPurchaseAccess = NativePublicFeatureAccessState.unavailable
 
     init(store: SessionStore, initialKind: String) {
         self.store = store
@@ -28,6 +29,8 @@ struct NativeBookingOrdersView: View {
     private var endpoint: String {
         kind == "hotel" ? "/api/JHCTIHotelBooking/GetMyOrderPage" : "/api/JHCTITravelRouteBooking/GetMyOrderPage"
     }
+
+    private var bookingFeatureId: String { kind == "hotel" ? "F-DST-001" : "F-DST-002" }
 
     private func isValidOrder(_ order: [String: Any], expectedId: String? = nil) -> Bool {
         guard let id = order["Id"] as? String,
@@ -257,11 +260,17 @@ struct NativeBookingOrdersView: View {
                     ForEach(Array(bookingOrderListNotices(order, kind: kind).enumerated()), id: \.offset) { entry in
                         Text(entry.element).font(.system(size: NativeTypography.size(12))).foregroundStyle(.orange)
                     }
+                    if (order["Status"] as? String) == "PendingPayment", bookingPurchaseAccess != .open {
+                        Text(bookingPurchaseAccess == .closed
+                             ? "\(kind == "hotel" ? "住宿预订" : "旅游线路预订")暂未开放，订单仍可查询或按规则申请取消。"
+                             : "暂时无法确认预订开放状态，当前不能继续支付。")
+                            .font(.system(size: NativeTypography.size(12))).foregroundStyle(.orange)
+                    }
                     if let rule = bookingCancellationRule(order, kind: kind) {
                         Text(rule).font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
                     }
                     HStack(spacing: 10) {
-                        if bookingCanStartAlipayPayment(order, kind: kind) {
+                        if bookingPurchaseAccess == .open, bookingCanStartAlipayPayment(order, kind: kind) {
                             Button(busyPaymentOrderId == (order["Id"] as? String ?? "") ? "正在查询…" :
                                 ((order["PaymentStatus"] as? String ?? "").isEmpty ? "继续支付" : "查询并继续原支付")) {
                                 Task { await startAlipayPayment(order: order) }
@@ -300,14 +309,20 @@ struct NativeBookingOrdersView: View {
                             Text("原支付单仍可继续操作，当前不能关闭订单或释放班期名额。")
                                 .font(.system(size: NativeTypography.size(14))).foregroundStyle(.orange)
                         }
-                        if bookingCanStartAlipayPayment(order, kind: kind) {
+                        if bookingPurchaseAccess != .open {
+                            Text(bookingPurchaseAccess == .closed
+                                 ? "\(kind == "hotel" ? "住宿预订" : "旅游线路预订")暂未开放，订单仍可查询或按规则申请取消。"
+                                 : "暂时无法确认预订开放状态，当前不能继续支付。")
+                                .font(.system(size: NativeTypography.size(14))).foregroundStyle(.orange)
+                        }
+                        if bookingPurchaseAccess == .open, bookingCanStartAlipayPayment(order, kind: kind) {
                             Button(busyPaymentOrderId == (order["Id"] as? String ?? "")
                                 ? "正在查询原支付…" : (paymentStatus.isEmpty ? "使用支付宝支付" : "查询并继续支付宝支付")) {
                                 Task { await startAlipayPayment(order: order) }
                             }
                             .font(.system(size: NativeTypography.size(14), weight: .semibold))
                             .disabled(!busyPaymentOrderId.isEmpty || !cancellingOrderId.isEmpty || loading)
-                        } else {
+                        } else if bookingPurchaseAccess == .open {
                             Text(bookingPaymentStatusNotice(paymentStatus, provider: order["PaymentProvider"] as? String,
                                 scene: order["PaymentScene"] as? String, kind: kind,
                                 unavailable: order["HasUnavailablePayment"] as? Bool == true,
@@ -370,6 +385,10 @@ struct NativeBookingOrdersView: View {
         if reset { requestSequence += 1; page = 1; total = 0 }
         let sequence = requestSequence; let targetPage = reset ? 1 : page + 1
         loading = true; error = nil
+        bookingPurchaseAccess = .unavailable
+        let access = await MobileAPI(store: store).featureAccessState(bookingFeatureId, forceRefresh: true)
+        guard store.session?.accessToken == token, requestSequence == sequence else { return }
+        bookingPurchaseAccess = access
         do {
             guard let result = try await MobileAPI(store: store).get("\(endpoint)?page=\(targetPage)&pageSize=20", authenticated: true, expectedPrincipal: requestedPrincipal) as? [String: Any] else {
                 throw MobileAPIError.unavailable("预订订单响应格式异常，请刷新后重试。")
@@ -401,6 +420,10 @@ struct NativeBookingOrdersView: View {
         guard !id.isEmpty, let token = store.session?.accessToken,
               let requestedPrincipal = nativeTourismPrincipal(token) else { error = "请重新登录后查看订单。"; return }
         requestSequence += 1; let sequence = requestSequence; loading = true; error = nil; paymentNotice = nil
+        bookingPurchaseAccess = .unavailable
+        let access = await MobileAPI(store: store).featureAccessState(bookingFeatureId, forceRefresh: true)
+        guard store.session?.accessToken == token, requestSequence == sequence else { return }
+        bookingPurchaseAccess = access
         do {
             let detailEndpoint = kind == "hotel" ? "/api/JHCTIHotelBooking/GetMyOrder" : "/api/JHCTITravelRouteBooking/GetMyOrder"
             let response = try await MobileAPI(store: store).get("\(detailEndpoint)?id=\(id)", authenticated: true, expectedPrincipal: requestedPrincipal) as? [String: Any]
@@ -432,6 +455,16 @@ struct NativeBookingOrdersView: View {
         busyPaymentOrderId = orderId; error = nil; paymentNotice = nil
         defer { if busyPaymentOrderId == orderId { busyPaymentOrderId = "" } }
         do {
+            bookingPurchaseAccess = .unavailable
+            let access = await MobileAPI(store: store).featureAccessState(bookingFeatureId, forceRefresh: true)
+            guard store.session?.accessToken == token, kind == requestedKind, requestSequence == activeSequence else { return }
+            bookingPurchaseAccess = access
+            guard access == .open else {
+                error = access == .closed
+                    ? "\(requestedKind == "hotel" ? "住宿预订" : "旅游线路预订")暂未开放，当前订单仍可查询或按规则申请取消。"
+                    : "暂时无法确认\(requestedKind == "hotel" ? "住宿" : "旅游线路")预订状态，当前不能继续支付。"
+                return
+            }
             let controller = kind == "hotel" ? "JHCTIHotelBooking" : "JHCTITravelRouteBooking"
             guard let payment = try await MobileAPI(store: store).post("/api/\(controller)/CreateOrderPayment", body: [
                 "OrderId": orderId, "Provider": "alipay", "Scene": "wap"

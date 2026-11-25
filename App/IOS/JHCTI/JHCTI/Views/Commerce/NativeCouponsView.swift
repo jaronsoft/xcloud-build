@@ -36,12 +36,18 @@ struct NativeCouponsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Button("关闭") { dismiss() }
-                Spacer()
-                Text("优惠券与消费券").font(.headline)
-                Spacer()
-                Button("刷新") { revision += 1 }.disabled(loading)
-            }.padding(.horizontal, 16).padding(.vertical, 10)
+                headerAction(symbol: "xmark", label: "关闭消费券") { dismiss() }
+                Spacer(minLength: 0)
+                Text("优惠券与消费券")
+                    .font(.system(size: NativeTypography.size(16), weight: .semibold))
+                    .foregroundStyle(Brand.ink)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                headerAction(symbol: "arrow.clockwise", label: "刷新消费券", disabled: loading) { revision += 1 }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Brand.background)
             HStack(spacing: 0) {
                 tabButton("claim", title: "领券中心")
                 tabButton("mine", title: "我的券包")
@@ -88,8 +94,12 @@ struct NativeCouponsView: View {
                     if tab == "claim" {
                         ForEach(campaigns.indices, id: \.self) { index in campaignCard(campaigns[index]) }
                         if !loading && error == nil && campaigns.isEmpty {
-                            Text("当前没有可领取的消费券活动。")
-                                .font(.caption).foregroundStyle(Brand.muted).merchantCard()
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("当前没有可领取的消费券活动。")
+                                    .font(.caption).foregroundStyle(Brand.ink)
+                                Text("只有处于活动时段且仍有库存的活动会显示在这里。")
+                                    .font(.caption2).foregroundStyle(Brand.muted)
+                            }.frame(maxWidth: .infinity, alignment: .leading).merchantCard()
                         }
                         if retryTab != tab, campaigns.count < campaignTotal {
                             Button(loadingMore ? "正在加载…" : "加载更多活动") { Task { await loadCampaigns(page: campaignPage + 1) } }
@@ -154,6 +164,22 @@ struct NativeCouponsView: View {
                     .toolbar { Button("关闭") { qrImage = nil } }
             }
         }
+    }
+
+    private func headerAction(symbol: String, label: String, disabled: Bool = false,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Brand.primary)
+                .frame(width: 36, height: 36)
+                .background(Brand.primary.opacity(0.1), in: Circle())
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .disabled(disabled)
     }
 
     private func tabButton(_ value: String, title: String) -> some View {

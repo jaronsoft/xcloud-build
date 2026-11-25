@@ -187,6 +187,8 @@ struct ContentView: View {
                             .frame(height: 52)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(["首页", "地图", "发现", "行程", "我的"][index])
+                        .accessibilityAddTraits(selectedTab == index ? .isSelected : [])
                     }
                 }
                 .padding(.horizontal, 14)
@@ -301,6 +303,8 @@ struct ContentView: View {
                     .frame(height: 52)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(["", "地图", "发现", "行程", "我的"][index])
+                .accessibilityAddTraits(selectedTab == index && homePaneDestination == nil ? .isSelected : [])
             }
         }
         .frame(maxWidth: 320)

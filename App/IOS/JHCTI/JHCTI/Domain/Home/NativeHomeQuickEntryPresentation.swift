@@ -3,7 +3,7 @@ import Foundation
 enum NativeHomeQuickEntryPresentation {
     private static let defaultTitles = [
         "景区门票", "文旅地图", "特色美食", "酒店民宿",
-        "促销活动", "非遗文化", "旅游攻略", "旅游线路"
+        "促销活动", "非遗文化", "旅游攻略", "旅游线路", "抢消费券"
     ]
 
     private static let internalPageTitles = [
@@ -13,7 +13,7 @@ enum NativeHomeQuickEntryPresentation {
         "routes": "旅游线路", "travel-routes": "旅游线路", "dining": "特色美食",
         "restaurants": "特色美食", "food": "特色美食", "guide": "旅游攻略",
         "articles": "文旅资讯", "intangible-heritage": "非遗文化",
-        "group-buy": "团购优惠", "flash-sale": "限时优惠", "coupon-center": "优惠券中心", "profile": "个人中心"
+        "group-buy": "团购优惠", "flash-sale": "限时优惠", "coupon-center": "抢消费券", "profile": "个人中心"
     ]
 
     private static let targetTitles = [
@@ -67,6 +67,9 @@ enum NativeHomeQuickEntryPresentation {
     static func iconIndex(for entry: [String: Any]?, fallback: Int) -> Int {
         guard let entry else { return fallback }
         let key = normalizedField(entry, "InternalPageKey", "internalPageKey")
+        let title = (entry["Title"] as? String ?? entry["title"] as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if key == "articles", title == "非遗文化" { return 5 }
         if let index = internalPageIconIndexes[key] { return index }
         let type = normalizedField(entry, "TargetType", "targetType")
         if let index = targetIconIndexes[type] { return index }

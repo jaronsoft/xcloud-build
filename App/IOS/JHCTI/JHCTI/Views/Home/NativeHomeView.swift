@@ -234,6 +234,8 @@ struct HomeView: View {
             showCatalog(.init(id: "products", title: "江都好物", path: "/api/JHCTIProduct/GetPublicPage", featureID: "MODULE-PRODUCT"))
         } else if ["hotels"].contains(key) || (key.isEmpty && index == 3) {
             showCatalog(.init(id: "hotels", title: "酒店民宿", path: "/api/JHCTIHotel/GetPublicPage", featureID: "MODULE-HOTEL"))
+        } else if key.isEmpty && index == 8 {
+            onCouponCenter()
         } else if ["routes", "travel-routes"].contains(key) || (key.isEmpty && index == 7) {
             showCatalog(.init(id: "routes", title: "旅游线路", path: "/api/JHCTITravelRoute/GetPublicPage", featureID: "MODULE-TRAVEL-ROUTE"))
         } else if ["dining", "restaurants", "food"].contains(key) || (key.isEmpty && index == 2) {
@@ -297,7 +299,7 @@ struct HomeView: View {
                     hero
                     StatusView(loading: loading, error: error) { revision += 1 }
                         .padding(.horizontal, 16)
-                    if !loading && error == nil {
+                    if !loading && (error == nil || (quickEntriesConfigured && !quickEntryItems.isEmpty)) {
                         NativeHomeSectionList(
                             store: store,
                             showsShortcuts: quickEntriesConfigured ? !quickEntryItems.isEmpty : !fallbackShortcutIndices.isEmpty,
@@ -340,14 +342,15 @@ struct HomeView: View {
                     serviceStatusClock = Date()
                 }
             }
-            .task(id: revision) {
+            .task(id: "\(scenePhase)-\(revision)-\(isVisible)") {
+                guard scenePhase == .active, isVisible else { return }
                 let api = MobileAPI(store: store)
                 let homePath = "/api/JHCTIHomePage/GetPublicHome"
                 if api.hasPublicCachedData(homePath) {
                     // 每次回到首页先展示磁盘缓存，再静默读取服务端更新。
                     await load(allowStale: true)
                     guard !Task.isCancelled else { return }
-                    await load(forceRefresh: true)
+                    await load()
                 } else {
                     await load(forceRefresh: revision > 0)
                 }
