@@ -92,6 +92,14 @@ struct NativeCouponsView: View {
                         }.merchantCard()
                     }
                     if tab == "claim" {
+                        if store.session == nil {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("登录后才能领取消费券").font(.headline)
+                                Text("所有消费券均需完成账号实名资料登记、手机号验证和本活动授权后才能领取；平台仅核对资料格式及活动规则，不做权威身份核验。")
+                                    .font(.caption).foregroundStyle(Brand.muted)
+                                Button("登录文旅账号", action: onLogin).buttonStyle(.borderedProminent)
+                            }.merchantCard()
+                        }
                         ForEach(campaigns.indices, id: \.self) { index in campaignCard(campaigns[index]) }
                         if !loading && error == nil && campaigns.isEmpty {
                             VStack(alignment: .leading, spacing: 5) {
@@ -146,7 +154,7 @@ struct NativeCouponsView: View {
             Button("去账号资料", action: onLogin)
             Button("暂不领取", role: .cancel) {}
         } message: {
-            Text("该活动要求已登记实名资料、验证绑定手机号并确认当前隐私告知。请先在账号资料中完成设置。")
+            Text("所有消费券领取前都需登记实名资料、验证绑定手机号并确认当前隐私告知。请先在账号资料中完成设置；平台仅核对资料格式及活动规则，不做权威身份核验。")
         }
         .sheet(isPresented: Binding(get: { qrImage != nil }, set: { if !$0 { qrImage = nil } })) {
             NavigationStack {
@@ -196,6 +204,7 @@ struct NativeCouponsView: View {
         let amount = couponMoney(field(item, "CouponAmount"))
         let minimum = couponMoney(field(item, "MinimumSpend"))
         let remaining = integer(field(item, "RemainingQuantity"))
+        let canClaim = store.session != nil
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
                 Text(verbatim: amount.map { "¥\(moneyText($0))" } ?? "金额待确认")
@@ -207,15 +216,13 @@ struct NativeCouponsView: View {
             Text(display(field(item, "Name")) ?? "平台消费券").font(.headline)
             Text("领取后 \(integer(field(item, "ValidityDays"))) 天有效 · 每人限领 \(integer(field(item, "PerUserLimit"))) 张")
                 .font(.caption).foregroundStyle(Brand.muted)
-            if field(item, "RequireIdentity") as? Bool == true {
-                Text("实名领取：需账号实名资料和已验证手机号。")
-                    .font(.caption).foregroundStyle(Brand.muted)
-            }
+            Text("实名领取：需完成账号实名资料登记、手机号验证和本活动授权。")
+                .font(.caption).foregroundStyle(Brand.muted)
             Text("活动截止 \(dateText(field(item, "EndsAt"))) · 剩余 \(remaining) 张")
                 .font(.caption).foregroundStyle(Brand.muted)
-            Button(claimingID == id ? "领取中…" : remaining <= 0 ? "已领完" : "立即领取") {
+            Button(claimingID == id ? "领取中…" : remaining <= 0 ? "已领完" : canClaim ? "立即领取" : "请先登录") {
                 Task { await prepareClaim(item) }
-            }.buttonStyle(.borderedProminent).disabled(claimingID != "" || id.isEmpty || amount == nil || minimum == nil || remaining <= 0)
+            }.buttonStyle(.borderedProminent).disabled(!canClaim || claimingID != "" || id.isEmpty || amount == nil || minimum == nil || remaining <= 0)
         }.merchantCard()
     }
 
@@ -320,36 +327,70 @@ struct NativeCouponsView: View {
         guard let token = store.session?.accessToken else { onLogin(); return }
         let id = display(campaign["Id"]) ?? ""
         guard Int64(id).map({ $0 > 0 }) == true, claimingID.isEmpty else { return }
-        if field(campaign, "RequireIdentity") as? Bool == true {
-            do {
-                let profile = try await MobileAPI(store: store).get("/api/JHCTITourismAuth/GetMyTicketIdentityProfile", authenticated: true) as? [String: Any]
-                guard store.session?.accessToken == token else { return }
-                guard profile?["HasProfile"] as? Bool == true, profile?["IsIdentityDataReadable"] as? Bool == true,
-                      profile?["IsPhoneVerified"] as? Bool == true,
-                      profile?["IsConsentCurrent"] as? Bool == true else { identityNotReady = true; return }
-                pendingCampaign = campaign
-            } catch { self.error = error.localizedDescription }
-        } else { await submitClaim(campaign, identityConsent: false) }
+        do {
+            let profile = try await MobileAPI(store: store).get("/api/JHCTITourismAuth/GetMyTicketIdentityProfile", authenticated: true) as? [String: Any]
+            guard store.session?.accessToken == token else { return }
+            guard profile?["HasProfile"] as? Bool == true, profile?["IsIdentityDataReadable"] as? Bool == true,
+                  profile?["IsPhoneVerified"] as? Bool == true,
+                  profile?["IsConsentCurrent"] as? Bool == true else { identityNotReady = true; return }
+            pendingCampaign = campaign
+        } catch { self.error = error.localizedDescription }
     }
 
     @MainActor private func submitClaim(_ campaign: [String: Any], identityConsent: Bool) async {
         guard let token = store.session?.accessToken else { onLogin(); return }
         let id = display(field(campaign, "Id")) ?? ""
         guard Int64(id).map({ $0 > 0 }) == true, claimingID.isEmpty else { return }
-        let requestID = requestIDs[id] ?? "coupon-\(UUID().uuidString)"
+        let principal = MobileAPI(store: store).nativeTourismPrincipal(token)
+        let attemptKey = "jhcti.coupon.claim.attempt.v1.\(principal).\(id)"
+        if UserDefaults.standard.object(forKey: attemptKey) != nil,
+           UserDefaults.standard.string(forKey: attemptKey) == nil {
+            error = "设备上的领券请求记录无法读取，请检查存储空间后重试；本次未提交。"
+            return
+        }
+        let requestID = requestIDs[id] ?? UserDefaults.standard.string(forKey: attemptKey) ?? "coupon-\(UUID().uuidString)"
+        UserDefaults.standard.set(requestID, forKey: attemptKey)
+        guard UserDefaults.standard.string(forKey: attemptKey) == requestID else {
+            error = "设备暂时无法保存领券请求编号，请检查存储空间后重试；本次未提交。"
+            return
+        }
         requestIDs[id] = requestID; claimingID = id; error = nil; notice = nil
         defer { if claimingID == id { claimingID = "" } }
         do {
-            _ = try await MobileAPI(store: store).post("/api/JHCTICouponClaim/Claim", body: [
-                "CampaignId": id, "RequestId": requestID, "IdentityConsent": identityConsent
-            ], authenticated: true)
+            let api = MobileAPI(store: store)
+            let sendClaim = {
+                try await api.post("/api/JHCTICouponClaim/Claim", body: [
+                    "CampaignId": id, "RequestId": requestID, "IdentityConsent": identityConsent
+                ], authenticated: true, timeoutInterval: 45)
+            }
+            do {
+                _ = try await sendClaim()
+            } catch {
+                guard let delay = couponClaimRetryDelay(for: error), store.session?.accessToken == token else { throw error }
+                notice = "请求暂时繁忙，稍后将使用同一请求编号自动重试一次。"
+                try await Task.sleep(for: .milliseconds(delay))
+                guard store.session?.accessToken == token else { throw MobileAPIError.unavailable("登录账号已变化，请重新操作") }
+                _ = try await sendClaim()
+            }
             guard store.session?.accessToken == token else { return }
             requestIDs.removeValue(forKey: id)
+            UserDefaults.standard.removeObject(forKey: attemptKey)
             notice = "领取成功，已放入我的消费券。"
             requestSequence += 1
             await loadCampaigns(page: 1)
             if tab == "mine" { await loadCoupons(page: 1) }
         } catch { self.error = "\(error.localizedDescription)；如请求结果未确认，重试会复用同一请求号。" }
+    }
+
+    private func couponClaimRetryDelay(for error: Error) -> Int? {
+        switch error {
+        case let MobileAPIError.transient(_, retryAfterSeconds):
+            return min(60, max(0, retryAfterSeconds ?? 0)) * 1000 + Int.random(in: 250...1000)
+        case let MobileAPIError.rejected(statusCode, _, retryAfterSeconds) where statusCode == 408 || statusCode == 429 || statusCode >= 500:
+            return min(60, max(0, retryAfterSeconds ?? 0)) * 1000 + Int.random(in: 250...1000)
+        default:
+            return nil
+        }
     }
 
     @MainActor private func showQr(_ coupon: [String: Any]) async {

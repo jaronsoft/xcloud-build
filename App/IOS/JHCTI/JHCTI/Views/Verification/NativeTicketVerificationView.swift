@@ -174,6 +174,9 @@ struct NativeTicketVerificationView: View {
                                     } else if let itemName = item["BundleItemName"] as? String, !itemName.isEmpty {
                                         Text("历史逐项核销，需人工核对：\(itemName) × \(item["BundleItemQuantity"] as? Int ?? 1)")
                                             .font(.system(size: NativeTypography.size(12), weight: .semibold)).foregroundStyle(.orange)
+                                    } else {
+                                        Text("套票核销范围未记录，需人工核对")
+                                            .font(.system(size: NativeTypography.size(12), weight: .semibold)).foregroundStyle(.orange)
                                     }
                                     let bundleItems = item["BundleItems"] as? [[String: Any]] ?? []
                                     let summary = bundleItems.compactMap { bundleItem -> String? in

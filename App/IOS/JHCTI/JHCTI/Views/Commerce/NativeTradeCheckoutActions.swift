@@ -11,9 +11,9 @@ extension NativeTradeCheckoutView {
             guard let summary = try await MobileAPI(store: store).get(
                 "/api/JHCTIMemberProgram/GetMySummary", authenticated: true,
                 expectedPrincipal: nativeTourismPrincipal(token)) as? [String: Any],
-                  let balanceText = nativeMemberLedgerString(summary, "PointsBalance"),
+                  let balanceText = nativeMemberPointSummaryString(summary, "PointsBalance"),
                   let balance = Int64(balanceText), balance >= 0,
-                  let debtText = nativeMemberLedgerString(summary, "PointsDebt"),
+                  let debtText = nativeMemberPointSummaryString(summary, "PointsDebt"),
                   let debt = Int64(debtText), debt >= 0,
                   store.session?.accessToken == token, pointsSummaryRevision == requestRevision else {
                 throw MobileAPIError.unavailable("积分摘要无效")

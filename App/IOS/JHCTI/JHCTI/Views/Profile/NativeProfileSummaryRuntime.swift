@@ -1,6 +1,28 @@
 import Combine
 import Foundation
 
+private func nativeProfileMemberLevelName(_ summary: [String: Any]) -> String? {
+    func levelName(_ value: Any?) -> String? {
+        guard let value, !(value is NSNull) else { return nil }
+        guard let level = value as? [String: Any] else { return nil }
+        let hasName = level.keys.contains("Name")
+        let hasCamelName = level.keys.contains("name")
+        let name = level["Name"] as? String
+        let camelName = level["name"] as? String
+        guard (!hasName || name != nil), (!hasCamelName || camelName != nil),
+              !(hasName && hasCamelName && name != camelName) else { return nil }
+        return (hasName ? name : camelName)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    let hasLevel = summary.keys.contains("CurrentLevel")
+    let hasCamelLevel = summary.keys.contains("currentLevel")
+    let current = hasLevel ? levelName(summary["CurrentLevel"]) : nil
+    let camel = hasCamelLevel ? levelName(summary["currentLevel"]) : nil
+    guard !(hasLevel && hasCamelLevel && current != camel) else { return nil }
+    guard let name = hasLevel ? current : camel, !name.isEmpty else { return nil }
+    return name
+}
+
 @MainActor
 final class NativeProfileSummaryRuntime: ObservableObject {
     @Published private(set) var tourismProfile: [String: Any]?
@@ -32,7 +54,7 @@ final class NativeProfileSummaryRuntime: ObservableObject {
         }
         if let summary = try? await api.get("/api/JHCTIMemberProgram/GetMySummary", authenticated: true,
             expectedPrincipal: expectedPrincipal) as? [String: Any],
-           let level = summary["CurrentLevel"] as? [String: Any], let name = level["Name"] as? String,
+           let name = nativeProfileMemberLevelName(summary),
            !name.isEmpty, store.session?.accessToken == token { memberLevel = name }
         var verified: [String] = []
         if let diningRoles = try? await api.get("/api/JHCTIDining/GetMyWorkRoles", authenticated: true,

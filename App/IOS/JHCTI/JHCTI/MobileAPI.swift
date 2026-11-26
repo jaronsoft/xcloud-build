@@ -26,20 +26,22 @@ enum NativePublicFeatureAccessState: Equatable {
 
 enum MobileAPIError: LocalizedError {
     case unavailable(String)
+    case transient(message: String, retryAfterSeconds: Int?)
     case forbidden(String)
-    case rejected(statusCode: Int, message: String)
+    case rejected(statusCode: Int, message: String, retryAfterSeconds: Int? = nil)
 
     var httpStatusCode: Int? {
         switch self {
         case .unavailable: return nil
+        case .transient: return nil
         case .forbidden: return 403
-        case let .rejected(statusCode, _): return statusCode
+        case let .rejected(statusCode, _, _): return statusCode
         }
     }
 
     var errorDescription: String? {
         switch self {
-        case let .unavailable(message), let .forbidden(message), let .rejected(_, message): return message
+        case let .unavailable(message), let .transient(message, _), let .forbidden(message), let .rejected(_, message, _): return message
         }
     }
 }
@@ -77,7 +79,7 @@ final class MobileAPI {
             let message = urlError.code == .timedOut
                 ? "请求超时，请稍后重试。"
                 : "暂时无法连接服务，请检查网络后重试。"
-            throw MobileAPIError.unavailable(message)
+            throw MobileAPIError.transient(message: message, retryAfterSeconds: nil)
         }
     }
 
@@ -124,9 +126,9 @@ final class MobileAPI {
     }
 
     func post(_ path: String, body: [String: Any], authenticated: Bool = false,
-              expectedPrincipal: String? = nil) async throws -> Any {
+              expectedPrincipal: String? = nil, timeoutInterval: TimeInterval = 12) async throws -> Any {
         try await request(path, method: "POST", body: body, authenticated: authenticated,
-                          canRefresh: true, expectedPrincipal: expectedPrincipal)
+                          canRefresh: true, expectedPrincipal: expectedPrincipal, timeoutInterval: timeoutInterval)
     }
 
     func postJSON(_ path: String, body: Any, authenticated: Bool = false,
@@ -283,7 +285,7 @@ final class MobileAPI {
     }
 
     private func request(_ path: String, method: String, body: Any?, authenticated: Bool, canRefresh: Bool,
-                         expectedPrincipal: String? = nil) async throws -> Any {
+                         expectedPrincipal: String? = nil, timeoutInterval: TimeInterval = 12) async throws -> Any {
         guard path.hasPrefix("/api/"), let url = URL(string: path, relativeTo: baseURL) else {
             throw MobileAPIError.unavailable("请求路径无效")
         }
@@ -296,7 +298,7 @@ final class MobileAPI {
         }
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = method
-        urlRequest.timeoutInterval = 12
+        urlRequest.timeoutInterval = timeoutInterval
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
         if authenticated, let token = requestSession?.accessToken {
             urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -313,6 +315,8 @@ final class MobileAPI {
             throw MobileAPIError.unavailable("登录账号已变化，请重新操作")
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let retryAfter = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After")
+            .flatMap(Int.init).map { min(60, max(0, $0)) }
         let envelope = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         let apiStatus = envelope["status"] as? Int ?? envelope["Status"] as? Int
         if authenticated && (status == 401 || apiStatus == 401) {
@@ -320,7 +324,7 @@ final class MobileAPI {
                 _ = try await refreshSession(old)
                 try Task.checkCancellation()
                 return try await request(path, method: method, body: body, authenticated: true,
-                                         canRefresh: false, expectedPrincipal: principal)
+                                         canRefresh: false, expectedPrincipal: principal, timeoutInterval: timeoutInterval)
             }
             if store.session?.accessToken == requestSession?.accessToken { store.clear() }
             throw MobileAPIError.unavailable("登录已失效，请重新登录")
@@ -335,7 +339,8 @@ final class MobileAPI {
                 throw MobileAPIError.forbidden(message ?? "当前账号无权执行此操作")
             }
             throw MobileAPIError.rejected(statusCode: apiStatus ?? status,
-                                           message: message ?? "请求失败，请稍后重试")
+                                           message: message ?? "请求失败，请稍后重试",
+                                           retryAfterSeconds: retryAfter)
         }
         return envelope["Response"] ?? envelope["response"] ?? envelope["Data"] ?? envelope["data"] ?? NSNull()
     }

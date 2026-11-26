@@ -347,8 +347,8 @@ struct NativeTicketBookingView: View {
             guard let summary = try await MobileAPI(store: store).get(
                 "/api/JHCTIMemberProgram/GetMySummary", authenticated: true,
                 expectedPrincipal: nativeTourismPrincipal(token)) as? [String: Any],
-                  let balance = nativeMemberLedgerString(summary, "PointsBalance").flatMap(Int64.init), balance >= 0,
-                  let debt = nativeMemberLedgerString(summary, "PointsDebt").flatMap(Int64.init), debt >= 0,
+                  let balance = nativeMemberPointSummaryString(summary, "PointsBalance").flatMap(Int64.init), balance >= 0,
+                  let debt = nativeMemberPointSummaryString(summary, "PointsDebt").flatMap(Int64.init), debt >= 0,
                   nativeTourismPrincipal(store.session?.accessToken) == nativeTourismPrincipal(token),
                   pointsSummaryRevision == requestRevision else {
                 throw MobileAPIError.unavailable("积分摘要无效")

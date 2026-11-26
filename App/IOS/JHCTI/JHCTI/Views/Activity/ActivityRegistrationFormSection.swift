@@ -29,13 +29,19 @@ struct ActivityRegistrationFormSection: View {
                     Image(systemName: "minus").font(.system(size: NativeTypography.size(11), weight: .semibold))
                         .frame(width: 34, height: 34).foregroundStyle(Brand.muted)
                         .overlay(Circle().stroke(Brand.border, lineWidth: 1))
-                }.disabled(quantity <= 1)
+                }
+                .accessibilityLabel("减少报名人数")
+                .accessibilityValue("当前报名人数 \(quantity) 人")
+                .disabled(quantity <= 1)
                 Text("\(quantity)").font(.system(size: NativeTypography.size(13), weight: .semibold)).frame(width: 24)
                 Button { onQuantityChange(min(quantity + 1, maxQuantity)) } label: {
                     Image(systemName: "plus").font(.system(size: NativeTypography.size(11), weight: .semibold))
                         .frame(width: 34, height: 34).foregroundStyle(Brand.primary)
                         .overlay(Circle().stroke(Brand.border, lineWidth: 1))
-                }.disabled(quantity >= maxQuantity)
+                }
+                .accessibilityLabel("增加报名人数")
+                .accessibilityValue("当前报名人数 \(quantity) 人")
+                .disabled(quantity >= maxQuantity)
             }
 
             Text("参与者信息").font(.system(size: NativeTypography.size(14), weight: .semibold)).foregroundStyle(Brand.primary)

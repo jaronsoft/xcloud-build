@@ -35,16 +35,21 @@ struct ActivityDetailSessionSelectionSection: View {
                 ForEach(sessions.indices, id: \.self) { index in
                     let session = sessions[index]
                     let sessionID = session["Id"] as? String ?? ""
+                    let sessionName = session["Name"] as? String ?? "活动场次"
                     let selected = registrationEnabled == true && selectedSessionID == sessionID
                     let availabilityRow = availabilityRows.first { $0["Id"] as? String == sessionID }
                     let seats = availabilityRow?["RemainingCapacity"] as? Int
                     let bookable = registrationEnabled == true && isBookable(availabilityRow, now)
+                    let statusText = registrationEnabled == false ? "活动报名暂未开放"
+                        : registrationEnabled == nil ? "正在确认报名状态"
+                        : bookable ? (selected ? "已选择 · 剩余名额 \(seats ?? 0)" : "剩余名额 \(seats ?? 0)")
+                        : unavailableText(availabilityRow, now)
                     Button {
                         onSelect(sessionID, seats)
                     } label: {
                         VStack(alignment: .leading, spacing: 5) {
                             HStack(alignment: .top, spacing: 4) {
-                                Text(session["Name"] as? String ?? "活动场次")
+                                Text(sessionName)
                                     .font(.system(size: NativeTypography.size(11), weight: .semibold))
                                     .lineLimit(2)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -53,10 +58,7 @@ struct ActivityDetailSessionSelectionSection: View {
                                 .font(.system(size: NativeTypography.size(9)))
                                 .foregroundStyle(Brand.muted)
                                 .lineLimit(2)
-                            Text(registrationEnabled == false ? "活动报名暂未开放"
-                                 : registrationEnabled == nil ? "正在确认报名状态"
-                                 : bookable ? (selected ? "已选择 · 剩余名额 \(seats ?? 0)" : "剩余名额 \(seats ?? 0)")
-                                 : unavailableText(availabilityRow, now))
+                            Text(statusText)
                                 .font(.system(size: NativeTypography.size(9), weight: selected ? .medium : .regular))
                                 .foregroundStyle(selected ? Brand.primary : Brand.muted)
                         }
@@ -68,6 +70,9 @@ struct ActivityDetailSessionSelectionSection: View {
                             .stroke(selected ? Brand.primary.opacity(0.55) : Brand.border.opacity(0.55), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("\(sessionName)，\(dateRange(session["StartTime"], session["EndTime"]))，\(statusText)")
+                    .accessibilityValue(selected ? "已选择" : "未选择")
+                    .accessibilityAddTraits(selected ? .isSelected : [])
                     .disabled(isBusy || !bookable)
                 }
             }

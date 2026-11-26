@@ -5,6 +5,30 @@ private func nativeMemberLedgerValue(_ row: [String: Any], _ key: String) -> Any
     row[key] ?? row[key.prefix(1).lowercased() + key.dropFirst()]
 }
 
+func nativeMemberPointSummaryString(_ row: [String: Any], _ key: String) -> String? {
+    let camelKey = key.prefix(1).lowercased() + key.dropFirst()
+    guard let pascalValue = row[key] else { return row[camelKey] as? String }
+    guard let camelValue = row[camelKey] else { return pascalValue as? String }
+    guard nativeMemberLedgerAliasesMatch(pascalValue, camelValue) else { return nil }
+    return pascalValue as? String
+}
+
+private func nativeMemberLedgerAliasesMatch(_ left: Any, _ right: Any) -> Bool {
+    if let left = left as? String, let right = right as? String { return left == right }
+    if let left = left as? NSNumber, let right = right as? NSNumber {
+        return CFGetTypeID(left) == CFGetTypeID(right) && left == right
+    }
+    if left is NSNull, right is NSNull { return true }
+    if let left = left as? NSObject { return left.isEqual(right) }
+    return false
+}
+
+private func nativeMemberLedgerAliasesAreConsistent(_ row: [String: Any], _ key: String) -> Bool {
+    let camelKey = key.prefix(1).lowercased() + key.dropFirst()
+    guard let pascalValue = row[key], let camelValue = row[camelKey] else { return true }
+    return nativeMemberLedgerAliasesMatch(pascalValue, camelValue)
+}
+
 func nativeMemberLedgerString(_ row: [String: Any], _ key: String) -> String? {
     nativeMemberLedgerValue(row, key) as? String
 }
@@ -297,6 +321,11 @@ struct NativeMemberLedgerView: View {
                   !Task.isCancelled, store.session?.accessToken == token, requestSequence == sequence else {
                 throw MobileAPIError.unavailable("账本回执格式异常，请刷新重试。")
             }
+            for field in ["Entries", "Page", "PageSize", "Total", "Balance", "Debt", "CurrentLevelName", "CurrentLevelCode", "CurrentLevelId", "CurrentLevelBenefitVersion", "CurrentLevelBenefits"] {
+                guard nativeMemberLedgerAliasesAreConsistent(result, field) else {
+                    throw MobileAPIError.unavailable("账本分页字段别名冲突，请刷新重试。")
+                }
+            }
             guard let rawPage = nativeMemberLedgerValue(result, "Page") as? Int,
                   let rawPageSize = nativeMemberLedgerValue(result, "PageSize") as? Int,
                   let rawTotal = nativeMemberLedgerValue(result, "Total") as? Int, rawTotal >= 0 else {
@@ -347,10 +376,15 @@ struct NativeMemberLedgerView: View {
             let allowed = kind == "points" ? pointTypes : growthTypes
             var ids = Set<String>()
             for row in rows {
+                for field in ["Id", "EntryType", "ChangeAmount", "BalanceAfter", "Reason", "CreateTime", "UserIdentityType", "OperatorName", "UserId", "TenantId", "IsDeleted", "ReversesLedgerId", "DebtChange", "DebtAfter", "ExpiredPoints", "ExpiresAt"] {
+                    guard nativeMemberLedgerAliasesAreConsistent(row, field) else {
+                        throw MobileAPIError.unavailable("会员流水字段别名冲突，请刷新重试。")
+                    }
+                }
                 let reversedId = nativeMemberLedgerValue(row, "ReversesLedgerId")
                 let reversedIdValid = reversedId == nil || reversedId is NSNull || (reversedId as? String).flatMap(Int64.init).map({ $0 > 0 }) == true
                 let expiredValue = nativeMemberLedgerValue(row, "ExpiredPoints")
-                let expiredPointsValid = kind != "points" || expiredValue == nil || expiredValue is NSNull ||
+                let expiredPointsValid = kind != "points" ||
                     (expiredValue as? String).flatMap(Int64.init).map({ $0 >= 0 }) == true
                 let expiryValue = nativeMemberLedgerValue(row, "ExpiresAt")
                 let expiryTimeValid = expiryValue == nil || expiryValue is NSNull ||

@@ -374,9 +374,9 @@ struct TravelRouteDetailView: View {
             guard let summary = try await MobileAPI(store: store).get(
                 "/api/JHCTIMemberProgram/GetMySummary", authenticated: true,
                 expectedPrincipal: nativeTourismPrincipal(token)) as? [String: Any],
-                  let balanceText = nativeMemberLedgerString(summary, "PointsBalance"),
+                  let balanceText = nativeMemberPointSummaryString(summary, "PointsBalance"),
                   let balance = Int64(balanceText), balance >= 0,
-                  let debtText = nativeMemberLedgerString(summary, "PointsDebt"),
+                  let debtText = nativeMemberPointSummaryString(summary, "PointsDebt"),
                   let debt = Int64(debtText), debt >= 0,
                   store.session?.accessToken == token, pointsSummaryRevision == requestRevision else {
                 throw MobileAPIError.unavailable("积分摘要无效")
@@ -473,6 +473,14 @@ struct TravelRouteDetailView: View {
             let orderID = response["Id"] as? String ?? ""
             guard let expectedCashCents = nativeMoneyCents(response["CashPayableAmount"]) else {
                 throw MobileAPIError.unavailable("订单现金应付金额无法确认，已转至本人线路订单核对。")
+            }
+            let paymentGateOpen = await MobileAPI(store: store).featureEnabled("F-DST-002", forceRefresh: true)
+            guard store.session?.accessToken == token else {
+                throw MobileAPIError.unavailable("登录账号已变化，请在本人线路订单核对。")
+            }
+            bookingEnabled = paymentGateOpen
+            guard paymentGateOpen else {
+                throw MobileAPIError.unavailable("线路预订已关闭或暂时无法确认；订单已创建，请前往本人线路订单核对，不会发起支付。")
             }
             guard let payment = try await MobileAPI(store: store).post(
                 "/api/JHCTITravelRouteBooking/CreateOrderPayment", body: [

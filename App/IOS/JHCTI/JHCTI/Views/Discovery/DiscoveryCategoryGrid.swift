@@ -53,6 +53,7 @@ struct DiscoveryCategoryGrid: View {
                             categoryCard(category)
                         }
                         .disabled(accessStates[category.id] != .open)
+                        .accessibilityLabel(categoryAccessibilityName(category))
                     } else {
                         Button {
                             if category.id == "tickets", accessStates[category.id] == .closed {
@@ -62,6 +63,7 @@ struct DiscoveryCategoryGrid: View {
                             }
                         } label: { categoryCard(category) }
                             .disabled(accessStates[category.id] != .open && !(category.id == "tickets" && accessStates[category.id] == .closed))
+                            .accessibilityLabel(categoryAccessibilityName(category))
                     }
                 }
             }
@@ -93,5 +95,14 @@ struct DiscoveryCategoryGrid: View {
         case .pendingConfirmation: return "开放状态待确认"
         case .unavailable: return "状态暂不可用"
         }
+    }
+
+    private func categoryAccessibilityName(_ category: DiscoveryCategory) -> String {
+        let isClosedTicket = category.id == "tickets" && accessStates[category.id] == .closed
+        if isClosedTicket {
+            return "\(category.title)，暂未开放，点击查看说明"
+        }
+        guard let status = categoryStatusText(category) else { return "打开\(category.title)" }
+        return "\(category.title)，\(status)"
     }
 }

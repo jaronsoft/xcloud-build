@@ -111,8 +111,8 @@ struct NativeDiningPackageCheckoutView: View {
         do {
             guard let summary = try await MobileAPI(store: store).get("/api/JHCTIMemberProgram/GetMySummary", authenticated: true,
                 expectedPrincipal: nativeTourismPrincipal(token)) as? [String: Any],
-                  let balanceText = nativeMemberLedgerString(summary, "PointsBalance"), let balance = Int64(balanceText), balance >= 0,
-                  let debtText = nativeMemberLedgerString(summary, "PointsDebt"), let debt = Int64(debtText), debt >= 0,
+                  let balanceText = nativeMemberPointSummaryString(summary, "PointsBalance"), let balance = Int64(balanceText), balance >= 0,
+                  let debtText = nativeMemberPointSummaryString(summary, "PointsDebt"), let debt = Int64(debtText), debt >= 0,
                   store.session?.accessToken == token else { throw MobileAPIError.unavailable("积分摘要无效") }
             pointsBalance = debt > 0 ? 0 : balance; pointsDebt = debt
         } catch {

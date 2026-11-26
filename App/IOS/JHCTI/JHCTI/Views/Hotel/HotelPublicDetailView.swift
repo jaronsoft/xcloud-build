@@ -413,9 +413,9 @@ struct HotelPublicDetailView: View {
             guard let summary = try await MobileAPI(store: store).get(
                 "/api/JHCTIMemberProgram/GetMySummary", authenticated: true,
                 expectedPrincipal: nativeTourismPrincipal(token)) as? [String: Any],
-                  let balanceText = nativeMemberLedgerString(summary, "PointsBalance"),
+                  let balanceText = nativeMemberPointSummaryString(summary, "PointsBalance"),
                   let balance = Int64(balanceText), balance >= 0,
-                  let debtText = nativeMemberLedgerString(summary, "PointsDebt"),
+                  let debtText = nativeMemberPointSummaryString(summary, "PointsDebt"),
                   let debt = Int64(debtText), debt >= 0,
                   store.session?.accessToken == token, pointsSummaryRevision == requestRevision else {
                 throw MobileAPIError.unavailable("积分摘要无效")
@@ -526,6 +526,14 @@ struct HotelPublicDetailView: View {
             UserDefaults.standard.removeObject(forKey: requestSnapshotStorageKey); pendingIdempotencyKey = nil
             guard let cashCents = nativeMoneyCents(response["CashPayableAmount"]) else {
                 throw MobileAPIError.unavailable("订单现金应付金额无法确认，已转至本人住宿订单核对。")
+            }
+            let paymentGateOpen = await MobileAPI(store: store).featureEnabled("F-DST-001", forceRefresh: true)
+            guard store.session?.accessToken == token else {
+                throw MobileAPIError.unavailable("登录账号已变化，请在本人住宿订单核对。")
+            }
+            bookingEnabled = paymentGateOpen
+            guard paymentGateOpen else {
+                throw MobileAPIError.unavailable("酒店预订已关闭或暂时无法确认；订单已创建，请前往本人住宿订单核对，不会发起支付。")
             }
             guard let payment = try await MobileAPI(store: store).post("/api/JHCTIHotelBooking/CreateOrderPayment", body: [
                 "OrderId": response["Id"] as? String ?? "", "Provider": "alipay", "Scene": "wap"
