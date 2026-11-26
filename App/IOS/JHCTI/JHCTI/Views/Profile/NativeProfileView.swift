@@ -32,6 +32,7 @@ struct ProfileView: View {
     @State private var commerceOrdersOpen = false
     @State private var ticketOrdersOpen = false
     @State private var couponsOpen = false
+    @State private var identityProfileRequested = false
     @State private var diningPackageOrdersOpen = false
     @State private var supportTicketsOpen = false
     @State private var merchantOnboardingOpen = false
@@ -235,7 +236,7 @@ struct ProfileView: View {
                                     shownAgreement = privacyAgreement
                                 }
                             }
-                            profileInfoRow("实名资料授权", detail: "查看记录 ›") {
+                            profileInfoRow("实名资料登记与授权", detail: "查看或补充 ›") {
                                 identityConsentOpen = true
                             }
                             profileInfoRow("清理缓存", detail: "\(ByteCountFormatter.string(fromByteCount: Int64(cacheBytes), countStyle: .file))  管理 ›") {
@@ -467,10 +468,18 @@ struct ProfileView: View {
             .sheet(isPresented: $diningPackageOrdersOpen) {
                 NativeDiningPackageOrdersView(store: store)
             }
-            .sheet(isPresented: $couponsOpen) {
+            .sheet(isPresented: $couponsOpen, onDismiss: {
+                if identityProfileRequested {
+                    identityProfileRequested = false
+                    identityConsentOpen = true
+                }
+            }) {
                 NativeCouponsView(store: store, onLogin: {
                     couponsOpen = false
                     authOpen = true
+                }, onOpenIdentityProfile: {
+                    identityProfileRequested = true
+                    couponsOpen = false
                 })
             }
             .sheet(isPresented: $supportTicketsOpen) {

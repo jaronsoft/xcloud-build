@@ -5,6 +5,7 @@ struct NativeCouponsView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var store: SessionStore
     let onLogin: () -> Void
+    let onOpenIdentityProfile: () -> Void
     @State private var tab = "claim"
     @State private var status = "Available"
     @State private var campaigns = [[String: Any]]()
@@ -151,10 +152,10 @@ struct NativeCouponsView: View {
             Text("我同意本活动为资格及身份证限额校验使用账号实名资料；身份证原文不会写入领取记录或日志。此校验不代表权威身份认证。")
         }
         .alert("实名资料未就绪", isPresented: $identityNotReady) {
-            Button("去账号资料", action: onLogin)
+            Button("去填写实名资料", action: onOpenIdentityProfile)
             Button("暂不领取", role: .cancel) {}
         } message: {
-            Text("所有消费券领取前都需登记实名资料、验证绑定手机号并确认当前隐私告知。请先在账号资料中完成设置；平台仅核对资料格式及活动规则，不做权威身份核验。")
+            Text("手机号验证仅确认你能接收该号码的验证码，不代表姓名或证件号码已核实。姓名和证件号码由本人填写；平台只校验格式和活动规则，虚假资料可能影响后续权益。")
         }
         .sheet(isPresented: Binding(get: { qrImage != nil }, set: { if !$0 { qrImage = nil } })) {
             NavigationStack {

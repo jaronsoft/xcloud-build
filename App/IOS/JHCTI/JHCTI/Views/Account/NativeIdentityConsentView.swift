@@ -40,7 +40,7 @@ struct NativeIdentityConsentView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("实名资料仅用于实名票种购票、入园核验及实名消费券资格校验。本平台只校验格式和平台规则，不进行公安或第三方权威身份核验。撤回后，新的实名业务不能使用已保存资料；订单资料快照及账号中加密保存的资料仍按原规则保留。")
+                    Text("手机号验证仅确认你能接收该号码的验证码，不代表姓名或证件号码已核实。姓名和身份证号码由本人填写，本平台只校验格式和平台规则，不进行权威身份核验；虚假资料可能影响后续权益。撤回后，新的实名业务不能使用已保存资料；订单资料快照及账号中加密保存的资料仍按原规则保留。")
                         .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
                     if loading {
                         ProgressView("正在读取授权记录…").frame(maxWidth: .infinity, alignment: .leading)
@@ -106,7 +106,7 @@ struct NativeIdentityConsentView: View {
                 .padding(16)
             }
             .background(Brand.background)
-            .navigationTitle("实名资料授权")
+            .navigationTitle("实名资料登记与授权")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("关闭") { dismiss() } } }
             .confirmationDialog("撤回实名资料授权？", isPresented: Binding(
