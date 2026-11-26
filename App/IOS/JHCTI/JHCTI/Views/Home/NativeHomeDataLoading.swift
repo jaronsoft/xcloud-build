@@ -6,13 +6,6 @@ extension HomeView {
         let hasVisibleContent = !components.isEmpty
         loading = !hasVisibleContent
         error = nil
-        if !hasVisibleContent {
-            quickEntriesConfigured = true
-            quickEntryItems = [["ComponentType": "QuickEntry", "Title": "抢消费券",
-                "Subtitle": "领取年货节消费券", "TargetType": "InternalPage", "InternalPageKey": "coupon-center",
-                "TargetPath": "/coupon-center", "SortOrder": 99, "IsEnabled": true]]
-            loading = false
-        }
         if !initialLoadCompleted {
             initialLoadCompleted = true
             onInitialLoadComplete()
@@ -59,42 +52,20 @@ extension HomeView {
                     availableQuickEntries.append(entry)
                 }
             }
-            let hasCouponEntry = availableQuickEntries.contains {
-                ($0["InternalPageKey"] as? String ?? $0["internalPageKey"] as? String ?? "").lowercased() == "coupon-center"
-            }
-            if hasConfiguredQuickEntries {
-                if let index = availableQuickEntries.firstIndex(where: {
-                    ($0["InternalPageKey"] as? String ?? $0["internalPageKey"] as? String ?? "").lowercased() == "coupon-center"
-                }) {
-                    availableQuickEntries[index]["Title"] = "抢消费券"
-                    availableQuickEntries[index]["Subtitle"] = "领取年货节消费券"
-                } else {
-                    if availableQuickEntries.count >= 8 { availableQuickEntries.removeLast() }
-                    availableQuickEntries.append(["ComponentType": "QuickEntry", "Title": "抢消费券",
-                        "Subtitle": "领取年货节消费券", "TargetType": "InternalPage", "InternalPageKey": "coupon-center",
-                        "TargetPath": "/coupon-center", "SortOrder": 99, "IsEnabled": true])
-                }
-            }
             quickEntryItems = availableQuickEntries
             loading = false
             let fallbackShortcutFeatures = [
                 "F-TKT-002", "MODULE-SCENIC", "MODULE-DINING", "MODULE-HOTEL",
-                "MODULE-ACTIVITY", "MODULE-GUIDE", "MODULE-GUIDE", "MODULE-TRAVEL-ROUTE", ""
+                "MODULE-ACTIVITY", "MODULE-GUIDE", "MODULE-GUIDE", "MODULE-TRAVEL-ROUTE"
             ]
             var visibleFallbackShortcuts: [Int] = []
             if !hasConfiguredQuickEntries {
                 for (index, featureID) in fallbackShortcutFeatures.enumerated() {
-                    let featureOpen: Bool
-                    if featureID.isEmpty { featureOpen = true }
-                    else { featureOpen = await api.featureEnabled(featureID, allowStale: allowStale, forceRefresh: forceRefresh) }
+                    let featureOpen = await api.featureEnabled(featureID, allowStale: allowStale, forceRefresh: forceRefresh)
                     guard !Task.isCancelled else { loading = false; return }
                     if featureOpen {
                         visibleFallbackShortcuts.append(index)
                     }
-                }
-                if !visibleFallbackShortcuts.contains(8) {
-                    if visibleFallbackShortcuts.count >= 8 { visibleFallbackShortcuts.removeLast() }
-                    visibleFallbackShortcuts.append(8)
                 }
             }
             fallbackShortcutIndices = visibleFallbackShortcuts

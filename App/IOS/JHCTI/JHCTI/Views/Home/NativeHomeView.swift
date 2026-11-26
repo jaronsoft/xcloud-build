@@ -234,8 +234,6 @@ struct HomeView: View {
             showCatalog(.init(id: "products", title: "江都好物", path: "/api/JHCTIProduct/GetPublicPage", featureID: "MODULE-PRODUCT"))
         } else if ["hotels"].contains(key) || (key.isEmpty && index == 3) {
             showCatalog(.init(id: "hotels", title: "酒店民宿", path: "/api/JHCTIHotel/GetPublicPage", featureID: "MODULE-HOTEL"))
-        } else if key.isEmpty && index == 8 {
-            onCouponCenter()
         } else if ["routes", "travel-routes"].contains(key) || (key.isEmpty && index == 7) {
             showCatalog(.init(id: "routes", title: "旅游线路", path: "/api/JHCTITravelRoute/GetPublicPage", featureID: "MODULE-TRAVEL-ROUTE"))
         } else if ["dining", "restaurants", "food"].contains(key) || (key.isEmpty && index == 2) {
