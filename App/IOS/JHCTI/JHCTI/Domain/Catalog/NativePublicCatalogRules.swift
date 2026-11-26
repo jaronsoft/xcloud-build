@@ -151,7 +151,7 @@ private func nativeSearchTargetIsConsistent(type: String, id: String, targetPath
     }
 }
 
-func nativeSearchResultPage(_ response: [String: Any], page: Int, pageSize: Int) -> (rows: [[String: Any]], total: Int, pageCount: Int)? {
+func nativeSearchResultPage(_ response: [String: Any], page: Int, pageSize: Int) -> (rows: [[String: Any]], total: Int, pageCount: Int, continuationToken: String?)? {
     guard let catalog = nativePublicCatalogPage(response, page: page, pageSize: pageSize), pageSize > 0 else { return nil }
     let pageCountValues = ["PageCount", "pageCount"].compactMap { response.keys.contains($0) ? response[$0] : nil }
     guard let firstPageCount = pageCountValues.first as? NSNumber,
@@ -164,6 +164,15 @@ func nativeSearchResultPage(_ response: [String: Any], page: Int, pageSize: Int)
           }) else { return nil }
     let expectedPageCount = (catalog.total + pageSize - 1) / pageSize
     guard firstPageCount.intValue == expectedPageCount else { return nil }
+
+    let tokenValues = ["ContinuationToken", "continuationToken"].compactMap { response[$0] }
+    var continuationToken: String?
+    if let value = tokenValues.first {
+        guard let token = value as? String, token.utf8.count == 64,
+              token.utf8.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) }),
+              tokenValues.dropFirst().allSatisfy({ ($0 as? String) == token }) else { return nil }
+        continuationToken = token
+    }
 
     let supportedTypes: Set<String> = ["ScenicSpot", "GuideRoute", "Ticket", "Article", "Activity", "Product", "Hotel", "TravelRoute", "DiningStore"]
     func stringField(_ row: [String: Any], pascal: String, camel: String) -> String? {
@@ -198,5 +207,5 @@ func nativeSearchResultPage(_ response: [String: Any], page: Int, pageSize: Int)
               optionalStringFieldIsValid(row, pascal: "AdmissionType", camel: "admissionType") else { return nil }
         if !keys.insert("\(type.lowercased()):\(id)").inserted { return nil }
     }
-    return (catalog.rows, catalog.total, firstPageCount.intValue)
+    return (catalog.rows, catalog.total, firstPageCount.intValue, continuationToken)
 }

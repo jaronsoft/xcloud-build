@@ -1,6 +1,56 @@
 import Foundation
 import CoreFoundation
 
+enum NativeBookingRecoveryState: Equatable {
+    case readyToPay, pending, settled
+}
+
+func nativeBookingRecoveryState(_ order: [String: Any], expectedOrderID: String? = nil) -> NativeBookingRecoveryState? {
+    func field(_ name: String) -> Any? {
+        let alias = name.prefix(1).lowercased() + name.dropFirst()
+        guard let value = order[name] as? NSObject else { return nil }
+        if let other = order[alias] as? NSObject, CFGetTypeID(value) != CFGetTypeID(other) || !value.isEqual(other) { return nil }
+        return value
+    }
+    func flag(_ name: String) -> Bool? {
+        guard let value = field(name) as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() else { return nil }
+        return value.boolValue
+    }
+    guard let id = field("Id") as? String, let numericID = Int64(id), numericID > 0, String(numericID) == id,
+          expectedOrderID == nil || expectedOrderID == id,
+          let status = field("Status") as? String,
+          let unmatchedPayment = flag("HasUnmatchedPayment"), let unavailablePayment = flag("HasUnavailablePayment"),
+          let payment = field("PaymentStatus") else { return nil }
+    let settledStatuses = ["Paid", "Closed", "CancellationReview", "RefundProcessing", "GroupRefundProcessing", "Refunded"]
+    guard ["PendingPayment", "PaymentReview"].contains(status) || settledStatuses.contains(status) else { return nil }
+    let paymentStatus = payment as? String
+    let unresolvedPayment = ["Creating", "RequiresAction", "Processing", "Unknown", "PaidUnmatched"]
+    guard payment is NSNull || (paymentStatus.map { (unresolvedPayment + ["Paid", "Failed", "Closed"]).contains($0) } == true) else { return nil }
+    if unmatchedPayment || unavailablePayment || paymentStatus.map(unresolvedPayment.contains) == true
+        || (status == "Closed" && paymentStatus == "Paid") || (status == "Paid" && paymentStatus != nil && paymentStatus != "Paid") {
+        return .pending
+    }
+    if settledStatuses.contains(status) { return .settled }
+    return status == "PendingPayment" && payment is NSNull ? .readyToPay : .pending
+}
+
+@discardableResult
+func clearNativeBookingRecovery(storageKey: String, requestID: String, defaults: UserDefaults = .standard) -> Bool {
+    guard defaults.string(forKey: storageKey) == requestID else { return false }
+    for suffix in [".amountCents", ".requestSnapshot", ".orderId", ""] { defaults.removeObject(forKey: storageKey + suffix) }
+    return defaults.object(forKey: storageKey) == nil
+}
+
+func applyNativeBookingRecovery(_ order: [String: Any], storageKey: String, requestID: String,
+                                defaults: UserDefaults = .standard) -> NativeBookingRecoveryState? {
+    guard defaults.string(forKey: storageKey) == requestID,
+          let state = nativeBookingRecoveryState(order, expectedOrderID: defaults.string(forKey: storageKey + ".orderId")),
+          let orderID = order["Id"] as? String else { return nil }
+    if state == .settled { return clearNativeBookingRecovery(storageKey: storageKey, requestID: requestID, defaults: defaults) ? state : nil }
+    defaults.set(orderID, forKey: storageKey + ".orderId")
+    return defaults.string(forKey: storageKey + ".orderId") == orderID ? state : nil
+}
+
 func maximumPointsForHalfAmount(_ amount: Double) -> Int64 {
     guard amount.isFinite, amount > 0 else { return 0 }
     let cents = NSDecimalNumber(value: amount).multiplying(by: NSDecimalNumber(value: 100))

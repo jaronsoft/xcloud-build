@@ -108,13 +108,10 @@ final class MobileAPI {
         return SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    func get(_ path: String, authenticated: Bool = false, expectedPrincipal: String? = nil) async throws -> Any {
+    func get(_ path: String, authenticated: Bool = false, expectedPrincipal: String? = nil,
+             timeoutInterval: TimeInterval = 12) async throws -> Any {
         try await request(path, method: "GET", body: nil, authenticated: authenticated, canRefresh: true,
-                          expectedPrincipal: expectedPrincipal)
-    }
-
-    func hasPublicCachedData(_ path: String) -> Bool {
-        NativePublicCache.shared.publicData(for: baseURL.absoluteString + path, allowStale: true) != nil
+                          expectedPrincipal: expectedPrincipal, timeoutInterval: timeoutInterval)
     }
 
     func getPublicCached(_ path: String, forceRefresh: Bool = false, allowStale: Bool = false) async throws -> Any {

@@ -92,9 +92,14 @@ func nativeTicketIdentityInputError(name: String, number: String, consent: Bool)
 }
 
 func nativeTicketIdentitySaveReceiptValid(_ value: [String: Any]?, previousVersion: Int64) -> Bool {
-    nativeTicketIdentityProfileValid(value)
-        && value?["HasProfile"] as? Bool == true && value?["IsConsentCurrent"] as? Bool == true
-        && (nativeTicketIdentityVersion(value) ?? -1) > previousVersion
+    guard nativeTicketIdentityBookingEligible(value), let version = nativeTicketIdentityVersion(value) else { return false }
+    return version > 0 && version - 1 == previousVersion
+}
+
+func nativeTicketIdentityRevokeReceiptValid(_ value: [String: Any]?, previousVersion: Int64) -> Bool {
+    guard nativeTicketIdentityProfileValid(value), let version = nativeTicketIdentityVersion(value) else { return false }
+    return version > 0 && version - 1 == previousVersion
+        && value?["HasProfile"] as? Bool == true && value?["HasConsent"] as? Bool == false
 }
 
 func nativeTicketIdentityBookingEligible(_ value: [String: Any]?) -> Bool {

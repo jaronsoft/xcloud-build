@@ -17,6 +17,8 @@ struct TravelRouteDetailView: View {
     @State private var busy = false
     @State private var showOrders = false
     @State private var pendingIdempotencyKey: String?
+    @State private var missingRecoveryRequestID: String?
+    @State private var confirmedMissingRecoveryRequestID: String?
     @State private var selectedSessionID = ""
     @State private var guestCount = 1
     @State private var pointsToUse = "0"
@@ -192,6 +194,12 @@ struct TravelRouteDetailView: View {
                             Button("重新核对上次预订") { revision += 1 }
                                 .buttonStyle(.bordered).disabled(loading || busy)
                             Button("查看本人旅游线路订单") { showOrders = true }.buttonStyle(.bordered)
+                            if let pending = pendingIdempotencyKey, pending == missingRecoveryRequestID {
+                                Button("确认本人订单中没有此预订，清除恢复编号") {
+                                    confirmedMissingRecoveryRequestID = pending; revision += 1
+                                }
+                                .buttonStyle(.bordered).disabled(loading || busy)
+                            }
                         }
                         if let bookingNotice { Text(bookingNotice).font(.caption).foregroundStyle(Brand.primary) }
                     }
@@ -252,18 +260,19 @@ struct TravelRouteDetailView: View {
                       horizontal > abs(vertical) * 1.25 else { return }
                 dismiss()
             })
-        .sheet(isPresented: $showOrders, onDismiss: { if pendingIdempotencyKey == nil { revision += 1 } }) {
+        .sheet(isPresented: $showOrders, onDismiss: { revision += 1 }) {
             NativeBookingOrdersView(store: store, initialKind: "route")
         }
         .sheet(item: $selectedScenicResource) { item in
             NavigationStack { ResourceDetailView(store: store, item: item) }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active && detail != nil && pendingIdempotencyKey == nil { revision += 1 }
+            if phase == .active && detail != nil && !busy && !showOrders && !loading { revision += 1 }
         }
         .onChange(of: store.session?.accessToken) { _, _ in
             pendingIdempotencyKey = nil; bookingNotice = nil; pointsToUse = "0"; busy = false; revision += 1
             pointsBalance = nil; pointsDebt = nil; pointsSummaryError = false
+            missingRecoveryRequestID = nil; confirmedMissingRecoveryRequestID = nil
         }
         .task(id: "\(store.session?.accessToken ?? "")-\(pointsSummaryRevision)") { await loadPointsSummary() }
         .task(id: revision) {
@@ -302,12 +311,14 @@ struct TravelRouteDetailView: View {
                     if let saved = UserDefaults.standard.string(forKey: storageKey),
                        saved.range(of: "^[A-Za-z0-9._:-]{16,100}$", options: .regularExpression) != nil {
                         pendingIdempotencyKey = saved
+                        let discardIfMissing = confirmedMissingRecoveryRequestID == saved
+                        confirmedMissingRecoveryRequestID = nil; missingRecoveryRequestID = nil
                         do {
                             let recovered = try await MobileAPI(store: store).get(
                                 "/api/JHCTITravelRouteBooking/GetMyOrderByIdempotencyKey?idempotencyKey=\(saved)", authenticated: true,
                                 expectedPrincipal: nativeTourismPrincipal(token)
                             ) as? [String: Any]
-                            guard store.session?.accessToken == token else { return }
+                            guard !Task.isCancelled, store.session?.accessToken == token else { return }
                             let recoveryMatches: Bool
                             if let savedRequestSnapshot {
                                 recoveryMatches = recovered.map { nativeTravelRouteOrderRecoverySnapshotMatches($0, snapshotText: savedRequestSnapshot) } ?? false
@@ -318,20 +329,30 @@ struct TravelRouteDetailView: View {
                                 } ?? false
                             }
                             if (savedAmountText == nil || savedAmountCents != nil), let recovered,
-                               Self.validID(recovered["Id"]) != nil, recoveryMatches {
-                                UserDefaults.standard.removeObject(forKey: storageKey)
-                                UserDefaults.standard.removeObject(forKey: storageKey + ".amountCents")
-                                UserDefaults.standard.removeObject(forKey: storageKey + ".requestSnapshot")
-                                pendingIdempotencyKey = nil; bookingNotice = "已找回上次线路订单，请核对本人订单状态。"; showOrders = true
+                               recoveryMatches, let state = applyNativeBookingRecovery(recovered, storageKey: storageKey, requestID: saved) {
+                                pendingIdempotencyKey = state == .settled ? nil : saved
+                                bookingNotice = state == .settled ? "已核对上次线路订单，恢复记录已清除。"
+                                    : "已找到上次线路订单，请在本人订单继续处理。"
                             } else if let recovered, Self.validID(recovered["Id"]) != nil {
                                 bookingNotice = "上次线路订单与保存的预订内容不一致；恢复编号已保留，请核对本人线路订单后再继续。"
-                                showOrders = true
                             }
                         } catch is CancellationError {
                             return
                         } catch {
-                            guard store.session?.accessToken == token else { return }
-                            bookingNotice = "上次线路预订结果仍待核对；请先查看本人订单，确认前暂不能提交新请求。"
+                            guard !Task.isCancelled, store.session?.accessToken == token else { return }
+                            if (error as? MobileAPIError)?.httpStatusCode == 404,
+                               UserDefaults.standard.object(forKey: storageKey + ".orderId") == nil,
+                               UserDefaults.standard.string(forKey: storageKey) == saved {
+                                if discardIfMissing, clearNativeBookingRecovery(storageKey: storageKey, requestID: saved) {
+                                    pendingIdempotencyKey = nil
+                                    bookingNotice = "已清除恢复编号，请重新查询班期后预订。"
+                                } else {
+                                    missingRecoveryRequestID = saved
+                                    bookingNotice = "暂未查到原预订，请先核对本人线路订单。"
+                                }
+                            } else {
+                                bookingNotice = "上次线路预订结果仍待核对；请先查看本人订单，确认前暂不能提交新请求。"
+                            }
                         }
                     }
                 }
@@ -429,6 +450,11 @@ struct TravelRouteDetailView: View {
         }
         let key = UUID().uuidString
         let storageKey = Self.recoveryStorageKey(accessToken: token)
+        if UserDefaults.standard.object(forKey: storageKey) != nil {
+            pendingIdempotencyKey = UserDefaults.standard.string(forKey: storageKey) ?? ""
+            error = "已有上次预订恢复记录，请先核对本人线路订单。"
+            return
+        }
         let amountStorageKey = storageKey + ".amountCents"
         let requestSnapshotStorageKey = storageKey + ".requestSnapshot"
         let requestSnapshot: [String: Any] = [
@@ -467,9 +493,9 @@ struct TravelRouteDetailView: View {
                 throw MobileAPIError.unavailable("订单已提交但回执不完整；请先核对本人旅游线路订单。")
             }
             orderCreated = true
-            UserDefaults.standard.removeObject(forKey: storageKey)
-            UserDefaults.standard.removeObject(forKey: amountStorageKey)
-            UserDefaults.standard.removeObject(forKey: requestSnapshotStorageKey); pendingIdempotencyKey = nil
+            guard applyNativeBookingRecovery(response, storageKey: storageKey, requestID: key) == .readyToPay else {
+                throw MobileAPIError.unavailable("支付状态暂不能确认，请在本人线路订单核对。")
+            }
             let orderID = response["Id"] as? String ?? ""
             guard let expectedCashCents = nativeMoneyCents(response["CashPayableAmount"]) else {
                 throw MobileAPIError.unavailable("订单现金应付金额无法确认，已转至本人线路订单核对。")
@@ -505,6 +531,7 @@ struct TravelRouteDetailView: View {
             return
         } catch {
             guard store.session?.accessToken == token else { return }
+            let creationStatus = (error as? MobileAPIError)?.httpStatusCode
             if orderCreated {
                 bookingNotice = "订单已创建；支付暂未打开，请前往本人线路订单继续支付。"
                 showOrders = true
@@ -516,14 +543,23 @@ struct TravelRouteDetailView: View {
                     expectedPrincipal: nativeTourismPrincipal(token)
                 ) as? [String: Any]
                 guard store.session?.accessToken == token else { return }
-                if let recovered, Self.validID(recovered["Id"]) != nil,
-                   nativeTravelRouteOrderRecoverySnapshotMatches(recovered, snapshotText: requestSnapshotText) {
-                    UserDefaults.standard.removeObject(forKey: storageKey)
-                    UserDefaults.standard.removeObject(forKey: amountStorageKey)
-                    UserDefaults.standard.removeObject(forKey: requestSnapshotStorageKey); pendingIdempotencyKey = nil
+                if let recovered, nativeTravelRouteOrderRecoverySnapshotMatches(recovered, snapshotText: requestSnapshotText),
+                   let state = applyNativeBookingRecovery(recovered, storageKey: storageKey, requestID: key) {
+                    pendingIdempotencyKey = state == .settled ? nil : key
                     bookingNotice = "已找回本次线路订单，请在本人旅游线路订单中继续。"; showOrders = true
                 } else { self.error = "预订结果暂未确认；恢复编号已保留，请核对本人订单，勿重复提交。" }
-            } catch { self.error = "预订结果暂未确认；恢复编号已保留，请稍后核对本人订单，勿重复提交。" }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard store.session?.accessToken == token else { return }
+                if let creationStatus, [400, 403].contains(creationStatus), (error as? MobileAPIError)?.httpStatusCode == 404,
+                   clearNativeBookingRecovery(storageKey: storageKey, requestID: key) {
+                    pendingIdempotencyKey = nil
+                    self.error = "本次预订未创建，请刷新班期后重新预订。"
+                } else {
+                    self.error = "预订结果暂未确认；恢复编号已保留，请稍后核对本人订单，勿重复提交。"
+                }
+            }
         }
     }
 

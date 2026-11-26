@@ -26,18 +26,23 @@ final class NativePublicCache {
     }
 
     func publicData(for key: String, allowStale: Bool = false) -> Any? {
+        publicDataSnapshot(for: key, allowStale: allowStale)?.value
+    }
+
+    func publicDataSnapshot(for key: String, allowStale: Bool = false) -> (value: Any, fetchedAt: Date)? {
         let url = file(key, in: "data")
         guard let data = try? Data(contentsOf: url),
               let envelope = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               envelope["version"] as? Int == 1,
               let fetchedAt = envelope["fetchedAt"] as? TimeInterval,
               Date().timeIntervalSince1970 - fetchedAt >= 0,
-              allowStale || Date().timeIntervalSince1970 - fetchedAt < dataTTL else { return nil }
-        return envelope["value"]
+              allowStale || Date().timeIntervalSince1970 - fetchedAt < dataTTL,
+              let value = envelope["value"] else { return nil }
+        return (value, Date(timeIntervalSince1970: fetchedAt))
     }
 
-    func savePublicData(_ value: Any, for key: String) {
-        let envelope: [String: Any] = ["version": 1, "fetchedAt": Date().timeIntervalSince1970, "value": value]
+    func savePublicData(_ value: Any, for key: String, fetchedAt: Date = Date()) {
+        let envelope: [String: Any] = ["version": 1, "fetchedAt": fetchedAt.timeIntervalSince1970, "value": value]
         guard JSONSerialization.isValidJSONObject(envelope),
               let data = try? JSONSerialization.data(withJSONObject: envelope) else { return }
         try? data.write(to: file(key, in: "data"), options: .atomic)

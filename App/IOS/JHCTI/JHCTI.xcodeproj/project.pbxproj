@@ -146,6 +146,7 @@
         B61300000000000000000003 /* NativeInteractiveMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61300000000000000000004 /* NativeInteractiveMap.swift */; };
         B61200000000000000000001 /* NativeTicketIdentityRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61200000000000000000002 /* NativeTicketIdentityRules.swift */; };
 		A00000000000000000000011 /* JHCTIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000001 /* JHCTIApp.swift */; };
+		A00000000000000000000F11 /* NativeAppReleases.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000F12 /* NativeAppReleases.swift */; };
 		A00000000000000000000012 /* MobileAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000002 /* MobileAPI.swift */; };
 		B67800000000000000000001 /* NativePublicCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67800000000000000000003 /* NativePublicCache.swift */; };
 		B67800000000000000000002 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67800000000000000000004 /* SessionStore.swift */; };
@@ -299,6 +300,7 @@
         B61300000000000000000004 /* NativeInteractiveMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeInteractiveMap.swift; sourceTree = "<group>"; };
         B61200000000000000000002 /* NativeTicketIdentityRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketIdentityRules.swift; sourceTree = "<group>"; };
 		A00000000000000000000001 /* JHCTIApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JHCTIApp.swift; sourceTree = "<group>"; };
+		A00000000000000000000F12 /* NativeAppReleases.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAppReleases.swift; sourceTree = "<group>"; };
 		A00000000000000000000002 /* MobileAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileAPI.swift; sourceTree = "<group>"; };
 		B67800000000000000000003 /* NativePublicCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePublicCache.swift; sourceTree = "<group>"; };
 		B67800000000000000000004 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
@@ -341,6 +343,7 @@
 				B65300000000000000000003 /* ReportsViews */,
 				B65500000000000000000003 /* MerchantViews */,
 				A00000000000000000000001 /* JHCTIApp.swift */,
+				A00000000000000000000F12 /* NativeAppReleases.swift */,
 				A00000000000000000000002 /* MobileAPI.swift */,
 				B67800000000000000000003 /* NativePublicCache.swift */,
 				B67800000000000000000004 /* SessionStore.swift */,
@@ -776,6 +779,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000011 /* JHCTIApp.swift in Sources */,
+				A00000000000000000000F11 /* NativeAppReleases.swift in Sources */,
 				A00000000000000000000012 /* MobileAPI.swift in Sources */,
 				B68800000000000000000001 /* NativeMapViews.swift in Sources */,
 				B68700000000000000000001 /* NativeGuideRouteMap.swift in Sources */,

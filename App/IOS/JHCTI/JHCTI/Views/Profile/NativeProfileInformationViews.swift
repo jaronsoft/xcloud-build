@@ -8,6 +8,8 @@ struct AgreementContent: Identifiable {
 }
 
 struct NativeProfileAboutView: View {
+    @EnvironmentObject private var releases: NativeAppReleases
+    let store: SessionStore
     let onBack: () -> Void
 
     var body: some View {
@@ -36,6 +38,13 @@ struct NativeProfileAboutView: View {
                             .foregroundStyle(Brand.ink)
                     }
                     .font(.system(size: NativeTypography.size(14)))
+                    Button(releases.checking ? "正在检查…" : "检查更新") {
+                        releases.check(api: MobileAPI(store: store), manually: true)
+                    }
+                    .disabled(releases.checking)
+                    if let message = releases.manualMessage {
+                        Text(message).font(.footnote).foregroundStyle(Brand.muted)
+                    }
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)

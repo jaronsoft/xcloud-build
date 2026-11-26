@@ -32,7 +32,6 @@ struct ProfileView: View {
     @State private var commerceOrdersOpen = false
     @State private var ticketOrdersOpen = false
     @State private var couponsOpen = false
-    @State private var identityProfileRequested = false
     @State private var diningPackageOrdersOpen = false
     @State private var supportTicketsOpen = false
     @State private var merchantOnboardingOpen = false
@@ -176,7 +175,7 @@ struct ProfileView: View {
     var body: some View {
         NavigationStack {
             if aboutOpen {
-                NativeProfileAboutView { aboutOpen = false }
+                NativeProfileAboutView(store: store) { aboutOpen = false }
             } else if !authOpen {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
@@ -223,6 +222,7 @@ struct ProfileView: View {
                         }
                         if store.session != nil {
                             NativeProfileAccountSettingsHeader { authOpen = true }
+                            profileInfoRow("实名资料登记与授权", detail: "登记或查看 ›") { identityConsentOpen = true }
                         }
                         VStack(alignment: .leading, spacing: 0) {
                             Text("协议与关于")
@@ -235,9 +235,6 @@ struct ProfileView: View {
                                 profileInfoRow("隐私政策", detail: privacyAgreement == nil ? "暂不可用" : "查看 ›") {
                                     shownAgreement = privacyAgreement
                                 }
-                            }
-                            profileInfoRow("实名资料登记与授权", detail: "查看或补充 ›") {
-                                identityConsentOpen = true
                             }
                             profileInfoRow("清理缓存", detail: "\(ByteCountFormatter.string(fromByteCount: Int64(cacheBytes), countStyle: .file))  管理 ›") {
                                 clearImageCacheSelected = true
@@ -268,6 +265,9 @@ struct ProfileView: View {
                                 .foregroundStyle(Brand.ink)
                             Text(loginEnabled ? "登录后同步个人收藏、票券和行程信息" : "登录服务状态由平台运营配置")
                                 .font(.system(size: 14)).foregroundStyle(Brand.muted)
+                        }
+                        if store.session != nil {
+                            profileInfoRow("实名资料登记与授权", detail: "登记或查看 ›") { identityConsentOpen = true }
                         }
                         VStack(alignment: .leading, spacing: 10) {
                             Text("用户协议").font(.system(size: 16, weight: .semibold))
@@ -468,18 +468,10 @@ struct ProfileView: View {
             .sheet(isPresented: $diningPackageOrdersOpen) {
                 NativeDiningPackageOrdersView(store: store)
             }
-            .sheet(isPresented: $couponsOpen, onDismiss: {
-                if identityProfileRequested {
-                    identityProfileRequested = false
-                    identityConsentOpen = true
-                }
-            }) {
+            .sheet(isPresented: $couponsOpen) {
                 NativeCouponsView(store: store, onLogin: {
                     couponsOpen = false
                     authOpen = true
-                }, onOpenIdentityProfile: {
-                    identityProfileRequested = true
-                    couponsOpen = false
                 })
             }
             .sheet(isPresented: $supportTicketsOpen) {

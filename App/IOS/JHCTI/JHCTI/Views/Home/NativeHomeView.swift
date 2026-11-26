@@ -52,7 +52,8 @@ struct HomeView: View {
     @State var loading = true
     @State var error: String?
     @State private var revision = 0
-    @State var nextComponentChangeDelayMs: Int64?
+    @State var homeLayoutDeadline: Date?
+    @State var homeLoadGeneration = 0
     @State private var serviceStatusClock = Date()
     @State private var appeared = false
     @State var initialLoadCompleted = false
@@ -343,23 +344,23 @@ struct HomeView: View {
             .task(id: "\(scenePhase)-\(revision)-\(isVisible)") {
                 guard scenePhase == .active, isVisible else { return }
                 let api = MobileAPI(store: store)
-                let homePath = "/api/JHCTIHomePage/GetPublicHome"
-                if api.hasPublicCachedData(homePath) {
-                    // 每次回到首页先展示磁盘缓存，再静默读取服务端更新。
-                    await load(allowStale: true)
+                let cached = api.cachedHomeLayout()
+                if let cached {
+                    // 首页只预览尚未越过排期的布局，随后重新向服务端读取。
+                    await load(cachedLayout: cached)
                     guard !Task.isCancelled else { return }
-                    await load()
-                } else {
-                    await load(forceRefresh: revision > 0)
                 }
+                await load(forceRefresh: cached == nil && revision > 0)
             }
-            .task(id: nextComponentChangeDelayMs) {
-                guard let delay = nextComponentChangeDelayMs, delay > 0,
-                      scenePhase == .active, isVisible else { return }
-                // 仅在服务端给出的下一次组件变化时刷新，页面离开或进入后台后由现有生命周期重新加载。
-                try? await Task.sleep(for: .milliseconds(max(1000, delay)))
-                guard !Task.isCancelled, scenePhase == .active, isVisible else { return }
-                nextComponentChangeDelayMs = nil
+            .task(id: "\(homeLayoutDeadline?.timeIntervalSince1970 ?? 0)-\(scenePhase)-\(isVisible)") {
+                guard let deadline = homeLayoutDeadline, scenePhase == .active, isVisible else { return }
+                while !Task.isCancelled {
+                    let remaining = deadline.timeIntervalSinceNow
+                    if remaining <= 0 { break }
+                    try? await Task.sleep(for: .seconds(min(86_400, remaining)))
+                }
+                guard !Task.isCancelled, homeLayoutDeadline == deadline else { return }
+                clearExpiredHomeLayout()
                 revision += 1
             }
             .task(id: "\(bannerSlides.count)-\(bannerDesign?["AutoPlay"] as? Bool ?? false)-\(bannerDesign?["IntervalSeconds"] as? Int ?? 5)-\(bannerDesign?["Loop"] as? Bool ?? true)-\(bannerIndex)-\(bannerManualPauseUntil.timeIntervalSince1970)-\(scenePhase)-\(isVisible)") {

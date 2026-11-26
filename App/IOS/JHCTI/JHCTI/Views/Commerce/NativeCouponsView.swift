@@ -5,7 +5,6 @@ struct NativeCouponsView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var store: SessionStore
     let onLogin: () -> Void
-    let onOpenIdentityProfile: () -> Void
     @State private var tab = "claim"
     @State private var status = "Available"
     @State private var campaigns = [[String: Any]]()
@@ -24,6 +23,7 @@ struct NativeCouponsView: View {
     @State private var notice: String?
     @State private var pendingCampaign: [String: Any]?
     @State private var identityNotReady = false
+    @State private var identityProfileOpen = false
     @State private var qrImage: Data?
     @State private var qrTitle = "消费券"
     @State private var qrLoadingID = ""
@@ -152,10 +152,13 @@ struct NativeCouponsView: View {
             Text("我同意本活动为资格及身份证限额校验使用账号实名资料；身份证原文不会写入领取记录或日志。此校验不代表权威身份认证。")
         }
         .alert("实名资料未就绪", isPresented: $identityNotReady) {
-            Button("去填写实名资料", action: onOpenIdentityProfile)
+            Button("去填写实名资料") { identityProfileOpen = true }
             Button("暂不领取", role: .cancel) {}
         } message: {
-            Text("手机号验证仅确认你能接收该号码的验证码，不代表姓名或证件号码已核实。姓名和证件号码由本人填写；平台只校验格式和活动规则，虚假资料可能影响后续权益。")
+            Text("当前通过手机号验证账号。请填写本人真实姓名和身份证号码。平台只校验格式，不核实证件真伪。填写不实会影响后续权益。")
+        }
+        .sheet(isPresented: $identityProfileOpen) {
+            NativeIdentityConsentView(store: store)
         }
         .sheet(isPresented: Binding(get: { qrImage != nil }, set: { if !$0 { qrImage = nil } })) {
             NavigationStack {
@@ -331,9 +334,10 @@ struct NativeCouponsView: View {
         do {
             let profile = try await MobileAPI(store: store).get("/api/JHCTITourismAuth/GetMyTicketIdentityProfile", authenticated: true) as? [String: Any]
             guard store.session?.accessToken == token else { return }
-            guard profile?["HasProfile"] as? Bool == true, profile?["IsIdentityDataReadable"] as? Bool == true,
-                  profile?["IsPhoneVerified"] as? Bool == true,
-                  profile?["IsConsentCurrent"] as? Bool == true else { identityNotReady = true; return }
+            guard nativeTicketIdentityProfileValid(profile) else {
+                throw MobileAPIError.unavailable("实名资料状态格式异常，请重新读取。")
+            }
+            guard nativeTicketIdentityBookingEligible(profile) else { identityNotReady = true; return }
             pendingCampaign = campaign
         } catch { self.error = error.localizedDescription }
     }

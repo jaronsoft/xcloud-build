@@ -57,7 +57,7 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let onInitialHomeReady: () -> Void
-    @StateObject private var store = SessionStore()
+    @ObservedObject var store: SessionStore
     @State private var selectedTab = 0
     @State private var couponCenterRequested = false
     @State private var mapBackRequest = 0

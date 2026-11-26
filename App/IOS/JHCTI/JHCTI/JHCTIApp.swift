@@ -2,29 +2,51 @@ import SwiftUI
 
 @main
 struct JHCTIApp: App {
-    @State private var showingSplash = true
+    @StateObject private var store = SessionStore()
+    @StateObject private var releases = NativeAppReleases()
     @State private var homeReady = false
     @State private var splashMinimumElapsed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    private var showingSplash: Bool { !splashMinimumElapsed || !releases.initialCheckFinished }
 
     var body: some Scene {
         WindowGroup {
             ZStack {
-                ContentView(onInitialHomeReady: { homeReady = true })
-                    .opacity(showingSplash ? 0 : 1)
-                    .allowsHitTesting(!showingSplash)
-                if showingSplash {
-                    SplashView(status: homeReady ? "首页已准备好，即将进入" : "正在加载首页数据…")
-                        .task {
-                            if !reduceMotion { try? await Task.sleep(for: .milliseconds(1800)) }
-                            // 首页使用自身的加载与错误状态；网络请求不能无限延长启动页。
-                            splashMinimumElapsed = true
-                            showingSplash = false
-                        }
+                if let release = releases.required {
+                    NativeAppReleaseView(release: release, required: true) {
+                        releases.check(api: MobileAPI(store: store))
+                    }
+                } else {
+                    ContentView(onInitialHomeReady: { homeReady = true }, store: store)
+                        .opacity(showingSplash ? 0 : 1)
+                        .allowsHitTesting(!showingSplash)
+                        .accessibilityHidden(showingSplash)
+                    if showingSplash {
+                        SplashView(status: homeReady ? "即将进入悦行江都…" : "正在加载首页数据…")
+                            .task {
+                                if !reduceMotion { try? await Task.sleep(for: .milliseconds(1800)) }
+                                if !Task.isCancelled { splashMinimumElapsed = true }
+                            }
+                    }
                 }
             }
-            .onChange(of: homeReady) { _, ready in
-                if ready && splashMinimumElapsed { showingSplash = false }
+            .environmentObject(releases)
+            .sheet(item: Binding(get: {
+                showingSplash || releases.required != nil ? nil : releases.optional
+            }, set: { value in
+                if value == nil { releases.deferOptional() }
+            })) { release in
+                NativeAppReleaseView(release: release, required: false) {
+                    releases.deferOptional()
+                }
+                .environmentObject(releases)
+            }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                if phase == .active { releases.check(api: MobileAPI(store: store)) }
+            }
+            .onChange(of: releases.required?.id) { _, version in
+                if version != nil { splashMinimumElapsed = true }
             }
             // 原生页面以小程序亮色配色为基准，系统夜间模式不应覆盖文本与控件颜色。
             .preferredColorScheme(.light)

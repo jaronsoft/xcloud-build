@@ -15,7 +15,6 @@ struct NativeIdentityConsentView: View {
     @State private var realName = ""
     @State private var identityNumber = ""
     @State private var identityConsent = false
-    @State private var editorOpen = false
     @State private var operation = 0
     @State private var readTask: Task<Void, Never>?
     @State private var readTaskGeneration = 0
@@ -35,17 +34,25 @@ struct NativeIdentityConsentView: View {
     private var version: Int64 {
         nativeTicketIdentityVersion(profile) ?? -1
     }
+    private var canFillIdentity: Bool {
+        profile?["IsPhoneVerified"] as? Bool == true
+            && profile?["IsIdentityDataReadable"] as? Bool == true
+            && !nativeTicketIdentityBookingEligible(profile)
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("手机号验证仅确认你能接收该号码的验证码，不代表姓名或证件号码已核实。姓名和身份证号码由本人填写，本平台只校验格式和平台规则，不进行权威身份核验；虚假资料可能影响后续权益。撤回后，新的实名业务不能使用已保存资料；订单资料快照及账号中加密保存的资料仍按原规则保留。")
+                    Text("当前通过手机号验证账号。请填写本人真实姓名和身份证号码。平台只校验格式，不核实证件真伪。填写不实会影响后续权益。")
                         .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
                     if loading {
-                        ProgressView("正在读取授权记录…").frame(maxWidth: .infinity, alignment: .leading)
+                        ProgressView("正在读取实名资料…").frame(maxWidth: .infinity, alignment: .leading)
+                    } else if busy && profile == nil {
+                        ProgressView("正在提交…").frame(maxWidth: .infinity, alignment: .leading)
                     } else if let profile, profileOwner == principal {
                         VStack(alignment: .leading, spacing: 10) {
+                            consentRow("手机号验证", detail: profile["IsPhoneVerified"] as? Bool == true ? "已验证" : "未验证")
                             consentRow("授权状态", detail: consentStatus)
                             consentRow("实名姓名", detail: profile["IsIdentityDataReadable"] as? Bool == true
                                 ? profile["MaskedRealName"] as? String ?? "不可读取" : "不可读取")
@@ -72,28 +79,19 @@ struct NativeIdentityConsentView: View {
                                     .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
                             }
                             if profile["IsPhoneVerified"] as? Bool != true {
-                                Text("请先返回个人中心验证绑定手机号，再登记实名资料。")
+                                Text("请先使用绑定手机号通过短信验证码登录，再填写实名资料。")
                                     .font(.footnote).foregroundStyle(Brand.muted)
-                            } else if profile["IsIdentityDataReadable"] as? Bool != true {
-                                EmptyView()
-                            } else if profile["IsConsentCurrent"] as? Bool != true {
-                                if editorOpen {
-                                    Text(profile["HasProfile"] as? Bool == true ? "重新授权时请填写原登记资料；如需更正，请联系客服核验。" : "请填写本人资料。登记后不能自行更改，如需更正请联系客服核验。")
-                                        .font(.footnote).foregroundStyle(Brand.muted)
-                                    TextField("真实姓名", text: $realName).textContentType(.name)
-                                        .textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
-                                    TextField("18 位居民身份证号码", text: $identityNumber)
-                                        .keyboardType(.asciiCapable).textInputAutocapitalization(.characters).autocorrectionDisabled().privacySensitive()
-                                    Toggle("我同意为实名票种购票、入园核验及实名消费券资格校验加密保存姓名和身份证号码。可在此撤回授权，历史订单资料按原规则保留。", isOn: $identityConsent)
-                                        .font(.footnote)
-                                    Button(busy ? "正在保存…" : "同意并保存实名资料") { startSaveProfile() }
-                                        .buttonStyle(.borderedProminent).disabled(busy || loading)
-                                    Button("取消填写") { clearEditor() }.disabled(busy)
-                                } else {
-                                    Button(profile["HasProfile"] as? Bool == true ? "重新授权实名资料" : "登记实名资料") {
-                                        clearEditor(); editorOpen = true; error = nil; notice = nil
-                                    }.buttonStyle(.borderedProminent).disabled(busy || loading)
-                                }
+                            } else if canFillIdentity {
+                                Text(profile["HasProfile"] as? Bool == true ? "重新授权时请填写原登记资料；如需更正，请联系客服核验。" : "请填写本人资料。登记后不能自行更改，如需更正请联系客服核验。")
+                                    .font(.footnote).foregroundStyle(Brand.muted)
+                                TextField("真实姓名", text: $realName).textContentType(.name)
+                                    .textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
+                                TextField("18 位居民身份证号码", text: $identityNumber)
+                                    .keyboardType(.asciiCapable).textInputAutocapitalization(.characters).autocorrectionDisabled().privacySensitive()
+                                Toggle("我同意为实名票种购票、入园核验及实名消费券资格校验加密保存姓名和身份证号码。可在此撤回授权，历史订单资料按原规则保留。", isOn: $identityConsent)
+                                    .font(.footnote)
+                                Button("同意并保存实名资料") { startSaveProfile() }
+                                    .buttonStyle(.borderedProminent).disabled(busy || loading || !identityConsent)
                             }
                         }
                         .padding(14).background(.white, in: RoundedRectangle(cornerRadius: 12))
@@ -157,7 +155,7 @@ struct NativeIdentityConsentView: View {
     }
 
     private func clearEditor() {
-        realName = ""; identityNumber = ""; identityConsent = false; editorOpen = false
+        realName = ""; identityNumber = ""; identityConsent = false
     }
 
     @MainActor private func invalidate() {
@@ -235,7 +233,7 @@ struct NativeIdentityConsentView: View {
 
     @MainActor private func saveProfile() async {
         guard !busy, !loading, pageVisible, scenePhase == .active, nativeTicketIdentityProfileValid(profile),
-              profile?["IsPhoneVerified"] as? Bool == true, editorOpen, version >= 0, let requestedPrincipal = principal,
+              canFillIdentity, version >= 0, let requestedPrincipal = principal,
               profileOwner == requestedPrincipal else { return }
         if let message = nativeTicketIdentityInputError(name: realName, number: identityNumber, consent: identityConsent) {
             error = message; return
@@ -274,8 +272,7 @@ struct NativeIdentityConsentView: View {
                 "/api/JHCTITourismAuth/RevokeMyTicketIdentityConsent",
                 body: ["Version": previousVersion], authenticated: true, expectedPrincipal: requestedPrincipal) as? [String: Any]
             guard isCurrent(requestedOperation, principal: requestedPrincipal) else { return }
-            guard let result, nativeTicketIdentityProfileValid(result), result["HasConsent"] as? Bool == false,
-                  (nativeTicketIdentityVersion(result) ?? -1) > previousVersion else {
+            guard let result, nativeTicketIdentityRevokeReceiptValid(result, previousVersion: previousVersion) else {
                 throw MobileAPIError.unavailable("撤回结果无法确认，请重新读取授权状态")
             }
             profile = result; profileOwner = requestedPrincipal

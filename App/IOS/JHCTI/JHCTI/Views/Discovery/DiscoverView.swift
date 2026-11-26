@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 
 private let maximumSearchResults = 20_000
+private let searchContentChangedStatus = 409
 
 struct DiscoverView: View {
     let store: SessionStore
@@ -12,6 +13,7 @@ struct DiscoverView: View {
     @State private var results: [[String: Any]] = []
     @State private var resultPage = 1
     @State private var resultTotal = 0
+    @State private var continuationToken: String?
     @State private var accessStates: [String: NativePublicFeatureAccessState] = [:]
     @State private var moduleStatusLoading = true
     @State private var moduleStatusError = false
@@ -52,7 +54,7 @@ struct DiscoverView: View {
                     .padding(8).background(.white, in: RoundedRectangle(cornerRadius: 12))
                     if loading { ProgressView().tint(Brand.primary) }
                     if let error {
-                        Button("\(error)　点此重试") { Task { await searchNow() } }
+                        Button("\(error)　点此重试") { Task { await searchNow(for: searchedKeyword) } }
                             .font(.system(size: NativeTypography.size(14))).foregroundStyle(.red)
                     }
                     if searchedKeyword.isEmpty {
@@ -143,8 +145,11 @@ struct DiscoverView: View {
                         }
                         if !results.isEmpty && results.count < min(resultTotal, maximumSearchResults) {
                             if let moreError {
-                                Button("\(moreError)　点此重试") {
-                                    Task { if moreRequiresRestart { await searchNow() } else { await loadMoreSearchResults() } }
+                                Button("\(moreError)　\(moreRequiresRestart ? "重新搜索" : "点此重试")") {
+                                    Task {
+                                        if moreRequiresRestart { await searchNow(for: searchedKeyword) }
+                                        else { await loadMoreSearchResults() }
+                                    }
                                 }
                                     .font(.system(size: NativeTypography.size(14))).foregroundStyle(.red)
                             } else {
@@ -362,12 +367,13 @@ struct DiscoverView: View {
         moduleStatusLoading = false
     }
 
-    private func searchNow() async {
+    private func searchNow(for term: String? = nil) async {
         guard !Task.isCancelled else { return }
-        let query = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = (term ?? keyword).trimmingCharacters(in: .whitespacesAndNewlines)
         searchSequence += 1
         let sequence = searchSequence
         resultPage = 1; resultTotal = 0; results = []; moreError = nil; moreRequiresRestart = false; loading = false; loadingMore = false
+        continuationToken = nil
         guard !query.isEmpty else { searchedKeyword = ""; loading = false; return }
         searchedKeyword = query
         guard query.utf16.count <= 80 else {
@@ -388,6 +394,7 @@ struct DiscoverView: View {
             }
             guard sequence == searchSequence, store.session?.accessToken == requestToken else { return }
             results = parsed.rows; resultTotal = parsed.total; resultPage = 1
+            continuationToken = parsed.continuationToken
             if requestToken != nil {
                 historyRequestSequence += 1
                 historyBusy = false
@@ -409,20 +416,23 @@ struct DiscoverView: View {
               !searchedKeyword.isEmpty else { return }
         let sequence = searchSequence
         let nextPage = resultPage + 1
+        let previousToken = continuationToken
         let requestToken = store.session?.accessToken
-        let requestPrincipal = requestToken.map { MobileAPI(store: store).nativeTourismPrincipal($0) }
+        let api = MobileAPI(store: store)
+        let requestPrincipal = requestToken.map { api.nativeTourismPrincipal($0) }
         loadingMore = true; moreError = nil
         defer { if sequence == searchSequence { loadingMore = false } }
         do {
-            guard let requestPath = searchRequestPath(keyword: searchedKeyword, page: nextPage),
-                  let response = try await MobileAPI(store: store).get(requestPath,
+            guard let requestPath = searchRequestPath(keyword: searchedKeyword, page: nextPage, continuationToken: previousToken),
+                  let response = try await api.get(requestPath,
                     authenticated: requestToken != nil,
                     expectedPrincipal: requestPrincipal) as? [String: Any] else {
                 throw MobileAPIError.unavailable("搜索结果格式异常，请重试。")
             }
-            guard sequence == searchSequence, store.session?.accessToken == requestToken else { return }
+            guard sequence == searchSequence, !Task.isCancelled,
+                  store.session.map({ api.nativeTourismPrincipal($0.accessToken) }) == requestPrincipal else { return }
             if nativeSearchPageIsOutOfRange(response, page: nextPage, pageSize: 20) {
-                moreError = "搜索结果分页已变化，请重新搜索。"
+                moreError = "搜索结果已发生变化。"
                 moreRequiresRestart = true
                 return
             }
@@ -440,28 +450,34 @@ struct DiscoverView: View {
                 return "\(type.lowercased()):\(id)"
             }
             guard nextKeys.count == parsed.rows.count, Set(nextKeys).count == nextKeys.count,
-                  existingKeys.isDisjoint(with: nextKeys), parsed.total == resultTotal else {
-                moreError = "搜索结果分页已变化，请重新搜索。"
+                  existingKeys.isDisjoint(with: nextKeys), parsed.total == resultTotal,
+                  (previousToken == nil) == (parsed.continuationToken == nil) else {
+                moreError = "搜索结果已发生变化。"
                 moreRequiresRestart = true
                 return
             }
             results.append(contentsOf: parsed.rows); resultPage = nextPage
+            continuationToken = parsed.continuationToken
         } catch {
-            guard sequence == searchSequence else { return }
-            moreError = error.localizedDescription
+            guard sequence == searchSequence, !Task.isCancelled, !(error is CancellationError),
+                  store.session.map({ api.nativeTourismPrincipal($0.accessToken) }) == requestPrincipal else { return }
+            moreRequiresRestart = (error as? MobileAPIError)?.httpStatusCode == searchContentChangedStatus
+            moreError = moreRequiresRestart ? "搜索结果已发生变化。" : error.localizedDescription
         }
     }
 
-    private func searchRequestPath(keyword: String, page: Int) -> String? {
+    private func searchRequestPath(keyword: String, page: Int, continuationToken: String? = nil) -> String? {
         guard page > 0 else { return nil }
         var components = URLComponents()
         components.path = "/api/JHCTISearch/Search"
-        components.queryItems = [
+        var items = [
             URLQueryItem(name: "keyword", value: keyword),
             URLQueryItem(name: "page", value: String(page)),
             URLQueryItem(name: "pageSize", value: "20"),
             URLQueryItem(name: "articleSiteId", value: articleSiteID),
         ]
+        if let continuationToken { items.append(URLQueryItem(name: "continuationToken", value: continuationToken)) }
+        components.queryItems = items
         return components.string
     }
 }

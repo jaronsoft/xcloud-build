@@ -4,6 +4,7 @@ import CryptoKit
 struct HotelPublicDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     let store: SessionStore
     let id: String
     @State private var detail: [String: Any]?
@@ -26,6 +27,8 @@ struct HotelPublicDetailView: View {
     @State private var busyRoomId = ""
     @State private var showOrders = false
     @State private var pendingIdempotencyKey: String?
+    @State private var missingRecoveryRequestID: String?
+    @State private var confirmedMissingRecoveryRequestID: String?
     @State private var loadedQueryKey = ""
 
     private var checkInText: String { Self.businessDate(checkIn) }
@@ -147,6 +150,12 @@ struct HotelPublicDetailView: View {
                                 .buttonStyle(.bordered).disabled(loading || !busyRoomId.isEmpty)
                             Button("查看本人住宿订单") { showOrders = true }
                                 .buttonStyle(.bordered)
+                            if let pending = pendingIdempotencyKey, pending == missingRecoveryRequestID {
+                                Button("确认本人订单中没有此预订，清除恢复编号") {
+                                    confirmedMissingRecoveryRequestID = pending; revision += 1
+                                }
+                                .buttonStyle(.bordered).disabled(loading || !busyRoomId.isEmpty)
+                            }
                         }
                         if let bookingNotice { Text(bookingNotice).font(.caption).foregroundStyle(Brand.primary) }
                     }
@@ -295,10 +304,16 @@ struct HotelPublicDetailView: View {
                       horizontal >= 72, horizontal > abs(vertical) * 1.25 else { return }
                 dismiss()
             })
-        .sheet(isPresented: $showOrders) { NativeBookingOrdersView(store: store, initialKind: "hotel") }
+        .sheet(isPresented: $showOrders, onDismiss: { if pendingIdempotencyKey != nil { revision += 1 } }) {
+            NativeBookingOrdersView(store: store, initialKind: "hotel")
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active && pendingIdempotencyKey != nil && busyRoomId.isEmpty && !showOrders && !loading { revision += 1 }
+        }
         .onChange(of: store.session?.accessToken) { _, _ in
             contactName = ""; contactPhone = ""; pendingIdempotencyKey = nil; roomCounts = [:]; pointsByRoom = [:]; busyRoomId = ""
             pointsBalance = nil; pointsDebt = nil; pointsSummaryError = false
+            missingRecoveryRequestID = nil; confirmedMissingRecoveryRequestID = nil
             revision += 1
         }
         .task(id: "\(store.session?.accessToken ?? "")-\(pointsSummaryRevision)") { await loadPointsSummary() }
@@ -343,12 +358,14 @@ struct HotelPublicDetailView: View {
                     if let saved = UserDefaults.standard.string(forKey: recoveryKey),
                    saved.range(of: "^[A-Za-z0-9._:-]{16,80}$", options: .regularExpression) != nil {
                         pendingIdempotencyKey = saved
+                        let discardIfMissing = confirmedMissingRecoveryRequestID == saved
+                        confirmedMissingRecoveryRequestID = nil; missingRecoveryRequestID = nil
                         do {
                             let recovered = try await MobileAPI(store: store).get(
                                 "/api/JHCTIHotelBooking/GetMyOrderByIdempotencyKey?idempotencyKey=\(saved)", authenticated: true,
                                 expectedPrincipal: nativeTourismPrincipal(token)
                             ) as? [String: Any]
-                            guard store.session?.accessToken == token else { return }
+                            guard !Task.isCancelled, store.session?.accessToken == token else { return }
                             let recoveryMatches: Bool
                             if let savedRequestSnapshot {
                                 recoveryMatches = recovered.map { nativeHotelOrderRecoverySnapshotMatches($0, snapshotText: savedRequestSnapshot) } ?? false
@@ -359,20 +376,30 @@ struct HotelPublicDetailView: View {
                                 } ?? false
                             }
                             if (savedAmountText == nil || savedAmountCents != nil), let recovered,
-                               Self.validID(recovered["Id"]) != nil, recoveryMatches {
-                                UserDefaults.standard.removeObject(forKey: recoveryKey)
-                                UserDefaults.standard.removeObject(forKey: recoveryKey + ".amountCents")
-                                UserDefaults.standard.removeObject(forKey: recoveryKey + ".requestSnapshot")
-                                pendingIdempotencyKey = nil; bookingNotice = "已找回上次住宿订单，显示本人订单状态。"; showOrders = true
+                               recoveryMatches, let state = applyNativeBookingRecovery(recovered, storageKey: recoveryKey, requestID: saved) {
+                                pendingIdempotencyKey = state == .settled ? nil : saved
+                                bookingNotice = state == .settled ? "已核对上次住宿订单，恢复记录已清除。"
+                                    : "已找到上次住宿订单，请在本人订单继续处理。"
                             } else if let recovered, Self.validID(recovered["Id"]) != nil {
                                 bookingNotice = "上次住宿订单与保存的预订内容不一致；恢复编号已保留，请核对本人住宿订单后再继续。"
-                                showOrders = true
                             }
                         } catch is CancellationError {
                             return
                         } catch {
-                            guard store.session?.accessToken == token else { return }
-                            bookingNotice = "上次预订结果仍待核对；请先查看本人住宿订单，确认前暂不能提交新的预订。"
+                            guard !Task.isCancelled, store.session?.accessToken == token else { return }
+                            if (error as? MobileAPIError)?.httpStatusCode == 404,
+                               UserDefaults.standard.object(forKey: recoveryKey + ".orderId") == nil,
+                               UserDefaults.standard.string(forKey: recoveryKey) == saved {
+                                if discardIfMissing, clearNativeBookingRecovery(storageKey: recoveryKey, requestID: saved) {
+                                    pendingIdempotencyKey = nil
+                                    bookingNotice = "已清除恢复编号，请重新查询房态后预订。"
+                                } else {
+                                    missingRecoveryRequestID = saved
+                                    bookingNotice = "暂未查到原预订，请先核对本人住宿订单。"
+                                }
+                            } else {
+                                bookingNotice = "上次预订结果仍待核对；请先查看本人住宿订单，确认前暂不能提交新的预订。"
+                            }
                         }
                     }
                 }
@@ -477,6 +504,11 @@ struct HotelPublicDetailView: View {
         }
         let key = pendingIdempotencyKey ?? UUID().uuidString
         let storageKey = Self.recoveryStorageKey(accessToken: token)
+        if UserDefaults.standard.object(forKey: storageKey) != nil {
+            pendingIdempotencyKey = UserDefaults.standard.string(forKey: storageKey) ?? ""
+            error = "已有上次预订恢复记录，请先核对本人住宿订单。"
+            return
+        }
         let amountStorageKey = storageKey + ".amountCents"
         let requestSnapshotStorageKey = storageKey + ".requestSnapshot"
         let requestSnapshot: [String: Any] = [
@@ -521,9 +553,9 @@ struct HotelPublicDetailView: View {
                 throw MobileAPIError.unavailable("订单已提交但回执不完整；请先核对本人住宿订单。")
             }
             orderCreated = true
-            UserDefaults.standard.removeObject(forKey: storageKey)
-            UserDefaults.standard.removeObject(forKey: amountStorageKey)
-            UserDefaults.standard.removeObject(forKey: requestSnapshotStorageKey); pendingIdempotencyKey = nil
+            guard applyNativeBookingRecovery(response, storageKey: storageKey, requestID: key) == .readyToPay else {
+                throw MobileAPIError.unavailable("支付状态暂不能确认，请在本人住宿订单核对。")
+            }
             guard let cashCents = nativeMoneyCents(response["CashPayableAmount"]) else {
                 throw MobileAPIError.unavailable("订单现金应付金额无法确认，已转至本人住宿订单核对。")
             }
@@ -558,6 +590,7 @@ struct HotelPublicDetailView: View {
             return
         } catch {
             guard store.session?.accessToken == token else { return }
+            let creationStatus = (error as? MobileAPIError)?.httpStatusCode
             if orderCreated {
                 bookingNotice = "订单已创建；支付暂未打开，请前往本人住宿订单继续支付。"
                 showOrders = true
@@ -569,15 +602,22 @@ struct HotelPublicDetailView: View {
                     expectedPrincipal: nativeTourismPrincipal(token)
                 ) as? [String: Any]
                 guard store.session?.accessToken == token else { return }
-                if let recovered, Self.validID(recovered["Id"]) != nil,
-                   nativeHotelOrderRecoverySnapshotMatches(recovered, snapshotText: requestSnapshotText) {
-                    UserDefaults.standard.removeObject(forKey: storageKey)
-                    UserDefaults.standard.removeObject(forKey: amountStorageKey)
-                    UserDefaults.standard.removeObject(forKey: requestSnapshotStorageKey); pendingIdempotencyKey = nil
+                if let recovered, nativeHotelOrderRecoverySnapshotMatches(recovered, snapshotText: requestSnapshotText),
+                   let state = applyNativeBookingRecovery(recovered, storageKey: storageKey, requestID: key) {
+                    pendingIdempotencyKey = state == .settled ? nil : key
                     bookingNotice = "已找回本次预订订单，请在本人住宿订单中继续。"; showOrders = true
                 } else { self.error = "预订结果暂未确认；恢复编号已保留，请稍后重试核对，勿重复提交其他预订。" }
+            } catch is CancellationError {
+                return
             } catch {
-                self.error = "预订结果暂未确认；恢复编号已保留，请稍后重试核对，勿重复提交其他预订。"
+                guard store.session?.accessToken == token else { return }
+                if let creationStatus, [400, 403].contains(creationStatus), (error as? MobileAPIError)?.httpStatusCode == 404,
+                   clearNativeBookingRecovery(storageKey: storageKey, requestID: key) {
+                    pendingIdempotencyKey = nil
+                    self.error = "本次预订未创建，请刷新房态后重新预订。"
+                } else {
+                    self.error = "预订结果暂未确认；恢复编号已保留，请稍后重试核对，勿重复提交其他预订。"
+                }
             }
         }
     }
