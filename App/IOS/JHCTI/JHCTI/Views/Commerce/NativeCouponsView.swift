@@ -396,7 +396,7 @@ struct NativeCouponsView: View {
                     .font(.caption.monospacedDigit()).foregroundStyle(Brand.muted)
                 Button(claimingID == id ? "领取中…" : expired ? "已结束" : remaining <= 0 ? "已领完" : canClaim ? "立即领取" : "请先登录") {
                     Task { await prepareClaim(item) }
-                }.buttonStyle(.borderedProminent).disabled(expired || !canClaim || claimingID != "" || id.isEmpty || amount == nil || minimum == nil || remaining <= 0)
+                }.buttonStyle(.borderedProminent).disabled(loading || expired || !canClaim || claimingID != "" || id.isEmpty || amount == nil || minimum == nil || remaining <= 0)
             }
         }
     }
@@ -483,6 +483,13 @@ struct NativeCouponsView: View {
             .background(available ? Brand.primary.opacity(0.12) : Color(uiColor: .systemGray5), in: Capsule())
     }
 
+    @MainActor private func closeCampaignList() {
+        campaigns = []; campaignPage = 1; campaignTotal = 0
+        pendingCampaign = nil; identityNotReady = false
+        retryPage = nil; retryTab = nil
+        error = "消费券功能暂未开放，可到「我的券包」查看领取结果。"
+    }
+
     @MainActor private func loadCampaigns(page target: Int) async {
         requestSequence += 1; let sequence = requestSequence
         loading = true; error = nil; retryPage = nil; retryTab = nil
@@ -494,7 +501,7 @@ struct NativeCouponsView: View {
             let access = try await api.get("/api/JHCTIFeatureAccess/GetPublicStatus?featureId=F-OPS-012") as? [String: Any]
             guard sequence == requestSequence else { return }
             guard access?["Status"] as? String == "Open", access?["IsEnabled"] as? Bool == true else {
-                campaigns = []; campaignTotal = 0; error = "消费券功能暂未开放。"; return
+                closeCampaignList(); return
             }
             let result = try await api.get("/api/JHCTICouponClaim/GetClaimableCampaigns?page=\(target)&pageSize=\(pageSize)") as? [String: Any]
             guard sequence == requestSequence else { return }
@@ -505,9 +512,11 @@ struct NativeCouponsView: View {
             campaignPage = target
             campaignTotal = integer(result?["dataCount"] ?? result?["DataCount"] ?? result?["total"] ?? result?["Total"])
         } catch {
-            if sequence == requestSequence {
-                self.error = error.localizedDescription
-                retryPage = target; retryTab = "claim"
+            guard sequence == requestSequence else { return }
+            if (error as? MobileAPIError)?.httpStatusCode == 403 {
+                closeCampaignList()
+            } else {
+                self.error = error.localizedDescription; retryPage = target; retryTab = "claim"
             }
         }
     }
@@ -539,24 +548,28 @@ struct NativeCouponsView: View {
     }
 
     @MainActor private func prepareClaim(_ campaign: [String: Any]) async {
+        guard !loading else { return }
         guard let token = store.session?.accessToken else { onLogin(); return }
         let id = display(campaign["Id"]) ?? ""
         guard Int64(id).map({ $0 > 0 }) == true, claimingID.isEmpty else { return }
+        let sequence = requestSequence
         do {
             let profile = try await MobileAPI(store: store).get("/api/JHCTITourismAuth/GetMyTicketIdentityProfile", authenticated: true) as? [String: Any]
-            guard store.session?.accessToken == token else { return }
+            guard store.session?.accessToken == token, sequence == requestSequence else { return }
             guard nativeTicketIdentityProfileValid(profile) else {
                 throw MobileAPIError.unavailable("实名资料状态格式异常，请重新读取。")
             }
             guard nativeTicketIdentityBookingEligible(profile) else { identityNotReady = true; return }
             pendingCampaign = campaign
-        } catch { self.error = error.localizedDescription }
+        } catch { if sequence == requestSequence { self.error = error.localizedDescription } }
     }
 
     @MainActor private func submitClaim(_ campaign: [String: Any], identityConsent: Bool) async {
+        guard !loading else { return }
         guard let token = store.session?.accessToken else { onLogin(); return }
         let id = display(field(campaign, "Id")) ?? ""
-        guard Int64(id).map({ $0 > 0 }) == true, claimingID.isEmpty else { return }
+        guard Int64(id).map({ $0 > 0 }) == true, claimingID.isEmpty,
+              campaigns.contains(where: { display(field($0, "Id")) == id }) else { return }
         let principal = MobileAPI(store: store).nativeTourismPrincipal(token)
         let attemptKey = "jhcti.coupon.claim.attempt.v1.\(principal).\(id)"
         if UserDefaults.standard.object(forKey: attemptKey) != nil,
@@ -598,7 +611,13 @@ struct NativeCouponsView: View {
         } catch {
             guard store.session?.accessToken == token, !Task.isCancelled else { return }
             notice = nil
-            if error.localizedDescription == "已达到该活动每人领取上限" {
+            if (error as? MobileAPIError)?.httpStatusCode == 403, error.localizedDescription == "功能待开放" {
+                if tab == "claim" {
+                    requestSequence += 1
+                    loading = false; loadingMore = false
+                    closeCampaignList()
+                }
+            } else if error.localizedDescription == "已达到该活动每人领取上限" {
                 claimFeedback = .limitReached
             } else if couponClaimRetryDelay(for: error) != nil {
                 claimFeedback = .uncertain
