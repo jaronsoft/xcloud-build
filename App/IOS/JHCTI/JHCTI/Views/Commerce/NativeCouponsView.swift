@@ -70,7 +70,20 @@ struct NativeCouponsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("商户优惠券用于商城结算；平台消费券按活动规则领取和核销。")
                         .font(.caption).foregroundStyle(Brand.muted)
-                    if tab == "mine" {
+                    if tab == "claim" {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(store.session == nil ? "登录后才能领取消费券" : "实名领取")
+                                .font(.subheadline.weight(.semibold)).foregroundStyle(Brand.ink)
+                            Text("领券前需登记实名资料、验证手机号，并同意本活动使用实名资料。")
+                                .font(.footnote).foregroundStyle(Brand.ink)
+                            if store.session == nil {
+                                Button("登录文旅账号", action: onLogin).buttonStyle(.borderedProminent)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Brand.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                    } else {
                         if store.session == nil {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("登录后查看我的消费券").font(.headline)
@@ -130,21 +143,15 @@ struct NativeCouponsView: View {
                         }.merchantCard()
                     }
                     if tab == "claim" {
-                        if store.session == nil {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("登录后才能领取消费券").font(.headline)
-                                Button("登录文旅账号", action: onLogin).buttonStyle(.borderedProminent)
-                            }.merchantCard()
-                        }
                         if !campaigns.isEmpty {
-                            Text("实名领取：需登记实名资料、验证手机号，并在领券时授权对应活动使用实名资料。")
-                                .font(.caption)
-                                .foregroundStyle(Brand.ink.opacity(0.8))
-                                .padding(10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Brand.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+                            TimelineView(.periodic(from: .now, by: 1)) { context in
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ForEach(campaigns.indices, id: \.self) { index in
+                                        campaignCard(campaigns[index], now: context.date)
+                                    }
+                                }
+                            }
                         }
-                        ForEach(campaigns.indices, id: \.self) { index in campaignCard(campaigns[index]) }
                         if !loading && error == nil && campaigns.isEmpty {
                             VStack(alignment: .leading, spacing: 5) {
                                 Text("当前没有可领取的消费券活动。")
@@ -368,23 +375,28 @@ struct NativeCouponsView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
-    @ViewBuilder private func campaignCard(_ item: [String: Any]) -> some View {
+    @ViewBuilder private func campaignCard(_ item: [String: Any], now: Date) -> some View {
         let id = display(field(item, "Id")) ?? ""
         let amount = couponMoney(field(item, "CouponAmount"))
         let minimum = couponMoney(field(item, "MinimumSpend"))
         let remaining = integer(field(item, "RemainingQuantity"))
         let canClaim = store.session != nil
+        let remainingTime = display(field(item, "EndsAt"))
+            .flatMap(nativeBusinessDateTime)?.timeIntervalSince(now)
+        let expired = remainingTime.map { $0 <= 0 } ?? false
+        let countdown = remainingTime.map { $0 > 0 ? "距结束 \(nativeActivityCountdown($0))" : "活动已结束" }
+            ?? "截止时间待确认"
         couponTicket(amount: amount, minimum: minimum) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(display(field(item, "Name")) ?? "平台消费券")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(Brand.ink)
                 Text("领取后 \(integer(field(item, "ValidityDays"))) 天有效 · 每人限领 \(integer(field(item, "PerUserLimit"))) 张")
                     .font(.caption).foregroundStyle(Brand.muted)
-                Text("活动截止 \(dateText(field(item, "EndsAt"))) · 剩余 \(remaining) 张")
-                    .font(.caption).foregroundStyle(Brand.muted)
-                Button(claimingID == id ? "领取中…" : remaining <= 0 ? "已领完" : canClaim ? "立即领取" : "请先登录") {
+                Text("\(countdown) · 剩余 \(remaining) 张")
+                    .font(.caption.monospacedDigit()).foregroundStyle(Brand.muted)
+                Button(claimingID == id ? "领取中…" : expired ? "已结束" : remaining <= 0 ? "已领完" : canClaim ? "立即领取" : "请先登录") {
                     Task { await prepareClaim(item) }
-                }.buttonStyle(.borderedProminent).disabled(!canClaim || claimingID != "" || id.isEmpty || amount == nil || minimum == nil || remaining <= 0)
+                }.buttonStyle(.borderedProminent).disabled(expired || !canClaim || claimingID != "" || id.isEmpty || amount == nil || minimum == nil || remaining <= 0)
             }
         }
     }

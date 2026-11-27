@@ -227,7 +227,9 @@ private struct RestaurantFinancialReportView: View {
 }
 private struct RestaurantPackageVerificationView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var store: SessionStore
+    @StateObject private var redemption = NativeDiningPackageRedemption()
     let restaurantID: String
     let storeID: String
     let storeName: String
@@ -236,15 +238,18 @@ private struct RestaurantPackageVerificationView: View {
     @State private var scanning = false
     @State private var scannerOpen = false
     @State private var cameraAvailable = false
-    @State private var scannerSessionToken = ""
-    @State private var showFeatureStatus = false
-    @State private var redeeming = false
+    @State private var scannerPrincipal: String?
     @State private var confirming = false
+    @State private var confirmingRelease = false
     @State private var code = ""
     @State private var error: String?
-    @State private var receipt: [String: Any]?
     @State private var revision = 0
     @State private var requestGeneration = 0
+    @State private var visible = false
+    @State private var operation: Task<Void, Never>?
+
+    private var principal: String? { nativeTourismPrincipal(store.session?.accessToken) }
+    private var canRedeem: Bool { authorized && !redemption.accessRevoked && redemption.state == .ready }
 
     var body: some View {
         List {
@@ -254,41 +259,63 @@ private struct RestaurantPackageVerificationView: View {
                     .font(.caption).foregroundStyle(Brand.muted)
             }
             if loading { Section { ProgressView("正在核验餐饮门店授权…") } }
-            if authorized {
+            if canRedeem {
                 Section("核销凭证") {
                     if DataScannerViewController.isSupported {
                         Button(scanning ? "正在启动扫码…" : "扫描团购凭证") { Task { await requestScannerAccess() } }
-                            .disabled(scanning || redeeming)
+                            .disabled(scanning || redemption.busy)
                     }
-                    TextField("团购凭证码", text: $code)
+                    TextField("团购凭证码", text: Binding(get: { code }, set: { value in
+                        code = String(value.prefix(129)); redemption.clearFeedback(); error = nil
+                    }))
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .disabled(redeeming).onChange(of: code) { _, value in
-                            if value.count > 128 { code = String(value.prefix(128)) }
-                            receipt = nil; error = nil
-                        }
+                        .disabled(redemption.busy)
+                    if code.utf16.count > 128 {
+                        Text("凭证码最多 128 个字符，请核对输入内容。").font(.caption).foregroundStyle(.red)
+                    }
                     if !DataScannerViewController.isSupported {
                         Text("当前设备不支持二维码扫描，请手动输入凭证码。")
                             .font(.caption).foregroundStyle(Brand.muted)
                     }
-                    if let error { Text(error).font(.caption).foregroundStyle(.red) }
-                    Button(redeeming ? "正在核销…" : "核对后确认核销") { confirming = true }
+                    Button("核对后确认核销") { confirming = true }
                         .buttonStyle(.borderedProminent).tint(Brand.primary)
-                        .disabled(redeeming || scanning || code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(redemption.busy || scanning || !(1...128).contains(code.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count))
                 }
             }
-            if !loading, !authorized, let error {
+            if authorized, !redemption.accessRevoked {
+                switch redemption.state {
+                case let .pending(attempt):
+                    Section("核对团购核销") {
+                        Text("上一次核销结果待核对，请查询原请求。")
+                        Button("查询核销结果") { lookup(release: false) }.disabled(redemption.busy)
+                        if redemption.canRelease {
+                            Text("请求号 \(attempt.requestID)").font(.caption).textSelection(.enabled)
+                            Button("已人工核对") { confirmingRelease = true }.disabled(redemption.busy)
+                        }
+                    }
+                case .unavailable, .damaged:
+                    Section { Text("暂时无法读取核销请求，请联系门店负责人核对。").font(.caption) }
+                case .ready:
+                    EmptyView()
+                }
+            }
+            if redemption.busy { Section { ProgressView("正在处理核销请求…") } }
+            if !loading, !authorized || redemption.accessRevoked, let message = redemption.notice ?? error {
                 Section("无法核验授权") {
-                    Text(error).font(.caption).foregroundStyle(.red)
+                    Text(message).font(.caption).foregroundStyle(.red)
                     Button("重试授权") { revision += 1 }
-                        .disabled(redeeming || scanning)
+                        .disabled(redemption.busy || scanning)
                 }
             }
-            if let receipt {
+            if authorized, !redemption.accessRevoked, let message = redemption.notice ?? error {
+                Section { Text(message).font(.caption) }
+            }
+            if authorized, !redemption.accessRevoked, let receipt = redemption.receipt {
                 Section("核销成功") {
-                    Text("套餐：\(receipt["PackageName"] as? String ?? "餐饮团购套餐")")
+                    Text("套餐：\(receipt.packageName)")
                     Text("该凭证对应的整套套餐已一次性核销。")
-                    Text("订单号：\(receipt["OrderNo"] as? String ?? "—")")
-                    Text("完成时间：\(verificationText(receipt["RedeemedAt"], fallback: "刚刚"))")
+                    Text("订单号：\(receipt.orderNo)")
+                    Text("完成时间：\(receipt.redeemedAt)")
                 }
             }
             Section {
@@ -298,143 +325,129 @@ private struct RestaurantPackageVerificationView: View {
         }
         .navigationTitle("餐饮团购核销")
         .task(id: revision) { await loadAccess() }
-        .onChange(of: store.session?.accessToken) { _, token in
-            code = ""; receipt = nil; scannerOpen = false; scannerSessionToken = ""
-            if token == nil { dismiss() } else { revision += 1 }
+        .onAppear { visible = true; revision += 1 }
+        .onChange(of: principal) { _, next in
+            reset()
+            if next == nil { dismiss() } else { revision += 1 }
         }
-        .onDisappear { code = ""; scannerOpen = false; scannerSessionToken = ""; receipt = nil }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background || (phase == .inactive && operation != nil) { reset() }
+            if phase == .active, visible, !authorized, !loading { revision += 1 }
+        }
+        .onDisappear { visible = false; reset() }
         .sheet(isPresented: $scannerOpen) {
             NativeActivityQrScanner(inputLabel: "团购凭证码", onCode: { scanned in
-                guard !scannerSessionToken.isEmpty,
-                      store.session?.accessToken == scannerSessionToken else {
-                    code = ""; scannerOpen = false; scannerSessionToken = ""
-                    error = "登录账号已变化，请重新读取授权后扫码。"
-                    return
-                }
+                guard visible, canRedeem, let scannerPrincipal, principal == scannerPrincipal else { return }
                 let value = scanned.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !value.isEmpty && value.count <= 128 { code = value; error = nil; receipt = nil }
-                else { code = ""; receipt = nil; error = "二维码内容不是有效的团购凭证码，请手动核对。" }
-                scannerOpen = false; scannerSessionToken = ""
+                redemption.clearFeedback()
+                if (1...128).contains(value.utf16.count) { code = value; error = nil }
+                else { code = ""; error = "二维码内容不是有效的团购凭证码，请手动核对。" }
+                scannerOpen = false; self.scannerPrincipal = nil
             }, onFailure: { message in
-                guard !scannerSessionToken.isEmpty,
-                      store.session?.accessToken == scannerSessionToken else {
-                    scannerOpen = false; scannerSessionToken = ""; return
-                }
-                error = message; cameraAvailable = false; scannerOpen = false; scannerSessionToken = ""
+                guard visible, let scannerPrincipal, principal == scannerPrincipal else { return }
+                error = message; cameraAvailable = false; scannerOpen = false; self.scannerPrincipal = nil
             }).ignoresSafeArea()
         }
         .confirmationDialog("确认核销团购凭证？", isPresented: $confirming, titleVisibility: .visible) {
-            Button("确认核销", role: .destructive) { Task { await redeem() } }.disabled(redeeming)
+            Button("确认核销", role: .destructive) { submit() }.disabled(redemption.busy)
             Button("再核对一下", role: .cancel) { confirming = false }
         } message: {
             Text("该凭证对应一整套套餐，将在“\(storeName)”一次性核销全部套餐内容，不支持拆分；成功后不可重复使用。请确认顾客凭证与门店一致。")
         }
+        .alert("确认已人工核对", isPresented: $confirmingRelease) {
+            Button("再次查询") { lookup(release: true) }
+            Button("返回", role: .cancel) {}
+        } message: {
+            Text("请确认门店负责人已核对原请求。系统会再查询一次，仍未查到时结束本地等待。")
+        }
     }
 
     private func loadAccess() async {
-        guard let token = store.session?.accessToken, let principal = nativeTourismPrincipal(token),
-              Int64(restaurantID).map({ $0 > 0 }) == true,
-              Int64(storeID).map({ $0 > 0 }) == true else {
+        guard visible, scenePhase != .background else { return }
+        guard let principal, trackingID(restaurantID), trackingID(storeID) else {
             authorized = false; error = "商家、门店或登录范围无效，请返回工作台重新进入。"; loading = false; return
         }
         requestGeneration += 1
         let requestID = requestGeneration
-        loading = true; authorized = false; error = nil
-        defer {
-            if requestGeneration == requestID, store.session?.accessToken == token { loading = false }
-        }
+        loading = true; authorized = false; error = nil; redemption.clearFeedback()
+        func current() -> Bool { visible && requestGeneration == requestID && self.principal == principal }
+        defer { if current() { loading = false } }
         do {
             let api = MobileAPI(store: store)
             let storeResponse = try await api.get(
                 "/api/JHCTIDining/GetStores?restaurantId=\(restaurantID)", authenticated: true, expectedPrincipal: principal)
             try Task.checkCancellation()
-            guard requestGeneration == requestID, store.session?.accessToken == token else { return }
+            guard current() else { return }
             let roleResponse = try await api.get(
                 "/api/JHCTIDining/GetMyWorkRoles?restaurantId=\(restaurantID)", authenticated: true, expectedPrincipal: principal)
             try Task.checkCancellation()
             let stores = storeResponse as? [[String: Any]] ?? []
             let roles = roleResponse as? [[String: Any]] ?? []
-            guard requestGeneration == requestID, store.session?.accessToken == token else { return }
-            let selected = stores.first { verificationText($0["Id"]) == storeID }
+            guard current() else { return }
+            let selected = stores.first { trackingField($0, "Id") as? String == storeID
+                && trackingField($0, "RestaurantId") as? String == restaurantID }
             let roleAllowed = roles.contains {
-                ["RestaurantAdmin", "Verifier"].contains(verificationText($0["RoleCode"]))
-                    && (["", "0"].contains(verificationText($0["StoreId"])) || verificationText($0["StoreId"]) == storeID)
+                trackingField($0, "RestaurantId") as? String == restaurantID
+                    && ["RestaurantAdmin", "Verifier"].contains(trackingField($0, "RoleCode") as? String ?? "")
+                    && ["0", storeID].contains(trackingField($0, "StoreId") as? String ?? "")
             }
-            guard selected != nil, (selected?["IsEnabled"] as? Bool) != false, roleAllowed else {
+            guard let selected, trackingField(selected, "IsEnabled") as? Bool == true, roleAllowed else {
                 throw MobileAPIError.unavailable("当前账号没有该门店的团购核销授权，请返回工作台核对岗位。")
             }
-            authorized = true
+            redemption.reload(storeID: storeID, store: store); authorized = true
         } catch is CancellationError {
             return
         } catch {
             if Task.isCancelled { return }
-            if requestGeneration == requestID, store.session?.accessToken == token {
+            if current() {
                 self.error = error.localizedDescription
             }
         }
     }
 
-    private func verificationText(_ value: Any?, fallback: String = "") -> String {
-        guard let value, !(value is NSNull) else { return fallback }
-        return String(describing: value)
-    }
-
     @MainActor private func requestScannerAccess() async {
-        guard let token = store.session?.accessToken, !token.isEmpty else { error = "请先登录已获授权的餐饮工作人员账号。"; return }
+        guard visible, !redemption.busy, canRedeem, let principal else { return }
         guard DataScannerViewController.isSupported else { error = "当前设备不支持扫码，请手动输入凭证码。"; return }
         scanning = true
+        let generation = requestGeneration
         let status = AVCaptureDevice.authorizationStatus(for: .video)
         let granted = status == .authorized ? true : status == .notDetermined
             ? await AVCaptureDevice.requestAccess(for: .video) : false
-        guard store.session?.accessToken == token else {
-            code = ""; scannerOpen = false; scannerSessionToken = ""
-            error = "登录账号已变化，请重新读取授权后扫码。"; scanning = false; return
-        }
+        guard visible, canRedeem, requestGeneration == generation, self.principal == principal else { return }
         cameraAvailable = granted && DataScannerViewController.isAvailable
-        scannerSessionToken = cameraAvailable ? token : ""
+        scannerPrincipal = cameraAvailable ? principal : nil
         scannerOpen = cameraAvailable
         if !cameraAvailable { error = "相机权限未开启或设备不可用，请手动输入凭证码。" }
         scanning = false
     }
 
-    private func redeem() async {
+    private func submit() {
         let value = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard authorized, !redeeming, !value.isEmpty, value.count <= 128,
-              let token = store.session?.accessToken,
-              let principal = nativeTourismPrincipal(token) else {
-            error = value.isEmpty ? "请先扫描或输入团购凭证码。" : "凭证码长度无效，请核对后重试。"; return
+        guard canRedeem, (1...128).contains(value.utf16.count) else { return }
+        run { await redemption.submit(code: value, storeID: storeID, store: store) { code = "" } }
+    }
+
+    private func lookup(release: Bool) {
+        run { await redemption.lookup(storeID: storeID, store: store, release: release) }
+    }
+
+    private func run(_ action: @escaping @MainActor () async -> Void) {
+        guard visible, scenePhase == .active, authorized, !redemption.accessRevoked, operation == nil,
+              let expectedPrincipal = principal else { return }
+        let generation = requestGeneration
+        error = nil
+        operation = Task { @MainActor in
+            defer { if requestGeneration == generation { operation = nil } }
+            guard visible, scenePhase == .active, requestGeneration == generation, principal == expectedPrincipal else { return }
+            await action()
         }
-        redeeming = true; error = nil; receipt = nil
-        defer { redeeming = false }
-        do {
-            guard let result = try await MobileAPI(store: store).post(
-                "/api/JHCTIDiningPackage/Redeem", body: ["StoreId": storeID, "Code": value], authenticated: true,
-                expectedPrincipal: principal
-            ) as? [String: Any] else { throw MobileAPIError.unavailable("核销回执格式异常，请联系管理员核对。") }
-            try Task.checkCancellation()
-            guard store.session?.accessToken == token else {
-                code = ""; throw MobileAPIError.unavailable("登录账号已变化，请在原门店核对核销结果。")
-            }
-            guard !(result["OrderNo"] as? String ?? "").isEmpty,
-                  !(result["PackageName"] as? String ?? "").isEmpty,
-                  (result["Status"] as? String) == "Redeemed" else {
-                throw MobileAPIError.unavailable("核销回执无法确认，请核对门店记录后再操作。")
-            }
-            receipt = result; code = ""
-        } catch is CancellationError {
-            if store.session?.accessToken == token {
-                self.error = "核销请求已取消，结果可能已提交；请先核对门店核销记录后再操作。"
-            }
-            return
-        } catch {
-            if Task.isCancelled {
-                if store.session?.accessToken == token {
-                    self.error = "核销请求已取消，结果可能已提交；请先核对门店核销记录后再操作。"
-                }
-                return
-            }
-            if store.session?.accessToken == token { self.error = error.localizedDescription }
-        }
+    }
+
+    private func reset() {
+        requestGeneration += 1; operation?.cancel(); operation = nil
+        redemption.invalidate(); authorized = false; loading = false; error = nil
+        code = ""; scanning = false; scannerOpen = false; scannerPrincipal = nil
+        confirming = false; confirmingRelease = false
     }
 }
 

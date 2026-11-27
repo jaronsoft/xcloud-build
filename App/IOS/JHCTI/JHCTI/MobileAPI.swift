@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import Security
 import CryptoKit
 import UIKit
@@ -109,9 +110,10 @@ final class MobileAPI {
     }
 
     func get(_ path: String, authenticated: Bool = false, expectedPrincipal: String? = nil,
-             timeoutInterval: TimeInterval = 12) async throws -> Any {
+             timeoutInterval: TimeInterval = 12, requireExplicitResponse: Bool = false) async throws -> Any {
         try await request(path, method: "GET", body: nil, authenticated: authenticated, canRefresh: true,
-                          expectedPrincipal: expectedPrincipal, timeoutInterval: timeoutInterval)
+                          expectedPrincipal: expectedPrincipal, timeoutInterval: timeoutInterval,
+                          requireExplicitResponse: requireExplicitResponse)
     }
 
     func getPublicCached(_ path: String, forceRefresh: Bool = false, allowStale: Bool = false) async throws -> Any {
@@ -282,7 +284,8 @@ final class MobileAPI {
     }
 
     private func request(_ path: String, method: String, body: Any?, authenticated: Bool, canRefresh: Bool,
-                         expectedPrincipal: String? = nil, timeoutInterval: TimeInterval = 12) async throws -> Any {
+                         expectedPrincipal: String? = nil, timeoutInterval: TimeInterval = 12,
+                         requireExplicitResponse: Bool = false) async throws -> Any {
         guard path.hasPrefix("/api/"), let url = URL(string: path, relativeTo: baseURL) else {
             throw MobileAPIError.unavailable("请求路径无效")
         }
@@ -302,7 +305,34 @@ final class MobileAPI {
         }
         if let body {
             urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let payload: Any
+            if var fields = body as? [String: Any], [
+                "/api/JHCTITourismAuth/LoginWithPhonePassword",
+                "/api/JHCTITourismAuth/LoginWithPhoneCode",
+                "/api/JHCTITourismAuth/Refresh",
+            ].contains(path) {
+                let device = UIDevice.current
+                var hardware = utsname()
+                let model = uname(&hardware) == 0
+                    ? withUnsafeBytes(of: &hardware.machine) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+                    : device.model
+                var info = [
+                    "Terminal": "IosApp", "OsName": device.systemName, "OsVersion": device.systemVersion,
+                    "DeviceType": device.userInterfaceIdiom == .pad ? "tablet" : device.userInterfaceIdiom == .phone ? "phone" : "other",
+                    "Brand": "Apple", "Model": model,
+                ]
+                #if targetEnvironment(simulator)
+                info["DeviceType"] = "simulator"
+                info["Model"] = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? device.model
+                #endif
+                info["AppVersion"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+                info["BuildNumber"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+                fields["ClientInfo"] = info
+                payload = fields
+            } else {
+                payload = body
+            }
+            urlRequest.httpBody = try JSONSerialization.data(withJSONObject: payload)
         }
         let (data, response) = try await performNetworkRequest {
             try await transport.data(for: urlRequest)
@@ -321,7 +351,8 @@ final class MobileAPI {
                 _ = try await refreshSession(old)
                 try Task.checkCancellation()
                 return try await request(path, method: method, body: body, authenticated: true,
-                                         canRefresh: false, expectedPrincipal: principal, timeoutInterval: timeoutInterval)
+                                         canRefresh: false, expectedPrincipal: principal, timeoutInterval: timeoutInterval,
+                                         requireExplicitResponse: requireExplicitResponse)
             }
             if store.session?.accessToken == requestSession?.accessToken { store.clear() }
             throw MobileAPIError.unavailable("登录已失效，请重新登录")
@@ -338,6 +369,16 @@ final class MobileAPI {
             throw MobileAPIError.rejected(statusCode: apiStatus ?? status,
                                            message: message ?? "请求失败，请稍后重试",
                                            retryAfterSeconds: retryAfter)
+        }
+        if requireExplicitResponse {
+            // 查无记录须由成功响应中的 null 明确表示，空响应不能用于解除待核对状态。
+            let fields = ["Response", "response"].compactMap { envelope[$0] }
+            guard let success = (envelope["Success"] ?? envelope["success"]) as? NSNumber,
+                  CFGetTypeID(success) == CFBooleanGetTypeID(), success.boolValue,
+                  fields.count == 1, let value = fields.first else {
+                throw MobileAPIError.unavailable("核对回执格式异常，请重新查询。")
+            }
+            return value
         }
         return envelope["Response"] ?? envelope["response"] ?? envelope["Data"] ?? envelope["data"] ?? NSNull()
     }

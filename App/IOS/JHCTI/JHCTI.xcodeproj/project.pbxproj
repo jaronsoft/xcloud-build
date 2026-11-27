@@ -74,6 +74,7 @@
         B66100000000000000000001 /* NativeMerchantWorkbenchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66100000000000000000002 /* NativeMerchantWorkbenchView.swift */; };
         B66200000000000000000001 /* NativeRestaurantWorkbenchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66200000000000000000002 /* NativeRestaurantWorkbenchViews.swift */; };
         B6C900000000000000000001 /* NativeRestaurantSupplementaryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C900000000000000000002 /* NativeRestaurantSupplementaryViews.swift */; };
+        B6C900000000000000000009 /* NativeDiningPackageRedemption.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C90000000000000000000A /* NativeDiningPackageRedemption.swift */; };
         B66300000000000000000001 /* DiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66300000000000000000002 /* DiscoverView.swift */; };
         B66400000000000000000001 /* NativeCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66400000000000000000002 /* NativeCatalogView.swift */; };
         B66500000000000000000001 /* HotelCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66500000000000000000002 /* HotelCatalogView.swift */; };
@@ -230,6 +231,7 @@
         B66100000000000000000002 /* NativeMerchantWorkbenchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantWorkbenchView.swift; sourceTree = "<group>"; };
         B66200000000000000000002 /* NativeRestaurantWorkbenchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRestaurantWorkbenchViews.swift; sourceTree = "<group>"; };
         B6C900000000000000000002 /* NativeRestaurantSupplementaryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRestaurantSupplementaryViews.swift; sourceTree = "<group>"; };
+        B6C90000000000000000000A /* NativeDiningPackageRedemption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningPackageRedemption.swift; sourceTree = "<group>"; };
         B66300000000000000000002 /* DiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverView.swift; sourceTree = "<group>"; };
         B66400000000000000000002 /* NativeCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCatalogView.swift; sourceTree = "<group>"; };
         B66500000000000000000002 /* HotelCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotelCatalogView.swift; sourceTree = "<group>"; };
@@ -686,6 +688,7 @@
 				B6C300000000000000000002 /* NativeDiningPackageOrderValidation.swift */,
 				B66200000000000000000002 /* NativeRestaurantWorkbenchViews.swift */,
 				B6C900000000000000000002 /* NativeRestaurantSupplementaryViews.swift */,
+				B6C90000000000000000000A /* NativeDiningPackageRedemption.swift */,
 			);
 			path = Views/Restaurant;
 			sourceTree = "<group>";
@@ -810,6 +813,7 @@
 				B6C300000000000000000001 /* NativeDiningPackageOrderValidation.swift in Sources */,
 				B66200000000000000000001 /* NativeRestaurantWorkbenchViews.swift in Sources */,
 				B6C900000000000000000001 /* NativeRestaurantSupplementaryViews.swift in Sources */,
+				B6C900000000000000000009 /* NativeDiningPackageRedemption.swift in Sources */,
 				B63600000000000000000001 /* ActivityDetailView.swift in Sources */,
 				B6A600000000000000000001 /* ActivityRegistrationCard.swift in Sources */,
 				B6A500000000000000000001 /* ActivityRegistrationFormSection.swift in Sources */,

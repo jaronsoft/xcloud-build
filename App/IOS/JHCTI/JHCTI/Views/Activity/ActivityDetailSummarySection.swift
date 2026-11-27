@@ -69,20 +69,9 @@ struct ActivityDetailSummarySection: View {
                                          startLabel: String, activeLabel: String, endedLabel: String) -> String {
         guard let startText = startValue as? String, let endText = endValue as? String,
               let start = nativeBusinessTimestamp(startText), let end = nativeBusinessTimestamp(endText), end > start else { return "" }
-        if now < start { return "距\(startLabel)：\(activityCountdown(start.timeIntervalSince(now)))" }
-        if now < end { return "\(activeLabel) · 距结束：\(activityCountdown(end.timeIntervalSince(now)))" }
+        if now < start { return "距\(startLabel)：\(nativeActivityCountdown(start.timeIntervalSince(now)))" }
+        if now < end { return "\(activeLabel) · 距结束：\(nativeActivityCountdown(end.timeIntervalSince(now)))" }
         return endedLabel
-    }
-
-    private func activityCountdown(_ interval: TimeInterval) -> String {
-        let seconds = max(0, Int(ceil(interval)))
-        let days = seconds / 86_400
-        let hours = seconds % 86_400 / 3_600
-        let minutes = seconds % 3_600 / 60
-        let remainder = seconds % 60
-        if days > 0 { return "\(days)天\(hours)小时\(minutes)分\(remainder)秒" }
-        if hours > 0 { return "\(hours)小时\(minutes)分\(remainder)秒" }
-        return "\(minutes)分\(remainder)秒"
     }
 
     private func activityRow(_ label: String, _ value: String) -> some View {

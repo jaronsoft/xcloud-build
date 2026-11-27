@@ -1,6 +1,17 @@
 import Foundation
 import CoreFoundation
 
+func nativeActivityCountdown(_ interval: TimeInterval) -> String {
+    let seconds = max(0, Int(ceil(interval)))
+    let days = seconds / 86_400
+    let hours = seconds % 86_400 / 3_600
+    let minutes = seconds % 3_600 / 60
+    let remainder = seconds % 60
+    if days > 0 { return "\(days)天\(hours)小时\(minutes)分\(remainder)秒" }
+    if hours > 0 { return "\(hours)小时\(minutes)分\(remainder)秒" }
+    return "\(minutes)分\(remainder)秒"
+}
+
 // 客户端业务时间按服务端 DateTime 的有效年月日范围解析，避免系统日期格式化器悄悄归一化非法值。
 func nativeBusinessDateTime(_ value: String) -> Date? {
     let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
