@@ -242,7 +242,7 @@ struct ProfileView: View {
                                 clearOtherCacheSelected = true
                                 cacheManagementOpen = true
                             }
-                            profileInfoRow("关于悦行江都", detail: "版本信息  \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0") ›") {
+                            profileInfoRow("关于悦行江都", detail: "版本信息  \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") ›") {
                                 aboutOpen = true
                             }
                         }

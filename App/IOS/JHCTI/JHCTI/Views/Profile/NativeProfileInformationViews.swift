@@ -34,7 +34,7 @@ struct NativeProfileAboutView: View {
                     HStack {
                         Text("当前版本").foregroundStyle(Brand.muted)
                         Spacer()
-                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0")
+                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
                             .foregroundStyle(Brand.ink)
                     }
                     .font(.system(size: NativeTypography.size(14)))
