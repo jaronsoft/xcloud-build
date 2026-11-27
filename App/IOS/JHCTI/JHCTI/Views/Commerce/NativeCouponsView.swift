@@ -3,10 +3,13 @@ import UIKit
 
 struct NativeCouponsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .footnote) private var statusFontSize: CGFloat = 14
+    @ScaledMetric(relativeTo: .largeTitle) private var couponAmountFontSize: CGFloat = 32
     @ObservedObject var store: SessionStore
     let onLogin: () -> Void
     @State private var tab = "claim"
-    @State private var status = "Available"
+    @State private var status = ""
     @State private var campaigns = [[String: Any]]()
     @State private var coupons = [[String: Any]]()
     @State private var campaignPage = 1
@@ -21,6 +24,7 @@ struct NativeCouponsView: View {
     @State private var retryPage: Int?
     @State private var retryTab: String?
     @State private var notice: String?
+    @State private var claimFeedback: CouponClaimFeedback?
     @State private var pendingCampaign: [String: Any]?
     @State private var identityNotReady = false
     @State private var identityProfileOpen = false
@@ -32,7 +36,7 @@ struct NativeCouponsView: View {
     @State private var requestSequence = 0
 
     private let pageSize = 20
-    private let statuses = [("Available", "可使用"), ("Reserved", "使用中"), ("Redeemed", "已使用"), ("Expired", "已过期")]
+    private let statuses = [("", "全部"), ("Available", "可使用"), ("Reserved", "使用中"), ("Redeemed", "已使用"), ("Expired", "已过期")]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,6 +57,15 @@ struct NativeCouponsView: View {
                 tabButton("claim", title: "领券中心")
                 tabButton("mine", title: "我的券包")
             }.padding(.horizontal, 16)
+            if tab == "claim", let claimFeedback {
+                couponWarning(title: claimFeedback.title, message: claimFeedback.message) {
+                    if claimFeedback != .rejected {
+                        Button("查看券包") { status = ""; switchTab("mine") }
+                            .buttonStyle(.bordered).tint(Brand.primary)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.top, 8)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("商户优惠券用于商城结算；平台消费券按活动规则领取和核销。")
@@ -67,10 +80,28 @@ struct NativeCouponsView: View {
                             }.merchantCard()
                         } else {
                             ScrollView(.horizontal, showsIndicators: false) {
-                                HStack { ForEach(statuses, id: \.0) { value, label in
-                                    Button(label) { status = value; revision += 1 }
-                                        .buttonStyle(.bordered).tint(status == value ? Brand.primary : Brand.muted)
-                                } }
+                                HStack(spacing: 6) {
+                                    ForEach(statuses, id: \.0) { value, label in
+                                        let selected = status == value
+                                        Button {
+                                            guard !selected else { return }
+                                            status = value; revision += 1
+                                        } label: {
+                                            Text(label)
+                                                .font(.system(size: statusFontSize, weight: .medium))
+                                                .fixedSize()
+                                                .frame(minWidth: 54)
+                                                .padding(.horizontal, 4)
+                                                .frame(minHeight: 34)
+                                                .foregroundStyle(selected ? Color.white : Brand.ink)
+                                                .background(selected ? Brand.primary : Brand.primary.opacity(0.09), in: Capsule())
+                                                .frame(minHeight: 44)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityAddTraits(selected ? .isSelected : [])
+                                    }
+                                }
                             }
                         }
                     }
@@ -79,7 +110,13 @@ struct NativeCouponsView: View {
                         ProgressView(tab == "claim" ? "正在读取领券活动…" : "正在读取我的消费券…")
                             .frame(maxWidth: .infinity).padding(24)
                     }
-                    if let error {
+                    if retryTab == "mine", tab == "mine", let retryPage {
+                        couponWarning(title: status.isEmpty ? "暂时无法加载券包" : "暂时无法加载\(statuses.first { $0.0 == status }?.1 ?? "")的券",
+                                      message: "请稍后再试。") {
+                            Button("重新加载") { Task { await loadCoupons(page: retryPage) } }
+                                .buttonStyle(.bordered).tint(Brand.primary).disabled(loading)
+                        }
+                    } else if let error {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(error).font(.caption).foregroundStyle(.red)
                             if retryTab == tab, let retryPage {
@@ -96,10 +133,16 @@ struct NativeCouponsView: View {
                         if store.session == nil {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("登录后才能领取消费券").font(.headline)
-                                Text("所有消费券均需完成账号实名资料登记、手机号验证和本活动授权后才能领取；平台仅核对资料格式及活动规则，不做权威身份核验。")
-                                    .font(.caption).foregroundStyle(Brand.muted)
                                 Button("登录文旅账号", action: onLogin).buttonStyle(.borderedProminent)
                             }.merchantCard()
+                        }
+                        if !campaigns.isEmpty {
+                            Text("实名领取：需登记实名资料、验证手机号，并在领券时授权对应活动使用实名资料。")
+                                .font(.caption)
+                                .foregroundStyle(Brand.ink.opacity(0.8))
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Brand.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
                         }
                         ForEach(campaigns.indices, id: \.self) { index in campaignCard(campaigns[index]) }
                         if !loading && error == nil && campaigns.isEmpty {
@@ -130,32 +173,24 @@ struct NativeCouponsView: View {
                 }.padding(16)
             }.background(Brand.background)
         }
+        .accessibilityHidden(pendingCampaign != nil)
+        .overlay {
+            if pendingCampaign != nil { claimConsentDialog }
+        }
         .task(id: "\(revision)-\(tab)-\(status)-\(store.session?.accessToken ?? "")") {
             if tab == "claim" { await loadCampaigns(page: 1) }
             else { await loadCoupons(page: 1) }
         }
         .onChange(of: store.session?.accessToken) { _, _ in
             requestSequence += 1; coupons = []; qrImage = nil; claimingID = ""; requestIDs = [:]
-            error = nil; retryPage = nil; retryTab = nil
+            error = nil; retryPage = nil; retryTab = nil; pendingCampaign = nil; claimFeedback = nil
             if tab == "mine" { revision += 1 }
         }
-        .confirmationDialog("本活动实名资料使用告知", isPresented: Binding(
-            get: { pendingCampaign != nil }, set: { if !$0 { pendingCampaign = nil } }
-        ), titleVisibility: .visible) {
-            Button("同意本活动用途并领取") {
-                guard let campaign = pendingCampaign else { return }
-                pendingCampaign = nil
-                Task { await submitClaim(campaign, identityConsent: true) }
-            }
-            Button("暂不领取", role: .cancel) { pendingCampaign = nil }
-        } message: {
-            Text("我同意本活动为资格及身份证限额校验使用账号实名资料；身份证原文不会写入领取记录或日志。此校验不代表权威身份认证。")
-        }
-        .alert("实名资料未就绪", isPresented: $identityNotReady) {
-            Button("去填写实名资料") { identityProfileOpen = true }
+        .alert("领券前请完成账号实名", isPresented: $identityNotReady) {
+            Button("前往实名") { identityProfileOpen = true }
             Button("暂不领取", role: .cancel) {}
         } message: {
-            Text("当前通过手机号验证账号。请填写本人真实姓名和身份证号码。平台只校验格式，不核实证件真伪。填写不实会影响后续权益。")
+            Text("请填写本人的姓名和身份证号码。")
         }
         .sheet(isPresented: $identityProfileOpen) {
             NativeIdentityConsentView(store: store)
@@ -178,6 +213,83 @@ struct NativeCouponsView: View {
         }
     }
 
+    private enum CouponClaimFeedback {
+        case limitReached, uncertain, rejected
+
+        var title: String {
+            switch self {
+            case .limitReached: "已领满本活动的券"
+            case .uncertain: "暂未确认是否领到"
+            case .rejected: "本次未能领券"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .limitReached: "你已领完本活动每人可领的张数，可到「我的券包」查看。"
+            case .uncertain: "请先查看「我的券包」。如果没有这张券，可以回到活动再试一次。"
+            case .rejected: "请刷新活动后再试。"
+            }
+        }
+    }
+
+    private func couponWarning<Actions: View>(title: String, message: String,
+                                                @ViewBuilder actions: () -> Actions) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.title3).foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(.headline).foregroundStyle(Brand.ink)
+                Text(message).font(.subheadline).foregroundStyle(Brand.ink)
+                actions()
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.13), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.orange.opacity(0.45)))
+        .accessibilityElement(children: .contain)
+    }
+
+    private var claimConsentDialog: some View {
+        GeometryReader { page in
+            ZStack {
+                Color.black.opacity(0.32).ignoresSafeArea().accessibilityHidden(true)
+                VStack(spacing: 12) {
+                    Image(systemName: "person.text.rectangle")
+                        .font(.title2).foregroundStyle(Brand.primary)
+                        .accessibilityHidden(true)
+                    Text("实名资料使用确认")
+                        .font(.headline).foregroundStyle(Brand.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("本活动将使用你的实名资料，确认你能否领券及还能领几张。")
+                        .font(.subheadline).foregroundStyle(Brand.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 10) {
+                        Button(role: .cancel) { pendingCampaign = nil } label: {
+                            Text("暂不领取").frame(maxWidth: .infinity, minHeight: 36)
+                        }.buttonStyle(.bordered)
+                        Button {
+                            guard let campaign = pendingCampaign else { return }
+                            pendingCampaign = nil
+                            Task { await submitClaim(campaign, identityConsent: true) }
+                        } label: {
+                            Text("同意领取").frame(maxWidth: .infinity, minHeight: 36)
+                        }.buttonStyle(.borderedProminent)
+                    }.tint(Brand.primary)
+                }
+                .multilineTextAlignment(.center)
+                .padding(20)
+                .frame(width: min(page.size.width * 0.9, 480))
+                .background(.background, in: RoundedRectangle(cornerRadius: 18))
+                .accessibilityElement(children: .contain)
+                .accessibilityAction(.escape) { pendingCampaign = nil }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
     private func headerAction(symbol: String, label: String, disabled: Bool = false,
                               action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -194,13 +306,66 @@ struct NativeCouponsView: View {
         .disabled(disabled)
     }
 
+    private func switchTab(_ value: String) {
+        tab = value; error = nil; retryPage = nil; retryTab = nil; notice = nil; claimFeedback = nil
+    }
+
     private func tabButton(_ value: String, title: String) -> some View {
-        Button { tab = value; error = nil; retryPage = nil; retryTab = nil; notice = nil } label: {
+        Button { switchTab(value) } label: {
             Text(title).font(.system(size: NativeTypography.size(14), weight: tab == value ? .semibold : .regular))
                 .foregroundStyle(tab == value ? Brand.primary : Brand.muted)
                 .frame(maxWidth: .infinity).padding(.vertical, 11)
                 .overlay(alignment: .bottom) { if tab == value { Brand.primary.frame(height: 2) } }
         }.buttonStyle(.plain)
+    }
+
+    private func couponTicket<Detail: View>(amount: Decimal?, minimum: Decimal?, available: Bool = true,
+                                           @ViewBuilder detail: () -> Detail) -> some View {
+        let valueWidth: CGFloat = 94
+        let valueBackground = available
+            ? Color(red: 234.0 / 255, green: 245.0 / 255, blue: 240.0 / 255)
+            : Color(uiColor: .tertiarySystemFill)
+        let value = VStack(spacing: 3) {
+            if let amount {
+                VStack(spacing: 0) {
+                    Text("¥").font(.caption.weight(.semibold))
+                    Text(verbatim: moneyText(amount))
+                        .font(.system(size: couponAmountFontSize, weight: .bold))
+                        .monospacedDigit()
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .minimumScaleFactor(0.5)
+                }
+                .foregroundStyle(available ? Brand.primary : Color(uiColor: .secondaryLabel))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("面额 \(moneyText(amount)) 元")
+            } else {
+                Text("金额待确认").font(.caption.weight(.semibold))
+            }
+            Text(minimum.map { $0 > 0 ? "满\(moneyText($0))元可用" : "无门槛" } ?? "门槛待确认")
+                .font(.caption2)
+        }
+        .multilineTextAlignment(.center)
+        .foregroundStyle(available ? Brand.ink.opacity(0.8) : Color(uiColor: .secondaryLabel))
+        .padding(.horizontal, 7)
+        .padding(.vertical, 12)
+
+        let details = detail().padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 0) {
+                    value.frame(maxWidth: .infinity).background(valueBackground)
+                    details
+                }
+            } else {
+                HStack(spacing: 0) {
+                    value.frame(width: valueWidth)
+                    details
+                }
+                .background(alignment: .leading) { valueBackground.frame(width: valueWidth) }
+            }
+        }
+        .background(available ? Color.white : Color(uiColor: .secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     @ViewBuilder private func campaignCard(_ item: [String: Any]) -> some View {
@@ -209,44 +374,63 @@ struct NativeCouponsView: View {
         let minimum = couponMoney(field(item, "MinimumSpend"))
         let remaining = integer(field(item, "RemainingQuantity"))
         let canClaim = store.session != nil
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                Text(verbatim: amount.map { "¥\(moneyText($0))" } ?? "金额待确认")
-                    .font(.system(size: NativeTypography.size(24), weight: .bold, design: .serif)).foregroundStyle(Brand.primary)
-                Spacer()
-                Text(minimum.map { $0 > 0 ? "满\(moneyText($0))元可用" : "无门槛" } ?? "门槛待确认")
+        couponTicket(amount: amount, minimum: minimum) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(display(field(item, "Name")) ?? "平台消费券")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(Brand.ink)
+                Text("领取后 \(integer(field(item, "ValidityDays"))) 天有效 · 每人限领 \(integer(field(item, "PerUserLimit"))) 张")
                     .font(.caption).foregroundStyle(Brand.muted)
+                Text("活动截止 \(dateText(field(item, "EndsAt"))) · 剩余 \(remaining) 张")
+                    .font(.caption).foregroundStyle(Brand.muted)
+                Button(claimingID == id ? "领取中…" : remaining <= 0 ? "已领完" : canClaim ? "立即领取" : "请先登录") {
+                    Task { await prepareClaim(item) }
+                }.buttonStyle(.borderedProminent).disabled(!canClaim || claimingID != "" || id.isEmpty || amount == nil || minimum == nil || remaining <= 0)
             }
-            Text(display(field(item, "Name")) ?? "平台消费券").font(.headline)
-            Text("领取后 \(integer(field(item, "ValidityDays"))) 天有效 · 每人限领 \(integer(field(item, "PerUserLimit"))) 张")
-                .font(.caption).foregroundStyle(Brand.muted)
-            Text("实名领取：需完成账号实名资料登记、手机号验证和本活动授权。")
-                .font(.caption).foregroundStyle(Brand.muted)
-            Text("活动截止 \(dateText(field(item, "EndsAt"))) · 剩余 \(remaining) 张")
-                .font(.caption).foregroundStyle(Brand.muted)
-            Button(claimingID == id ? "领取中…" : remaining <= 0 ? "已领完" : canClaim ? "立即领取" : "请先登录") {
-                Task { await prepareClaim(item) }
-            }.buttonStyle(.borderedProminent).disabled(!canClaim || claimingID != "" || id.isEmpty || amount == nil || minimum == nil || remaining <= 0)
-        }.merchantCard()
+        }
     }
 
     @ViewBuilder private func couponCard(_ item: [String: Any]) -> some View {
         let id = display(field(item, "Id")) ?? ""
         let type = display(field(item, "CampaignType")) ?? ""
         let state = display(field(item, "Status")) ?? ""
+        let amount = couponMoney(field(item, "CouponAmount"))
+        let minimum = couponMoney(field(item, "MinimumSpend"))
+        let available = state == "Available"
+        let ink = available ? Brand.ink : Color(uiColor: .secondaryLabel)
         let label = ["Available": "可使用", "Reserved": "使用中", "Redeemed": "已使用", "Expired": "已过期"][state] ?? "状态待确认"
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                Text(verbatim: couponMoney(field(item, "CouponAmount")).map { "¥\(moneyText($0))" } ?? "金额待确认")
-                    .font(.system(size: NativeTypography.size(24), weight: .bold, design: .serif)).foregroundStyle(Brand.primary)
-                Spacer()
-                Text(label).font(.caption.weight(.semibold)).foregroundStyle(Brand.primary)
+        let details = VStack(alignment: .leading, spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    couponTitle(item, type: type).fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 0)
+                    couponStatusBadge(label, available: available)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    couponTitle(item, type: type)
+                    couponStatusBadge(label, available: available)
+                }
             }
-            Text("\(couponType(type)) · \(display(field(item, "CampaignName")) ?? "未命名券")").font(.headline)
-            Text(couponMoney(field(item, "MinimumSpend")).map { $0 > 0 ? "满\(moneyText($0))元可用" : "无门槛" } ?? "门槛待确认")
-                .font(.caption).foregroundStyle(Brand.muted)
-            Text("领取时间 \(dateText(field(item, "ClaimedAt"))) · 有效期至 \(dateText(field(item, "ValidUntil")))")
-                .font(.caption).foregroundStyle(Brand.muted)
+            Text("有效期至 \(dateText(field(item, "ValidUntil")))")
+                .font(.footnote).foregroundStyle(ink)
+            if available {
+                Text("领取时间 \(dateText(field(item, "ClaimedAt")))")
+                    .font(.footnote).foregroundStyle(ink)
+            } else {
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("领取时间 \(dateText(field(item, "ClaimedAt")))")
+                        if state == "Redeemed" {
+                            Text("使用时间 \(display(field(item, "UsedAt")) == nil ? "时间未记录" : dateText(field(item, "UsedAt")))")
+                            Text("使用地点 \(display(field(item, "UsedLocation")) ?? "地点未记录")")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+                } label: {
+                    Text("查看详情").fontWeight(.semibold)
+                }
+                .font(.footnote).tint(ink)
+            }
             if state == "Available" && type == "Merchant" {
                 Text("商城结算时选择使用，不支持现场扫码核销。")
                     .font(.caption).foregroundStyle(Brand.muted)
@@ -254,7 +438,9 @@ struct NativeCouponsView: View {
                 Text("政府消费券按活动规则核验，当前券包不提供平台扫码入口。")
                     .font(.caption).foregroundStyle(Brand.muted)
             } else if state == "Available" && type == "Platform" {
-                HStack {
+                let actions = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+                actions {
                     Button(qrLoadingID == id ? "正在生成…" : "出示核销二维码") { Task { await showQr(item) } }
                         .disabled(qrLoadingID != "")
                     if let code = display(field(item, "CouponCode")), !code.isEmpty {
@@ -269,7 +455,20 @@ struct NativeCouponsView: View {
                 Text("券类型暂无法确认，请联系平台核对后再使用。")
                     .font(.caption).foregroundStyle(.red)
             }
-        }.merchantCard()
+        }
+        couponTicket(amount: amount, minimum: minimum, available: available) { details.foregroundStyle(ink) }
+    }
+
+    private func couponTitle(_ item: [String: Any], type: String) -> some View {
+        Text("\(couponType(type)) · \(display(field(item, "CampaignName")) ?? "未命名券")")
+            .font(.subheadline.weight(.semibold))
+    }
+
+    private func couponStatusBadge(_ label: String, available: Bool) -> some View {
+        Text(label)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 9).padding(.vertical, 4)
+            .background(available ? Brand.primary.opacity(0.12) : Color(uiColor: .systemGray5), in: Capsule())
     }
 
     @MainActor private func loadCampaigns(page target: Int) async {
@@ -309,8 +508,8 @@ struct NativeCouponsView: View {
         else { loadingMore = true }
         defer { if sequence == requestSequence { loading = false; loadingMore = false } }
         do {
-            let encoded = status.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "Available"
-            let result = try await MobileAPI(store: store).get("/api/JHCTICouponClaim/GetMyCouponPage?page=\(target)&pageSize=\(pageSize)&status=\(encoded)", authenticated: true) as? [String: Any]
+            let filter = status.isEmpty ? "" : "&status=\(status)"
+            let result = try await MobileAPI(store: store).get("/api/JHCTICouponClaim/GetMyCouponPage?page=\(target)&pageSize=\(pageSize)\(filter)", authenticated: true) as? [String: Any]
             guard sequence == requestSequence, store.session?.accessToken == token else { return }
             guard let result,
                   let rows = (result["data"] ?? result["Data"] ?? result["Items"] ?? result["items"]) as? [[String: Any]] else {
@@ -320,8 +519,8 @@ struct NativeCouponsView: View {
             couponPage = target
             couponTotal = integer(result["dataCount"] ?? result["DataCount"] ?? result["total"] ?? result["Total"])
         } catch {
-            if sequence == requestSequence {
-                self.error = error.localizedDescription
+            if sequence == requestSequence, store.session?.accessToken == token {
+                self.error = "暂时无法加载券包"
                 retryPage = target; retryTab = "mine"
             }
         }
@@ -350,16 +549,16 @@ struct NativeCouponsView: View {
         let attemptKey = "jhcti.coupon.claim.attempt.v1.\(principal).\(id)"
         if UserDefaults.standard.object(forKey: attemptKey) != nil,
            UserDefaults.standard.string(forKey: attemptKey) == nil {
-            error = "设备上的领券请求记录无法读取，请检查存储空间后重试；本次未提交。"
+            claimFeedback = .rejected
             return
         }
         let requestID = requestIDs[id] ?? UserDefaults.standard.string(forKey: attemptKey) ?? "coupon-\(UUID().uuidString)"
         UserDefaults.standard.set(requestID, forKey: attemptKey)
         guard UserDefaults.standard.string(forKey: attemptKey) == requestID else {
-            error = "设备暂时无法保存领券请求编号，请检查存储空间后重试；本次未提交。"
+            claimFeedback = .rejected
             return
         }
-        requestIDs[id] = requestID; claimingID = id; error = nil; notice = nil
+        requestIDs[id] = requestID; claimingID = id; error = nil; notice = nil; claimFeedback = nil
         defer { if claimingID == id { claimingID = "" } }
         do {
             let api = MobileAPI(store: store)
@@ -372,7 +571,7 @@ struct NativeCouponsView: View {
                 _ = try await sendClaim()
             } catch {
                 guard let delay = couponClaimRetryDelay(for: error), store.session?.accessToken == token else { throw error }
-                notice = "请求暂时繁忙，稍后将使用同一请求编号自动重试一次。"
+                notice = "正在确认领券结果，请稍等…"
                 try await Task.sleep(for: .milliseconds(delay))
                 guard store.session?.accessToken == token else { throw MobileAPIError.unavailable("登录账号已变化，请重新操作") }
                 _ = try await sendClaim()
@@ -384,7 +583,17 @@ struct NativeCouponsView: View {
             requestSequence += 1
             await loadCampaigns(page: 1)
             if tab == "mine" { await loadCoupons(page: 1) }
-        } catch { self.error = "\(error.localizedDescription)；如请求结果未确认，重试会复用同一请求号。" }
+        } catch {
+            guard store.session?.accessToken == token, !Task.isCancelled else { return }
+            notice = nil
+            if error.localizedDescription == "已达到该活动每人领取上限" {
+                claimFeedback = .limitReached
+            } else if couponClaimRetryDelay(for: error) != nil {
+                claimFeedback = .uncertain
+            } else {
+                claimFeedback = .rejected
+            }
+        }
     }
 
     private func couponClaimRetryDelay(for error: Error) -> Int? {

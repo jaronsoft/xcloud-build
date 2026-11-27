@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import SwiftUI
 
 private struct MerchantHotelDraft {
@@ -17,6 +18,7 @@ struct MerchantHotelsView: View {
     @State private var roomID = ""
     @State private var stayDate = Calendar(identifier: .gregorian).startOfDay(for: Date())
     @State private var inventory: [String: Any]?
+    @State private var loadedSelection: String?
     @State private var draft = MerchantHotelDraft()
     @State private var loading = true
     @State private var saving = false
@@ -31,6 +33,7 @@ struct MerchantHotelsView: View {
         return calendar
     }
     private var businessToday: Date { businessCalendar.startOfDay(for: Date()) }
+    private var selection: String { "\(hotelID):\(roomID):\(dateText)" }
     private var dateText: String {
         let formatter = DateFormatter()
         formatter.calendar = businessCalendar
@@ -77,6 +80,7 @@ struct MerchantHotelsView: View {
                         .environment(\.calendar, businessCalendar)
                 }
                 .merchantCard()
+                .disabled(saving)
                 StatusView(loading: loading, error: error) { revision += 1 }
                 if !loading && error == nil && !rooms.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
@@ -129,7 +133,8 @@ struct MerchantHotelsView: View {
         }
         requestSequence += 1
         let sequence = requestSequence
-        loading = true; error = nil; inventory = nil
+        loading = true; error = nil; inventory = nil; loadedSelection = nil
+        defer { if requestSequence == sequence { loading = false } }
         do {
             if hotels.isEmpty {
                 guard let response = try await MobileAPI(store: store).get(
@@ -150,12 +155,17 @@ struct MerchantHotelsView: View {
             guard let hotel = hotels.first(where: { Self.text($0["Id"] ?? $0["id"]) == hotelID }) else {
                 rooms = []; error = "当前商户暂无可维护酒店。"; return
             }
+            guard Self.validID(Self.field(hotel, "Id") as? String) else { throw MobileAPIError.unavailable("酒店编号无效。") }
             guard let detailResponse = try await MobileAPI(store: store).get(
                 "/api/JHCTIHotel/GetById?id=\(hotelID)", authenticated: true,
                 expectedPrincipal: expectedPrincipal) as? [String: Any] else {
                 throw MobileAPIError.unavailable("酒店详情响应格式异常，请重试。")
             }
             let detail = detailResponse["data"] as? [String: Any] ?? detailResponse["Data"] as? [String: Any] ?? detailResponse
+            guard Self.field(detail, "Id") as? String == hotelID,
+                  Self.field(detail, "MerchantId") as? String == merchantID else {
+                throw MobileAPIError.unavailable("酒店详情与所选商户不匹配。")
+            }
             let loadedRooms = (detail["RoomTypes"] as? [[String: Any]] ?? detail["roomTypes"] as? [[String: Any]] ?? [])
                 .filter { Self.boolValue($0["IsEnabled"] ?? $0["isEnabled"], default: true) }
             guard requestSequence == sequence, store.session?.accessToken == token else { return }
@@ -164,28 +174,35 @@ struct MerchantHotelsView: View {
                 roomID = loadedRooms.first.map { Self.text($0["Id"] ?? $0["id"]) } ?? ""
             }
             guard !loadedRooms.isEmpty else { error = "该酒店暂无启用房型，请先在管理端维护房型。"; return }
-            let escapedDate = dateText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? dateText
+            let date = dateText
+            let selectedRoomID = roomID
+            guard Self.validID(selectedRoomID) else { throw MobileAPIError.unavailable("房型编号无效。") }
+            let selectedScope = selection
+            let escapedDate = date.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? date
             let inventoryResponse = try await MobileAPI(store: store).get(
                 "/api/JHCTIHotel/GetInventory?hotelId=\(hotelID)&from=\(escapedDate)&to=\(escapedDate)", authenticated: true,
                 expectedPrincipal: expectedPrincipal)
             let inventoryDictionary = inventoryResponse as? [String: Any]
-            let inventoryRows = inventoryResponse as? [[String: Any]]
-                ?? (inventoryDictionary?["data"] as? [[String: Any]]
-                    ?? (inventoryDictionary?["Data"] as? [[String: Any]] ?? []))
-            let found = inventoryRows.first { Self.text($0["RoomTypeId"] ?? $0["roomTypeId"]) == roomID && Self.text($0["StayDate"] ?? $0["stayDate"]).hasPrefix(dateText) }
-            guard requestSequence == sequence, store.session?.accessToken == token else { return }
+            guard let inventoryRows = inventoryResponse as? [[String: Any]]
+                ?? inventoryDictionary?["data"] as? [[String: Any]] ?? inventoryDictionary?["Data"] as? [[String: Any]],
+                inventoryRows.allSatisfy({ Self.validInventoryRow($0, date: date) }) else {
+                throw MobileAPIError.unavailable("房态回执格式或日期异常，请重新读取。")
+            }
+            let matches = inventoryRows.filter { ($0["RoomTypeId"] ?? $0["roomTypeId"]) as? String == selectedRoomID }
+            guard matches.count <= 1 else { throw MobileAPIError.unavailable("当日房态异常，请重新读取。") }
+            let found = matches.first
+            guard requestSequence == sequence, store.session?.accessToken == token, selection == selectedScope else { return }
             inventory = found
+            loadedSelection = selectedScope
             draft = MerchantHotelDraft(price: found.map { Self.text($0["Price"] ?? $0["price"]) } ?? "",
                                        roomCount: found.map { Self.text($0["RoomCount"] ?? $0["roomCount"]) } ?? "",
                                        isClosed: found.map { Self.boolValue($0["IsClosed"] ?? $0["isClosed"]) } ?? false)
-            _ = hotel
         } catch is CancellationError {
-            if requestSequence == sequence { loading = false }
+            return
         } catch {
             guard requestSequence == sequence, store.session?.accessToken == token else { return }
             self.error = error.localizedDescription
         }
-        if requestSequence == sequence { loading = false }
     }
 
     private func prepareSave() {
@@ -204,35 +221,77 @@ struct MerchantHotelsView: View {
     }
 
     private func save() async {
-        guard !saving, let token = store.session?.accessToken,
+        guard !saving, !loading, error == nil, loadedSelection == selection, let token = store.session?.accessToken,
               let expectedPrincipal = nativeTourismPrincipal(token),
               let price = Decimal(string: draft.price.trimmingCharacters(in: .whitespacesAndNewlines)),
               let count = Int(draft.roomCount.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+        let selectedHotelID = hotelID
+        let selectedRoomID = roomID
+        let selectedScope = selection
+        let sequence = requestSequence
         let body: [String: Any] = [
+            "InventoryId": (inventory?["Id"] ?? inventory?["id"]) as? String ?? "0",
+            "CreateOnly": inventory == nil,
             "RoomTypeId": roomID,
-            "Version": Self.intValue(inventory?["Version"] ?? inventory?["version"]),
+            "Version": inventory.flatMap(Self.inventoryVersion) ?? 0,
             "StayDate": dateText,
             "Price": NSDecimalNumber(decimal: price),
             "RoomCount": count,
             "IsClosed": draft.isClosed
         ]
         saving = true; error = nil
+        defer { saving = false; showingSaveConfirmation = false }
         do {
-            _ = try await MobileAPI(store: store).post("/api/JHCTIHotel/SaveInventory?hotelId=\(hotelID)", body: body, authenticated: true,
+            let receipt = try await MobileAPI(store: store).post("/api/JHCTIHotel/SaveInventory?hotelId=\(selectedHotelID)", body: body, authenticated: true,
                 expectedPrincipal: expectedPrincipal)
-            guard store.session?.accessToken == token else { return }
+            guard receipt as? String == selectedRoomID else { throw MobileAPIError.unavailable("保存回执与所选房型不匹配") }
+            guard store.session?.accessToken == token, selection == selectedScope, requestSequence == sequence else { return }
             await load()
             if error != nil { error = "房态已保存，但刷新失败；请重新读取确认当前状态。" }
         } catch is CancellationError {
-            if store.session?.accessToken == token {
+            if store.session?.accessToken == token, selection == selectedScope, requestSequence == sequence {
                 error = "房态保存结果未确认；请重新读取版本后再操作。"
             }
         } catch {
-            if store.session?.accessToken == token {
+            if store.session?.accessToken == token, selection == selectedScope, requestSequence == sequence {
                 self.error = "\(error.localizedDescription)；请重新读取版本后再试。"
             }
         }
-        saving = false; showingSaveConfirmation = false
+    }
+
+    private static func validID(_ value: String?) -> Bool {
+        guard let value, let number = Int64(value), number > 0 else { return false }
+        return String(number) == value
+    }
+    private static func field(_ row: [String: Any], _ key: String) -> Any? {
+        let camel = key.prefix(1).lowercased() + String(key.dropFirst())
+        if let left = row[key], let right = row[camel] {
+            let lhs = try? JSONSerialization.data(withJSONObject: left, options: [.fragmentsAllowed])
+            let rhs = try? JSONSerialization.data(withJSONObject: right, options: [.fragmentsAllowed])
+            if lhs == nil || lhs != rhs { return nil }
+        }
+        return row[key] ?? row[camel]
+    }
+
+    private static func validInventoryRow(_ row: [String: Any], date: String) -> Bool {
+        guard validID(field(row, "Id") as? String), validID(field(row, "RoomTypeId") as? String),
+              inventoryVersion(row) != nil,
+              let price = field(row, "Price") as? NSNumber, CFGetTypeID(price) != CFBooleanGetTypeID(),
+              let closed = field(row, "IsClosed") as? NSNumber, CFGetTypeID(closed) == CFBooleanGetTypeID(),
+              let count = inventoryInteger(field(row, "RoomCount")), let reserved = inventoryInteger(field(row, "ReservedCount")),
+              reserved <= count, count <= Int(Int32.max) else { return false }
+        return bookingBusinessDateTime(field(row, "StayDate")).map { String($0.prefix(10)) } == date
+    }
+
+    private static func inventoryVersion(_ row: [String: Any]) -> Int? {
+        inventoryInteger(field(row, "Version"))
+    }
+
+    private static func inventoryInteger(_ raw: Any?) -> Int? {
+        guard let value = raw as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(),
+              value.doubleValue >= 0, value.doubleValue <= 9_007_199_254_740_991,
+              value.doubleValue.rounded(.towardZero) == value.doubleValue else { return nil }
+        return value.intValue
     }
 
     private static func text(_ value: Any?) -> String {

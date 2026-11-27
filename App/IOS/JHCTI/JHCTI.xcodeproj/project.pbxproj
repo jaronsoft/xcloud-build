@@ -66,6 +66,8 @@
         B6C600000000000000000001 /* MerchantActivityWorkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C600000000000000000002 /* MerchantActivityWorkView.swift */; };
         B6C700000000000000000001 /* MerchantScenicWorkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C700000000000000000002 /* MerchantScenicWorkView.swift */; };
         B65800000000000000000001 /* NativeMerchantOrderViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65800000000000000000002 /* NativeMerchantOrderViews.swift */; };
+        B65800000000000000000003 /* NativeMerchantTrackingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65800000000000000000004 /* NativeMerchantTrackingView.swift */; };
+        B65800000000000000000005 /* NativeMerchantFulfillmentRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65800000000000000000006 /* NativeMerchantFulfillmentRecovery.swift */; };
         B6C800000000000000000001 /* NativeMerchantAfterSalesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C800000000000000000002 /* NativeMerchantAfterSalesView.swift */; };
         B65900000000000000000001 /* NativeMerchantTicketViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65900000000000000000002 /* NativeMerchantTicketViews.swift */; };
         B66000000000000000000001 /* NativeMerchantHotelsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66000000000000000000002 /* NativeMerchantHotelsView.swift */; };
@@ -220,6 +222,8 @@
         B6C600000000000000000002 /* MerchantActivityWorkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantActivityWorkView.swift; sourceTree = "<group>"; };
         B6C700000000000000000002 /* MerchantScenicWorkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MerchantScenicWorkView.swift; sourceTree = "<group>"; };
         B65800000000000000000002 /* NativeMerchantOrderViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantOrderViews.swift; sourceTree = "<group>"; };
+        B65800000000000000000004 /* NativeMerchantTrackingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantTrackingView.swift; sourceTree = "<group>"; };
+        B65800000000000000000006 /* NativeMerchantFulfillmentRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantFulfillmentRecovery.swift; sourceTree = "<group>"; };
         B6C800000000000000000002 /* NativeMerchantAfterSalesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantAfterSalesView.swift; sourceTree = "<group>"; };
         B65900000000000000000002 /* NativeMerchantTicketViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantTicketViews.swift; sourceTree = "<group>"; };
         B66000000000000000000002 /* NativeMerchantHotelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMerchantHotelsView.swift; sourceTree = "<group>"; };
@@ -581,6 +585,8 @@
 				B6C600000000000000000002 /* MerchantActivityWorkView.swift */,
 				B6C700000000000000000002 /* MerchantScenicWorkView.swift */,
 				B65800000000000000000002 /* NativeMerchantOrderViews.swift */,
+				B65800000000000000000004 /* NativeMerchantTrackingView.swift */,
+				B65800000000000000000006 /* NativeMerchantFulfillmentRecovery.swift */,
 				B6C800000000000000000002 /* NativeMerchantAfterSalesView.swift */,
 				B65900000000000000000002 /* NativeMerchantTicketViews.swift */,
 				B6C400000000000000000002 /* NativeMerchantTicketsView.swift */,
@@ -906,6 +912,8 @@
 				B6C600000000000000000001 /* MerchantActivityWorkView.swift in Sources */,
 				B6C700000000000000000001 /* MerchantScenicWorkView.swift in Sources */,
 				B65800000000000000000001 /* NativeMerchantOrderViews.swift in Sources */,
+				B65800000000000000000003 /* NativeMerchantTrackingView.swift in Sources */,
+				B65800000000000000000005 /* NativeMerchantFulfillmentRecovery.swift in Sources */,
 				B6C800000000000000000001 /* NativeMerchantAfterSalesView.swift in Sources */,
 				B65900000000000000000001 /* NativeMerchantTicketViews.swift in Sources */,
 				B6C400000000000000000001 /* NativeMerchantTicketsView.swift in Sources */,

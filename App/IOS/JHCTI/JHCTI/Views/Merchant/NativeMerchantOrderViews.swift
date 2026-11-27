@@ -21,9 +21,8 @@ struct NativeMerchantOrdersView: View {
     @State private var carrierName = ""
     @State private var trackingNumber = ""
     @State private var pickupCode = ""
-    @State private var lockedRow = ""
-    @State private var lockedSourceStatus = ""
-    @State private var lockedReadBackStatus = ""
+    @StateObject private var fulfillmentRecovery = NativeMerchantFulfillmentRecovery()
+    @State private var confirmingFulfillmentRelease = false
     @State private var notice: String?
     @State private var digitalCode = ""
     @State private var digitalCodeError: String?
@@ -32,6 +31,9 @@ struct NativeMerchantOrdersView: View {
     @State private var confirmingDigitalCode = false
     @State private var digitalCodeScannerOpen = false
     @State private var digitalCodeScannerToken = ""
+    @State private var trackingDestination: NativeMerchantTrackingDestination?
+    @State private var trackingOwner = ""
+    @State private var orderRowsOwner = ""
 
     private let filters = [("", "全部"), ("PendingShipment", "待发货"), ("PendingPickup", "待自提"),
                            ("Shipped", "已发货"), ("Completed", "已完成"), ("Closed", "已关闭")]
@@ -42,6 +44,8 @@ struct NativeMerchantOrdersView: View {
                 Text("仅显示当前商户授权范围内的订单商品；履约权限和订单归属由服务端再次校验。")
                     .font(.caption).foregroundStyle(Brand.muted)
                 if !initialOrderNo.isEmpty { Text("当前通知关联订单：\(initialOrderNo)").font(.caption).foregroundStyle(Brand.primary) }
+                Button("核对物流补录") { openTracking(.recovery) }
+                    .buttonStyle(.bordered).disabled(!submittingRow.isEmpty || digitalCodeBusy)
                 VStack(alignment: .leading, spacing: 9) {
                     Text("虚拟商品券码核验").font(.subheadline.weight(.semibold))
                     Text("核对顾客本人订单中的 32 位平台券码。成功后立即失效；核验权限和券码状态由服务端校验。")
@@ -89,12 +93,7 @@ struct NativeMerchantOrdersView: View {
                     }
                 }
                 if let notice { Text(notice).font(.caption).foregroundStyle(Brand.primary) }
-                if !lockedRow.isEmpty {
-                    Text("上一笔履约结果尚未核实。刷新后若仍显示待处理，请核对现场状态并明确确认后再重试。")
-                        .font(.caption).foregroundStyle(.orange)
-                    Button("查看全部并刷新核对") { status = ""; Task { await load(page: 1, requestedStatus: "") } }
-                        .disabled(loading)
-                }
+                fulfillmentRecoveryPanel
                 if loading && rows.isEmpty { ProgressView("正在读取商户订单…") }
                 if let error { StatusView(loading: false, error: error) { Task { await load(page: 1) } } }
                 if !loading && error == nil && rows.isEmpty { Text("暂无相关订单").foregroundStyle(Brand.muted) }
@@ -107,15 +106,27 @@ struct NativeMerchantOrdersView: View {
         }
         .background(Brand.background)
         .navigationTitle("商户订单")
+        .onAppear { fulfillmentRecovery.reload(merchantID: merchantID, store: store) }
         .task { await load(page: 1) }
         .onChange(of: store.session?.accessToken) { oldToken, token in
             if nativeTourismPrincipal(oldToken) != nativeTourismPrincipal(token) {
-                digitalCode = ""; digitalCodeError = nil; digitalCodeBusy = false; digitalCodeLocked = false
-                digitalCodeScannerOpen = false; digitalCodeScannerToken = ""
+                resetOrderScope()
+                if token != nil { Task { await load(page: 1) } }
             }
             if token == nil { dismiss() }
         }
-        .onDisappear { requestSequence += 1; rows = []; formRow = ""; pickupCode = ""; digitalCode = "" }
+        .onChange(of: merchantID) {
+            resetOrderScope()
+            Task { await load(page: 1) }
+        }
+        .onDisappear {
+            requestSequence += 1; rows = []; formRow = ""; pickupCode = ""; digitalCode = ""
+            carrierName = ""; trackingNumber = ""; confirmingFulfillmentRelease = false; submittingRow = ""
+            fulfillmentRecovery.invalidate()
+        }
+        .sheet(item: $trackingDestination) { destination in
+            NativeMerchantTrackingView(store: store, merchantID: merchantID, principal: trackingOwner, destination: destination)
+        }
         .sheet(isPresented: $digitalCodeScannerOpen) {
             NativeActivityQrScanner(inputLabel: "电子券码", onCode: { scanned in
                 guard !digitalCodeScannerToken.isEmpty,
@@ -154,14 +165,20 @@ struct NativeMerchantOrdersView: View {
         let rowStatus = (row["MerchantOrderStatus"] ?? row["merchantOrderStatus"] ?? row["OrderStatus"] ?? row["orderStatus"]) as? String ?? ""
         let canFulfill = (row["CanFulfill"] ?? row["canFulfill"]) as? Bool == true
         let amount = (row["LineAmount"] ?? row["lineAmount"]) as? NSNumber
+        let orderLabel = (row["SubOrderNo"] ?? row["subOrderNo"] ?? row["OrderNo"] ?? row["orderNo"]) as? String ?? "订单号未知"
         return VStack(alignment: .leading, spacing: 8) {
-            HStack { Text((row["SubOrderNo"] ?? row["subOrderNo"] ?? row["OrderNo"] ?? row["orderNo"]) as? String ?? "订单号未知").font(.subheadline.weight(.semibold)); Spacer(); Text(statusLabel(rowStatus)).font(.caption).foregroundStyle(Brand.primary) }
+            HStack { Text(orderLabel).font(.subheadline.weight(.semibold)); Spacer(); Text(statusLabel(rowStatus)).font(.caption).foregroundStyle(Brand.primary) }
             Text((row["ProductName"] ?? row["productName"]) as? String ?? "商品名称未知").font(.system(size: NativeTypography.size(16), weight: .semibold))
             Text("规格 \((row["SkuCode"] ?? row["skuCode"]) as? String ?? "默认规格") · 数量 \(Self.string(row["Quantity"] ?? row["quantity"] ?? 0)) · \((row["StoreName"] ?? row["storeName"]) as? String ?? "未指定门店")")
                 .font(.caption).foregroundStyle(Brand.muted)
             HStack { Text((row["CreateTime"] ?? row["createTime"]) as? String ?? "时间未知"); Spacer(); Text(amount.map { "\((row["MerchantCurrency"] ?? row["merchantCurrency"]) as? String ?? "CNY") \(String(format: "%.2f", $0.doubleValue))" } ?? "金额待确认").fontWeight(.semibold) }
                 .font(.caption2).foregroundStyle(Brand.muted)
-            if rowStatus == "PendingShipment" && canFulfill && rowId != lockedRow {
+            if canFulfill, ["PendingPickup", "Shipped", "Completed"].contains(rowStatus),
+               let destination = NativeMerchantTrackingDestination.order(from: row, label: orderLabel) {
+                Button("查看履约") { openTracking(destination) }.buttonStyle(.bordered)
+                    .disabled(!submittingRow.isEmpty || digitalCodeBusy)
+            }
+            if rowStatus == "PendingShipment" && canFulfill && fulfillmentRecovery.state == .ready {
                 if formRow != rowId {
                     HStack {
                         Button("登记快递") { formRow = rowId; fulfillmentType = "Express"; carrierName = ""; trackingNumber = "" }
@@ -170,7 +187,9 @@ struct NativeMerchantOrdersView: View {
                 } else {
                     if fulfillmentType == "Express" {
                         TextField("快递公司", text: $carrierName).textFieldStyle(.roundedBorder).textInputAutocapitalization(.never)
+                            .onChange(of: carrierName) { _, value in carrierName = nativeLimitUtf16Text(value, maximum: 100) }
                         TextField("物流运单号", text: $trackingNumber).textFieldStyle(.roundedBorder).textInputAutocapitalization(.never)
+                            .onChange(of: trackingNumber) { _, value in trackingNumber = nativeLimitUtf16Text(value, maximum: 100) }
                     } else { Text("系统会生成自提码并展示给顾客，商户端不会显示自提码。").font(.caption).foregroundStyle(Brand.muted) }
                     HStack {
                         Button(submittingRow == rowId ? "提交中…" : "确认提交") { Task { await ship(rowId: rowId) } }
@@ -180,23 +199,68 @@ struct NativeMerchantOrdersView: View {
                             .disabled(!submittingRow.isEmpty)
                     }
                 }
-            } else if rowStatus == "PendingPickup" && canFulfill && rowId != lockedRow {
+            } else if rowStatus == "PendingPickup" && canFulfill && fulfillmentRecovery.state == .ready {
                 TextField("顾客提供的 8 位自提码", text: $pickupCode).keyboardType(.numberPad).textFieldStyle(.roundedBorder)
-                    .onChange(of: pickupCode) { _, value in pickupCode = String(value.filter(\.isNumber).prefix(8)) }
+                    .onChange(of: pickupCode) { _, value in pickupCode = String(value.filter { "0123456789".contains($0) }.prefix(8)) }
                 Button(submittingRow == rowId ? "核验中…" : "核验并确认交付") { Task { await confirmPickup(orderId: orderId, merchantOrderId: merchantOrderId, rowId: rowId) } }
                     .buttonStyle(.borderedProminent).tint(Brand.primary).disabled(!submittingRow.isEmpty || pickupCode.count != 8)
-            } else if rowId == lockedRow, !lockedReadBackStatus.isEmpty, lockedReadBackStatus == lockedSourceStatus,
-                      rowStatus == lockedSourceStatus {
-                Text("服务端回读仍显示「\(statusLabel(rowStatus))」，上次操作未能确认。请核对现场状态后再决定是否重试。")
-                    .font(.caption).foregroundStyle(.orange)
-                Button("确认仍未处理，重新开放操作") {
-                    lockedRow = ""; lockedSourceStatus = ""; lockedReadBackStatus = ""
-                    notice = "已按你的确认重新开放该订单操作。"
-                }.buttonStyle(.bordered).tint(Brand.primary).disabled(!submittingRow.isEmpty)
             } else if !canFulfill, let reason = (row["FulfillmentBlockReason"] ?? row["fulfillmentBlockReason"]) as? String, !reason.isEmpty {
                 Text(reason).font(.caption).foregroundStyle(Brand.muted)
             }
         }.merchantCard()
+    }
+
+    @ViewBuilder
+    private var fulfillmentRecoveryPanel: some View {
+        if fulfillmentRecovery.state != .ready || fulfillmentRecovery.message != nil {
+            VStack(alignment: .leading, spacing: 8) {
+                switch fulfillmentRecovery.state {
+                case .ready: EmptyView()
+                case .unavailable:
+                    Text("履约待核对记录暂不可读。")
+                    Button("重新读取") { fulfillmentRecovery.reload(merchantID: merchantID, store: store) }
+                case .damaged:
+                    Text("履约待核对记录已损坏，请先核对可能已提交的履约。")
+                    Button("已人工核对") { confirmingFulfillmentRelease = true }
+                case let .pending(attempt):
+                    let reference = attempt.merchantOrderID == "0" ? attempt.orderID : attempt.merchantOrderID
+                    Text("\(attempt.kind.title)待核对 · 订单 \(reference)").fontWeight(.semibold)
+                    Button("查询原订单履约") { Task { await verifyFulfillment(release: false) } }
+                    if fulfillmentRecovery.canRelease {
+                        Button("已人工核对") { confirmingFulfillmentRelease = true }
+                    }
+                }
+                if fulfillmentRecovery.busy { ProgressView("正在处理履约记录…") }
+                if let message = fulfillmentRecovery.message { Text(message).foregroundStyle(Brand.muted) }
+            }.font(.callout).buttonStyle(.bordered).disabled(fulfillmentRecovery.busy).merchantCard()
+                .confirmationDialog("解除履约待核对状态？", isPresented: $confirmingFulfillmentRelease, titleVisibility: .visible) {
+                    Button("确认已核对") { Task { await verifyFulfillment(release: true) } }
+                    Button("取消", role: .cancel) {}
+                } message: { Text("请先确认原操作尚未实际完成，再恢复办理。") }
+        }
+    }
+
+    private func verifyFulfillment(release: Bool) async {
+        if await fulfillmentRecovery.verify(merchantID: merchantID, store: store, release: release) {
+            await load(page: 1)
+        }
+    }
+
+    private func resetOrderScope() {
+        requestSequence += 1; rows = []; total = 0; orderRowsOwner = ""; notice = nil; submittingRow = ""
+        formRow = ""; pickupCode = ""; carrierName = ""; trackingNumber = ""
+        digitalCode = ""; digitalCodeError = nil; digitalCodeBusy = false; digitalCodeLocked = false
+        digitalCodeScannerOpen = false; digitalCodeScannerToken = ""; confirmingDigitalCode = false
+        trackingDestination = nil; confirmingFulfillmentRelease = false
+        fulfillmentRecovery.invalidate()
+        fulfillmentRecovery.reload(merchantID: merchantID, store: store)
+    }
+
+    private func openTracking(_ destination: NativeMerchantTrackingDestination) {
+        guard let principal = nativeTourismPrincipal(store.session?.accessToken) else { return }
+        if case .order = destination, orderRowsOwner != principal { return }
+        trackingOwner = principal
+        trackingDestination = destination
     }
 
     private func load(page targetPage: Int, requestedStatus: String? = nil) async {
@@ -225,20 +289,8 @@ struct NativeMerchantOrdersView: View {
                 throw MobileAPIError.unavailable("订单分页或编号格式异常，请刷新后重试。")
             }
             rows = append ? (rows + data).uniqued(by: { Self.string($0["OrderItemId"] ?? $0["orderItemId"]) }) : data
+            orderRowsOwner = expectedPrincipal
             total = count; page = targetPage
-            if let (lockedOrderId, lockedMerchantOrderId) = ids(lockedRow), let locked = data.first(where: {
-                Self.string($0["OrderId"] ?? $0["orderId"]) == lockedOrderId
-                    && Self.string($0["MerchantOrderId"] ?? $0["merchantOrderId"] ?? "0") == lockedMerchantOrderId
-            }) {
-                let readBackStatus = (locked["MerchantOrderStatus"] ?? locked["merchantOrderStatus"]
-                    ?? locked["OrderStatus"] ?? locked["orderStatus"]) as? String ?? ""
-                lockedReadBackStatus = readBackStatus
-                let knownStatuses = ["PendingPayment", "PendingShipment", "PendingPickup", "Shipped", "Completed", "Closed"]
-                if knownStatuses.contains(readBackStatus), !lockedSourceStatus.isEmpty, readBackStatus != lockedSourceStatus {
-                    lockedRow = ""; lockedSourceStatus = ""; lockedReadBackStatus = ""
-                    notice = "已根据服务端订单状态核实上一笔履约已离开待处理状态。"
-                }
-            }
         } catch is CancellationError {
             return
         } catch {
@@ -248,43 +300,41 @@ struct NativeMerchantOrdersView: View {
     }
 
     private func ship(rowId: String) async {
-        guard let (orderId, merchantOrderId) = ids(rowId), let token = store.session?.accessToken,
-              let expectedPrincipal = nativeTourismPrincipal(token) else { return }
-        submittingRow = rowId; notice = nil
-        do {
-            _ = try await MobileAPI(store: store).post("/api/JHCTIMerchantOrder/Ship?merchantId=\(merchantID)", body: [
-                "OrderId": orderId, "MerchantOrderId": merchantOrderId, "FulfillmentType": fulfillmentType,
-                "CarrierName": fulfillmentType == "Express" ? carrierName.trimmingCharacters(in: .whitespacesAndNewlines) : "",
-                "TrackingNumber": fulfillmentType == "Express" ? trackingNumber.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-            ], authenticated: true, expectedPrincipal: expectedPrincipal)
-            guard store.session?.accessToken == token else { return }
-            formRow = ""; notice = "履约信息已提交，列表已刷新。"; await load(page: 1)
-        } catch {
-            guard store.session?.accessToken == token else { return }
-            lockedRow = rowId; lockedSourceStatus = "PendingShipment"; lockedReadBackStatus = ""
-            formRow = ""; self.error = "履约结果未确认。请刷新全部订单核对状态，确认前不要重复提交。"
-            status = ""; await load(page: 1, requestedStatus: "")
-        }
-        submittingRow = ""
+        guard let (orderID, merchantOrderID) = ids(rowId),
+              let kind = NativeMerchantFulfillmentAttempt.Kind(rawValue: fulfillmentType), kind != .handover else { return }
+        let carrier = carrierName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let number = trackingNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard kind != .express || !carrier.isEmpty && !number.isEmpty else { return }
+        await submitFulfillment(.init(orderID: orderID, merchantOrderID: merchantOrderID, kind: kind), rowId: rowId, body: [
+            "OrderId": orderID, "MerchantOrderId": merchantOrderID, "FulfillmentType": kind.rawValue,
+            "CarrierName": kind == .express ? carrier : "", "TrackingNumber": kind == .express ? number : ""
+        ])
     }
 
     private func confirmPickup(orderId: String, merchantOrderId: String, rowId: String) async {
-        guard Self.validId(orderId), Self.validId(merchantOrderId), pickupCode.count == 8,
-              let token = store.session?.accessToken, let expectedPrincipal = nativeTourismPrincipal(token) else { return }
+        guard pickupCode.count == 8, pickupCode.allSatisfy({ "0123456789".contains($0) }) else { return }
+        await submitFulfillment(.init(orderID: orderId, merchantOrderID: merchantOrderId, kind: .handover), rowId: rowId,
+            body: ["OrderId": orderId, "MerchantOrderId": merchantOrderId, "PickupCode": pickupCode])
+    }
+
+    private func submitFulfillment(_ attempt: NativeMerchantFulfillmentAttempt, rowId: String, body: [String: String]) async {
+        let requiredStatus = attempt.kind == .handover ? "PendingPickup" : "PendingShipment"
+        guard submittingRow.isEmpty, fulfillmentRecovery.state == .ready, !fulfillmentRecovery.busy, !loading,
+              let principal = nativeTourismPrincipal(store.session?.accessToken), orderRowsOwner == principal,
+              rows.contains(where: { row in
+                  trackingField(row, "OrderId") as? String == attempt.orderID
+                      && trackingField(row, "MerchantOrderId") as? String == attempt.merchantOrderID
+                      && trackingField(row, "CanFulfill") as? Bool == true
+                      && (trackingField(row, "MerchantOrderStatus") as? String
+                          ?? trackingField(row, "OrderStatus") as? String) == requiredStatus
+              }) else { return }
+        let sequence = requestSequence
         submittingRow = rowId; notice = nil
-        do {
-            _ = try await MobileAPI(store: store).post("/api/JHCTIMerchantOrder/ConfirmPickup?merchantId=\(merchantID)", body: [
-                "OrderId": orderId, "MerchantOrderId": merchantOrderId, "PickupCode": pickupCode
-            ], authenticated: true, expectedPrincipal: expectedPrincipal)
-            guard store.session?.accessToken == token else { return }
-            pickupCode = ""; notice = "自提交付已确认，列表已刷新。"; await load(page: 1)
-        } catch {
-            guard store.session?.accessToken == token else { return }
-            pickupCode = ""; lockedRow = rowId; lockedSourceStatus = "PendingPickup"; lockedReadBackStatus = ""
-            self.error = "自提交付结果未确认。请刷新全部订单核对状态，确认前不要重复提交。"
-            status = ""; await load(page: 1, requestedStatus: "")
-        }
+        formRow = ""; pickupCode = ""; carrierName = ""; trackingNumber = ""
+        let accepted = await fulfillmentRecovery.submit(attempt, body: body, merchantID: merchantID, store: store)
+        guard requestSequence == sequence, nativeTourismPrincipal(store.session?.accessToken) == principal else { return }
         submittingRow = ""
+        if accepted { await load(page: 1) }
     }
 
     @MainActor private func requestDigitalCodeScannerAccess() async {

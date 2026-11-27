@@ -123,9 +123,9 @@ final class MobileAPI {
     }
 
     func post(_ path: String, body: [String: Any], authenticated: Bool = false,
-              expectedPrincipal: String? = nil, timeoutInterval: TimeInterval = 12) async throws -> Any {
+              expectedPrincipal: String? = nil, timeoutInterval: TimeInterval = 12, canRefresh: Bool = true) async throws -> Any {
         try await request(path, method: "POST", body: body, authenticated: authenticated,
-                          canRefresh: true, expectedPrincipal: expectedPrincipal, timeoutInterval: timeoutInterval)
+                          canRefresh: canRefresh, expectedPrincipal: expectedPrincipal, timeoutInterval: timeoutInterval)
     }
 
     func postJSON(_ path: String, body: Any, authenticated: Bool = false,

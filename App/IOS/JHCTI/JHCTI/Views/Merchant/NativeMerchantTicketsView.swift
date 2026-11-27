@@ -1,9 +1,17 @@
 import Foundation
+import CoreFoundation
 import SwiftUI
 
 private struct NativeMerchantTicketDraft {
     var price: String
     var sessionInventories: [String: String]
+}
+
+private struct NativeMerchantTicketChange {
+    let id: String
+    let name: String
+    let body: [String: Any]
+    let revision: Int
 }
 
 struct MerchantTicketsView: View {
@@ -20,7 +28,8 @@ struct MerchantTicketsView: View {
     @State private var error: String?
     @State private var revision = 0
     @State private var requestSequence = 0
-    @State private var pendingTicket: [String: Any]?
+    @State private var pendingTicket: NativeMerchantTicketChange?
+    @State private var blockedTickets: Set<String> = []
 
     var body: some View {
         ScrollView {
@@ -34,6 +43,7 @@ struct MerchantTicketsView: View {
                     Button("搜索") { Task { await load(page: 1) } }
                         .buttonStyle(.borderedProminent).tint(Brand.primary)
                 }
+                .disabled(saving)
                 StatusView(loading: loading, error: error) { revision += 1 }
                 if !loading && error == nil && rows.isEmpty {
                     Text("当前商户暂无可维护门票。").foregroundStyle(Brand.muted)
@@ -43,7 +53,7 @@ struct MerchantTicketsView: View {
                     Button(loading ? "正在加载…" : "加载更多（\(rows.count)/\(total)）") {
                         Task { await load(page: page + 1) }
                     }
-                    .disabled(loading).frame(maxWidth: .infinity)
+                    .disabled(loading || saving).frame(maxWidth: .infinity)
                 }
             }
             .padding(16)
@@ -60,7 +70,7 @@ struct MerchantTicketsView: View {
             }.disabled(saving)
             Button("取消", role: .cancel) { pendingTicket = nil }
         } message: {
-            Text("确认保存“\(pendingTicket?["Name"] as? String ?? "该门票")”的票价和场次库存？服务端会重新校验票务版本、已售和待支付数量。")
+            Text("确认保存“\(pendingTicket?.name ?? "该门票")”的票价和场次库存？服务端会重新校验票务版本、已售和待支付数量。")
         }
     }
 
@@ -73,7 +83,7 @@ struct MerchantTicketsView: View {
             Text("\(row["ResourceName"] as? String ?? row["resourceName"] as? String ?? "景点") · \(Self.boolValue(row["IsEnabled"] ?? row["isEnabled"], default: true) ? "销售中" : "已停用") · 当前 ¥\(Self.idString(row["Price"] ?? row["price"]))")
                 .font(.caption).foregroundStyle(Brand.muted)
             TextField("票价（元）", text: Binding(get: { draft.price }, set: { setDraft(id, price: $0) }))
-                .keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
+                .keyboardType(.decimalPad).textFieldStyle(.roundedBorder).disabled(saving || blockedTickets.contains(id))
             if sessions.isEmpty {
                 Text("暂无场次资料；请在管理端维护场次。").font(.caption).foregroundStyle(Brand.muted)
             }
@@ -86,12 +96,15 @@ struct MerchantTicketsView: View {
                     Text("已售 \(Self.intValue(session["SoldCount"] ?? session["soldCount"])) · 待支付 \(Self.intValue(session["ReservedCount"] ?? session["reservedCount"]))\(Self.boolValue(session["IsEnabled"] ?? session["isEnabled"], default: true) ? "" : " · 已停用")")
                         .font(.caption).foregroundStyle(Brand.muted)
                     TextField("场次库存（最多 10000000）", text: Binding(get: { inventory }, set: { setDraft(id, sessionID: sessionID, inventory: $0) }))
-                        .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+                        .keyboardType(.numberPad).textFieldStyle(.roundedBorder).disabled(saving || blockedTickets.contains(id))
                 }
                 .padding(10).background(Brand.background, in: RoundedRectangle(cornerRadius: 10))
             }
             Button(saving ? "保存中…" : "保存票价与库存") { prepareSave(row) }
-                .buttonStyle(.borderedProminent).tint(Brand.primary).disabled(saving || id.isEmpty)
+                .buttonStyle(.borderedProminent).tint(Brand.primary).disabled(saving || loading || id.isEmpty || blockedTickets.contains(id))
+            if blockedTickets.contains(id) {
+                Button("重新读取该票种") { Task { await retryReadBack(id) } }.disabled(saving || loading)
+            }
         }
         .merchantCard()
     }
@@ -108,7 +121,7 @@ struct MerchantTicketsView: View {
 
     private func prepareSave(_ row: [String: Any]) {
         let id = Self.idString(row["Id"] ?? row["id"])
-        guard !id.isEmpty else { error = "门票编号缺失，请刷新后重试。"; return }
+        guard !saving, !loading, !blockedTickets.contains(id) else { return }
         let draft = drafts[id] ?? NativeMerchantTicketDraft(price: "", sessionInventories: [:])
         let rawPrice = draft.price.trimmingCharacters(in: .whitespacesAndNewlines)
         guard rawPrice.range(of: "^(0|[1-9][0-9]*)(\\.[0-9]{1,2})?$", options: .regularExpression) != nil,
@@ -116,14 +129,18 @@ struct MerchantTicketsView: View {
               price > 0, price <= maxPrice else {
             error = "请输入大于 0、最多两位小数的有效票价。"; return
         }
-        let sessions = row["Sessions"] as? [[String: Any]] ?? row["sessions"] as? [[String: Any]] ?? []
+        guard let version = Self.strictInteger(Self.field(row, "Version")),
+              Self.validTicketRow(row, merchantID: merchantID, expectedID: id),
+              let sessions = Self.field(row, "Sessions") as? [[String: Any]] else {
+            error = "票种或场次回执不完整，请重新读取。"; return
+        }
+        var changes: [[String: Any]] = []
         for session in sessions {
             let sessionID = Self.idString(session["Id"] ?? session["id"])
             let raw = (draft.sessionInventories[sessionID] ?? Self.idString(session["Inventory"] ?? session["inventory"]))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let sold = Self.intValue(session["SoldCount"] ?? session["soldCount"])
-            let reserved = Self.intValue(session["ReservedCount"] ?? session["reservedCount"])
-            guard (0...10_000_000).contains(sold), (0...10_000_000).contains(reserved) else {
+            guard let sold = Self.strictInteger(Self.field(session, "SoldCount")), let reserved = Self.strictInteger(Self.field(session, "ReservedCount")),
+                  let prior = Self.strictInteger(Self.field(session, "Inventory")), let sessionVersion = Self.strictInteger(Self.field(session, "Version")) else {
                 error = "场次已售或待支付数量异常，请刷新后重试。"
                 return
             }
@@ -133,76 +150,60 @@ struct MerchantTicketsView: View {
                 error = "场次“\(session["Name"] as? String ?? "未命名")”库存须为 0 至 10000000，且不低于已售和待支付数量 \(committed)。"
                 return
             }
+            if inventory != prior { changes.append(["Id": sessionID, "Version": sessionVersion, "Inventory": inventory]) }
         }
-        pendingTicket = row
+        let body: [String: Any] = ["Id": id, "MerchantId": merchantID, "Version": version, "Price": NSDecimalNumber(decimal: price), "Sessions": changes]
+        pendingTicket = NativeMerchantTicketChange(id: id, name: row["Name"] as? String ?? row["name"] as? String ?? "该门票", body: body, revision: requestSequence)
     }
 
-    private func save(_ row: [String: Any]) async {
-        guard !saving else { return }
-        let id = Self.idString(row["Id"] ?? row["id"])
+    private func save(_ change: NativeMerchantTicketChange) async {
+        guard !saving, !loading, change.revision == requestSequence, !blockedTickets.contains(change.id) else { return }
         guard let token = store.session?.accessToken,
               let expectedPrincipal = nativeTourismPrincipal(token) else { error = "登录已失效，请重新登录。"; return }
-        let draft = drafts[id] ?? NativeMerchantTicketDraft(price: "", sessionInventories: [:])
-        guard let price = Decimal(string: draft.price.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            error = "票价格式无效，请重新输入。"; return
-        }
-        let sessions = row["Sessions"] as? [[String: Any]] ?? row["sessions"] as? [[String: Any]] ?? []
-        let sessionPayload: [[String: Any]] = sessions.map { session in
-            let sessionID = Self.idString(session["Id"] ?? session["id"])
-            return [
-                "Id": sessionID,
-                "Version": Self.intValue(session["Version"] ?? session["version"]),
-                "Name": session["Name"] as? String ?? session["name"] as? String ?? "",
-                "StartTime": session["StartTime"] ?? session["startTime"] ?? NSNull(),
-                "EndTime": session["EndTime"] ?? session["endTime"] ?? NSNull(),
-                "Inventory": Int(draft.sessionInventories[sessionID] ?? Self.idString(session["Inventory"] ?? session["inventory"])) ?? 0,
-                "ReservedCount": Self.intValue(session["ReservedCount"] ?? session["reservedCount"]),
-                "IsEnabled": Self.boolValue(session["IsEnabled"] ?? session["isEnabled"], default: true),
-                "SortOrder": Self.intValue(session["SortOrder"] ?? session["sortOrder"])
-            ]
-        }
-        let body: [String: Any] = [
-            "Id": id,
-            "Version": Self.intValue(row["Version"] ?? row["version"]),
-            "ResourceId": Self.idString(row["ResourceId"] ?? row["resourceId"]),
-            "MerchantId": merchantID,
-            "Name": row["Name"] ?? row["name"] ?? "",
-            "Description": row["Description"] ?? row["description"] ?? NSNull(),
-            "Price": NSDecimalNumber(decimal: price),
-            "OriginalPrice": row["OriginalPrice"] ?? row["originalPrice"] ?? NSNull(),
-            "SaleStartTime": row["SaleStartTime"] ?? row["saleStartTime"] ?? NSNull(),
-            "SaleEndTime": row["SaleEndTime"] ?? row["saleEndTime"] ?? NSNull(),
-            "MinPerOrder": Self.intValue(row["MinPerOrder"] ?? row["minPerOrder"], fallback: 1),
-            "MaxPerOrder": Self.intValue(row["MaxPerOrder"] ?? row["maxPerOrder"], fallback: 5),
-            "MaxPerUserPerDay": Self.intValue(row["MaxPerUserPerDay"] ?? row["maxPerUserPerDay"], fallback: 5),
-            "RefundPolicy": row["RefundPolicy"] ?? row["refundPolicy"] ?? "ManualReview",
-            "RefundBeforeHours": Self.intValue(row["RefundBeforeHours"] ?? row["refundBeforeHours"]),
-            "RefundDescription": row["RefundDescription"] ?? row["refundDescription"] ?? NSNull(),
-            "RealNameFields": row["RealNameFields"] ?? row["realNameFields"] ?? [],
-            "IsEnabled": Self.boolValue(row["IsEnabled"] ?? row["isEnabled"], default: true),
-            "SortOrder": Self.intValue(row["SortOrder"] ?? row["sortOrder"]),
-            "Sessions": sessionPayload
-        ]
         saving = true; error = nil
+        blockedTickets.insert(change.id)
+        defer { saving = false; pendingTicket = nil }
+        var acknowledged = false
         do {
-            _ = try await MobileAPI(store: store).post("/api/JHCTITicket/SaveMerchantManagement", body: body, authenticated: true,
+            let receipt = try await MobileAPI(store: store).post("/api/JHCTITicket/SaveMerchantInventory", body: change.body, authenticated: true,
                 expectedPrincipal: expectedPrincipal)
-            guard store.session?.accessToken == token else { return }
-            await load(page: 1)
-            if error != nil { error = "票务修改已提交，但列表刷新失败；请重新加载确认当前状态。" }
+            acknowledged = receipt as? String == change.id
         } catch is CancellationError {
-            if store.session?.accessToken == token {
-                error = "票务保存结果未确认；请重新读取并核对版本后再操作。"
-            }
+            if store.session?.accessToken == token { error = "票务保存结果待核对，请重新读取该票种。" }
+            return
         } catch {
-            if store.session?.accessToken == token {
-                self.error = "\(error.localizedDescription)；请重新读取并核对版本后再操作。"
-            }
+            if Task.isCancelled { return }
         }
-        saving = false; pendingTicket = nil
+        await readBack(change.id, token: token, principal: expectedPrincipal, revision: change.revision)
+        if store.session?.accessToken == token, error == nil, !acknowledged { error = "已重新读取最新票务数据，请核对票价与库存。" }
+    }
+
+    private func retryReadBack(_ id: String) async {
+        guard !saving, !loading, let token = store.session?.accessToken, let principal = nativeTourismPrincipal(token) else { return }
+        saving = true; error = nil
+        defer { saving = false }
+        await readBack(id, token: token, principal: principal, revision: requestSequence)
+    }
+
+    private func readBack(_ id: String, token: String, principal: String, revision: Int) async {
+        guard store.session?.accessToken == token, requestSequence == revision else { return }
+        do {
+            let result = try await MobileAPI(store: store).get("/api/JHCTITicket/GetMerchantInventoryTicket?merchantId=\(merchantID)&id=\(id)",
+                authenticated: true, expectedPrincipal: principal)
+            guard let row = result as? [String: Any], Self.validTicketRow(row, merchantID: merchantID, expectedID: id) else {
+                throw MobileAPIError.unavailable("票种回执异常")
+            }
+            guard store.session?.accessToken == token, requestSequence == revision else { return }
+            if let index = rows.firstIndex(where: { Self.idString($0["Id"] ?? $0["id"]) == id }) { rows[index] = row }
+            drafts[id] = NativeMerchantTicketDraft(price: Self.idString(Self.field(row, "Price")), sessionInventories: [:])
+            blockedTickets.remove(id)
+        } catch {
+            if store.session?.accessToken == token, requestSequence == revision { self.error = "保存结果待核对，请重新读取该票种。" }
+        }
     }
 
     private func load(page targetPage: Int) async {
+        guard !saving else { return }
         guard !merchantID.isEmpty, merchantID.allSatisfy(\.isNumber),
               let token = store.session?.accessToken,
               let expectedPrincipal = nativeTourismPrincipal(token) else {
@@ -253,6 +254,44 @@ struct MerchantTicketsView: View {
             self.error = error.localizedDescription
         }
         if requestSequence == sequence { loading = false }
+    }
+
+    private static func field(_ row: [String: Any], _ name: String) -> Any? {
+        let alias = name.prefix(1).lowercased() + String(name.dropFirst())
+        if let first = row[name], let second = row[alias] {
+            let lhs = try? JSONSerialization.data(withJSONObject: first, options: [.sortedKeys, .fragmentsAllowed])
+            let rhs = try? JSONSerialization.data(withJSONObject: second, options: [.sortedKeys, .fragmentsAllowed])
+            if lhs == nil || lhs != rhs { return nil }
+        }
+        return row[name] ?? row[alias]
+    }
+
+    private static func strictInteger(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+              number.doubleValue >= 0, number.doubleValue <= 9_007_199_254_740_991,
+              number.doubleValue.rounded(.towardZero) == number.doubleValue else { return nil }
+        return number.intValue
+    }
+
+    private static func strictID(_ value: Any?) -> String? {
+        guard let id = value as? String, let number = Int64(id), number > 0, String(number) == id else { return nil }
+        return id
+    }
+
+    private static func validTicketRow(_ row: [String: Any], merchantID: String, expectedID: String) -> Bool {
+        guard strictID(field(row, "Id")) == expectedID, strictID(field(row, "MerchantId")) == merchantID,
+              strictInteger(field(row, "Version")) != nil,
+              let price = field(row, "Price") as? NSNumber, CFGetTypeID(price) != CFBooleanGetTypeID(),
+              price.doubleValue > 0, price.doubleValue <= 99_999_999.99,
+              let sessions = field(row, "Sessions") as? [[String: Any]], (1...100).contains(sessions.count) else { return false }
+        var ids = Set<String>()
+        for session in sessions {
+            guard let id = strictID(field(session, "Id")), ids.insert(id).inserted, strictInteger(field(session, "Version")) != nil,
+                  let inventory = strictInteger(field(session, "Inventory")), inventory <= 10_000_000,
+                  let sold = strictInteger(field(session, "SoldCount")), let reserved = strictInteger(field(session, "ReservedCount")),
+                  sold <= inventory, reserved <= inventory - sold else { return false }
+        }
+        return true
     }
 
     private static func idString(_ value: Any?, fallback: String = "") -> String {
