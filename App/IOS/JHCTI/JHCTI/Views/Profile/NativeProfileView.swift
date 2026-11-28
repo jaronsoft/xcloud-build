@@ -15,6 +15,7 @@ import WebKit
 import UniformTypeIdentifiers
 
 struct ProfileView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject var store: SessionStore
     let couponCenterRequested: Bool
     let onCouponCenterRequestHandled: () -> Void
@@ -189,7 +190,7 @@ struct ProfileView: View {
                             isAuthenticated: store.session != nil,
                             memberLevel: profileRuntime.memberLevel,
                             workAccess: profileRuntime.workAccess,
-                            onOpenProfile: { if store.session != nil { authOpen = true } }
+                            onOpenProfile: { if store.session != nil && !loggingOut { authOpen = true } }
                         )
                         if store.session == nil {
                         VStack(alignment: .leading, spacing: 9) {
@@ -221,21 +222,23 @@ struct ProfileView: View {
                             NativeProfileWorkAccessSection(workAccess: profileRuntime.workAccess, onSelect: openWorkAccess)
                         }
                         if store.session != nil {
-                            NativeProfileAccountSettingsHeader { authOpen = true }
-                            profileInfoRow("实名资料登记与授权", detail: "登记或查看 ›") { identityConsentOpen = true }
-                        }
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("协议与关于")
-                                .font(.system(size: 14, weight: .semibold)).foregroundStyle(Brand.muted)
-                                .padding(.bottom, 5)
-                            if store.session == nil {
-                                profileInfoRow("用户服务协议", detail: termsAgreement == nil ? "暂不可用" : "查看 ›") {
-                                    shownAgreement = termsAgreement
-                                }
-                                profileInfoRow("隐私政策", detail: privacyAgreement == nil ? "暂不可用" : "查看 ›") {
-                                    shownAgreement = privacyAgreement
-                                }
+                            NativeProfileSettingsGroup(title: "账号与安全") {
+                                profileInfoRow("账号资料与管理", detail: "›") { authOpen = true }
+                                profileInfoRow("实名状态", detail: "登记或查看 ›") { identityConsentOpen = true }
                             }
+                            .disabled(loggingOut)
+                        }
+                        NativeProfileSettingsGroup(title: "协议与隐私") {
+                            profileInfoRow("用户服务协议", detail: termsAgreement == nil ? "暂不可用" : "查看 ›",
+                                           enabled: termsAgreement != nil) {
+                                shownAgreement = termsAgreement
+                            }
+                            profileInfoRow("隐私政策", detail: privacyAgreement == nil ? "暂不可用" : "查看 ›",
+                                           enabled: privacyAgreement != nil) {
+                                shownAgreement = privacyAgreement
+                            }
+                        }
+                        NativeProfileSettingsGroup(title: "应用设置") {
                             profileInfoRow("清理缓存", detail: "\(ByteCountFormatter.string(fromByteCount: Int64(cacheBytes), countStyle: .file))  管理 ›") {
                                 clearImageCacheSelected = true
                                 clearDataCacheSelected = true
@@ -246,10 +249,25 @@ struct ProfileView: View {
                                 aboutOpen = true
                             }
                         }
-                        .padding(13)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 11))
+                        if store.session != nil {
+                            Button(role: .destructive, action: signOut) {
+                                HStack(spacing: 7) {
+                                    if loggingOut { ProgressView().controlSize(.small) }
+                                    Text(loggingOut ? "正在退出…" : "退出登录")
+                                        .font(.system(size: NativeTypography.size(16), weight: .semibold))
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 50)
+                                .background(.white, in: RoundedRectangle(cornerRadius: 11))
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.red)
+                            .disabled(loggingOut || accountCancellationOpen)
+                        }
                     }
-                    .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 20)
+                    .padding(.horizontal, 16).padding(.top, 14)
+                    // 单屏导航栈内的滚动内容可能延伸到自绘底栏后方，给页尾操作留出完整的触控空间。
+                    .padding(.bottom, horizontalSizeClass == .compact ? 72 : 20)
                 }
                 .background(Brand.background)
             } else {
@@ -263,37 +281,41 @@ struct ProfileView: View {
                             Text("文旅账号")
                                 .font(.system(size: 24, weight: .bold, design: .serif))
                                 .foregroundStyle(Brand.ink)
-                            Text(loginEnabled ? "登录后同步个人收藏、票券和行程信息" : "登录服务状态由平台运营配置")
-                                .font(.system(size: 14)).foregroundStyle(Brand.muted)
-                        }
-                        if store.session != nil {
-                            profileInfoRow("实名资料登记与授权", detail: "登记或查看 ›") { identityConsentOpen = true }
-                        }
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("用户协议").font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(Brand.ink)
-                            if let error, agreements.isEmpty {
-                                Text(error).font(.system(size: 14)).foregroundStyle(.red)
-                            }
-                            if agreements.isEmpty && error == nil {
-                                Text("正在读取当前生效版本…")
+                            if store.session == nil {
+                                Text(loginEnabled ? "登录后同步个人收藏、票券和行程信息" : "登录服务状态由平台运营配置")
                                     .font(.system(size: 14)).foregroundStyle(Brand.muted)
                             }
-                            ForEach(agreements) { item in
-                                Button { shownAgreement = item } label: {
-                                    HStack {
-                                        Text(item.title).foregroundStyle(Brand.ink)
-                                        Spacer()
-                                        Text("查看 ›").foregroundStyle(Brand.primary)
-                                    }
-                                    .font(.system(size: 14)).frame(height: 36)
-                                }
-                                .buttonStyle(.plain)
-                            }
                         }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                        if store.session != nil {
+                            profileInfoRow("实名状态", detail: "登记或查看 ›") { identityConsentOpen = true }
+                        }
+                        if store.session == nil {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("用户协议").font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Brand.ink)
+                                if let error, agreements.isEmpty {
+                                    Text(error).font(.system(size: 14)).foregroundStyle(.red)
+                                }
+                                if agreements.isEmpty && error == nil {
+                                    Text("正在读取当前生效版本…")
+                                        .font(.system(size: 14)).foregroundStyle(Brand.muted)
+                                }
+                                ForEach(agreements) { item in
+                                    Button { shownAgreement = item } label: {
+                                        HStack {
+                                            Text(item.title).foregroundStyle(Brand.ink)
+                                            Spacer()
+                                            Text("查看 ›").foregroundStyle(Brand.primary)
+                                        }
+                                        .font(.system(size: 14)).frame(height: 36)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                        }
                         if let session = store.session {
                             NativeProfileSessionActionsView(
                                 store: store,
@@ -305,15 +327,6 @@ struct ProfileView: View {
                                         ?? profileRuntime.tourismProfile?["version"]) as? String ?? ""),
                                 loggingOut: loggingOut,
                                 busy: busy,
-                                onLogout: {
-                                    guard !loggingOut else { return }
-                                    loggingOut = true
-                                    Task {
-                                        await MobileAPI(store: store).logout()
-                                        clearAccountAuthSecrets()
-                                        loggingOut = false
-                                    }
-                                },
                                 onCancelAccount: { accountCancellationWarningOpen = true },
                                 onProfileUpdated: { _ in Task { await profileRuntime.load() } },
                                 onReloadProfile: { Task { await profileRuntime.load() } }
@@ -529,7 +542,18 @@ struct ProfileView: View {
         }
     }
 
-    private func profileInfoRow(_ title: String, detail: String, action: @escaping () -> Void) -> some View {
+    private func signOut() {
+        guard !loggingOut else { return }
+        loggingOut = true
+        Task {
+            await MobileAPI(store: store).logout()
+            clearAccountAuthSecrets()
+            loggingOut = false
+        }
+    }
+
+    private func profileInfoRow(_ title: String, detail: String, enabled: Bool = true,
+                                action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
                 Text(title).foregroundStyle(Brand.ink)
@@ -537,10 +561,12 @@ struct ProfileView: View {
                 Text(detail).font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
             }
             .font(.system(size: NativeTypography.size(14)))
-            .frame(height: 43)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
             .overlay(alignment: .bottom) { Brand.border.frame(height: 1) }
         }
         .buttonStyle(.plain)
+        .disabled(!enabled)
     }
 
 }

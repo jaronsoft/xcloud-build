@@ -1,5 +1,58 @@
 import Foundation
 
+enum NativeBookingCancellationCheck: Equatable {
+    case refresh, pending, accepted
+}
+
+func nativeBookingCancellationAction(_ order: [String: Any]) -> String {
+    if order["Status"] as? String == "PendingPayment" { return "CloseUnpaid" }
+    return order["IsFreeCancellationAvailable"] as? Bool == true ? "FreeCancellation" : "ManualReview"
+}
+
+struct NativeBookingCancellationNotice {
+    let message: String
+    let check: NativeBookingCancellationCheck?
+    let baseline: NativeBookingCancellationBaseline
+}
+
+struct NativeBookingCancellationBaseline {
+    private let requestedAt: String?
+    private let reviewRemark: String?
+
+    init(_ order: [String: Any]) {
+        requestedAt = order["CancelRequestedAt"] as? String
+        reviewRemark = order["CancellationReviewRemark"] as? String
+    }
+
+    func hasResult(in order: [String: Any]) -> Bool {
+        if ["Closed", "CancellationReview", "RefundProcessing", "GroupRefundProcessing", "Refunded"]
+            .contains(order["Status"] as? String ?? "") { return true }
+        let latest = NativeBookingCancellationBaseline(order)
+        return (latest.requestedAt != nil && latest.requestedAt != requestedAt)
+            || (latest.reviewRemark?.isEmpty == false && latest.reviewRemark != reviewRemark)
+    }
+}
+
+private func bookingFieldsMatch(_ original: [String: Any], _ latest: [String: Any], _ fields: [String]) -> Bool {
+    fields.allSatisfy { field in
+        guard let originalValue = original[field] as? NSObject else { return latest[field] == nil || latest[field] is NSNull }
+        guard let latestValue = latest[field] as? NSObject else { return originalValue is NSNull }
+        return originalValue.isEqual(latestValue)
+    }
+}
+
+func nativeBookingCancellationMatchesOrder(_ original: [String: Any], _ latest: [String: Any], kind: String) -> Bool {
+    let common = ["Id", "OrderNo", "CreateTime", "GuestCount", "Currency", "Amount", "PointsUsed", "PointsDiscountAmount", "CashPayableAmount"]
+    let booking = kind == "hotel" ? ["HotelId", "RoomTypeId", "CheckIn", "CheckOut", "RoomCount"]
+        : ["RouteId", "SessionId", "DepartureDate"]
+    return bookingFieldsMatch(original, latest, common + booking)
+}
+
+func nativeBookingCancellationConditionsMatch(_ original: [String: Any], _ latest: [String: Any]) -> Bool {
+    bookingFieldsMatch(original, latest, ["Status", "PaymentStatus", "HasUnmatchedPayment", "HasUnavailablePayment",
+        "CancelRequestedAt", "CancellationReviewRemark", "CancellationMode", "FreeCancellationDeadline", "IsFreeCancellationAvailable"])
+}
+
 func paymentDeadline(_ value: Any?) -> Date? {
     guard let text = value as? String else { return nil }
     return nativeBusinessDateTime(text)
@@ -92,14 +145,16 @@ func bookingOrderListNotices(_ order: [String: Any], kind: String) -> [String] {
         notices.append("原支付结果尚未确认。查询会继续使用原支付单，不会新建第二笔支付；确认前请勿重复付款，也不能关闭订单释放\(kind == "hotel" ? "预留房间" : "班期名额")。")
     }
     if status == "PendingPayment", payment == "RequiresAction", order["HasUnmatchedPayment"] as? Bool != true {
-        notices.append("原支付单仍可继续操作，当前不能关闭订单或释放\(kind == "hotel" ? "预留房间" : "班期名额")。")
+        notices.append(kind == "hotel" ? "原支付单仍可继续操作。申请关闭后，系统会先核对支付结果。"
+            : "原支付单仍可继续操作，当前不能关闭订单或释放班期名额。")
     }
-    if status == "PendingPayment", ["Paid", "Failed", "Closed"].contains(payment),
-       order["HasUnmatchedPayment"] as? Bool != true {
-        notices.append("支付流水状态与待支付订单不一致，请刷新核对或联系客服；请勿重复付款或关闭订单。")
+    if status == "PendingPayment", ["Paid", "Failed", "Closed"].contains(payment), order["HasUnmatchedPayment"] as? Bool != true {
+        notices.append(kind == "hotel" && payment != "Paid" ? "上次支付已失败或关闭，可按订单状态重新支付或申请关闭。"
+            : "支付流水状态与待支付订单不一致，请刷新核对或联系客服；请勿重复付款或关闭订单。")
     }
     if status == "PendingPayment", let expiresAt = bookingBusinessDateTime(order["PaymentExpiresAt"]) {
-        notices.append("支付截止时间：\(expiresAt)；逾期未支付将自动关闭订单并释放\(kind == "hotel" ? "预留房间" : "预留名额")。")
+        let reserved = kind == "hotel" ? "预留房间" : "班期名额"
+        notices.append("支付截止时间：\(expiresAt)。到期确认未收款后，系统将关闭订单并释放\(reserved)。")
     }
     if status == "CancellationReview" { notices.append("平台正在审核取消申请，请勿重复提交；审核期间\(kind == "hotel" ? "房间" : "班期名额")仍为您保留。") }
     if ["Paid", "RefundProcessing", "Refunded"].contains(status),

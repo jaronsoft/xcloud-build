@@ -126,19 +126,21 @@ struct NativeProfileCommonServicesSection: View {
     }
 }
 
-struct NativeProfileAccountSettingsHeader: View {
-    let onOpen: () -> Void
+struct NativeProfileSettingsGroup<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
 
     var body: some View {
-        Button(action: onOpen) {
-            HStack {
-                Text("账号设置与协议")
-                Spacer()
-                Text("管理账号、查看协议 ›").font(.system(size: 12)).foregroundStyle(Brand.muted)
-            }
-            .font(.system(size: 14, weight: .medium)).foregroundStyle(Brand.ink)
-            .padding(13).background(.white, in: RoundedRectangle(cornerRadius: 11))
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.system(size: NativeTypography.size(14), weight: .semibold))
+                .foregroundStyle(Brand.ink)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.bottom, 5)
+            content()
         }
-        .buttonStyle(.plain)
+        .padding(13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 11))
     }
 }

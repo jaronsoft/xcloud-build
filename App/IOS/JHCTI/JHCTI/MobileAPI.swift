@@ -125,20 +125,25 @@ final class MobileAPI {
     }
 
     func post(_ path: String, body: [String: Any], authenticated: Bool = false,
-              expectedPrincipal: String? = nil, timeoutInterval: TimeInterval = 12, canRefresh: Bool = true) async throws -> Any {
+              expectedPrincipal: String? = nil, timeoutInterval: TimeInterval = 12, canRefresh: Bool = true,
+              requireExplicitResponse: Bool = false) async throws -> Any {
         try await request(path, method: "POST", body: body, authenticated: authenticated,
-                          canRefresh: canRefresh, expectedPrincipal: expectedPrincipal, timeoutInterval: timeoutInterval)
+                          canRefresh: canRefresh, expectedPrincipal: expectedPrincipal, timeoutInterval: timeoutInterval,
+                          requireExplicitResponse: requireExplicitResponse)
     }
 
     func postJSON(_ path: String, body: Any, authenticated: Bool = false,
-                  expectedPrincipal: String? = nil) async throws -> Any {
+                  expectedPrincipal: String? = nil, requireExplicitResponse: Bool = false,
+                  timeoutInterval: TimeInterval = 12) async throws -> Any {
         try await request(path, method: "POST", body: body, authenticated: authenticated, canRefresh: true,
-                          expectedPrincipal: expectedPrincipal)
+                          expectedPrincipal: expectedPrincipal, timeoutInterval: timeoutInterval,
+                          requireExplicitResponse: requireExplicitResponse)
     }
 
-    func delete(_ path: String, authenticated: Bool = false, expectedPrincipal: String? = nil) async throws -> Any {
+    func delete(_ path: String, authenticated: Bool = false, expectedPrincipal: String? = nil,
+                requireExplicitResponse: Bool = false) async throws -> Any {
         try await request(path, method: "DELETE", body: nil, authenticated: authenticated, canRefresh: true,
-                          expectedPrincipal: expectedPrincipal)
+                          expectedPrincipal: expectedPrincipal, requireExplicitResponse: requireExplicitResponse)
     }
 
     func featureAccessState(_ id: String, allowStale: Bool = false, forceRefresh: Bool = false) async -> NativePublicFeatureAccessState {
@@ -373,9 +378,19 @@ final class MobileAPI {
         if requireExplicitResponse {
             // 查无记录须由成功响应中的 null 明确表示，空响应不能用于解除待核对状态。
             let fields = ["Response", "response"].compactMap { envelope[$0] }
-            guard let success = (envelope["Success"] ?? envelope["success"]) as? NSNumber,
-                  CFGetTypeID(success) == CFBooleanGetTypeID(), success.boolValue,
+            let successes = ["Success", "success"].compactMap { envelope[$0] }
+            let statuses = ["Status", "status"].compactMap { envelope[$0] }
+            guard !successes.isEmpty, successes.allSatisfy({
+                      guard let value = $0 as? NSNumber else { return false }
+                      return CFGetTypeID(value) == CFBooleanGetTypeID() && value.boolValue
+                  }), !statuses.isEmpty, statuses.allSatisfy({
+                      guard let value = $0 as? NSNumber else { return false }
+                      return CFGetTypeID(value) != CFBooleanGetTypeID() && value.doubleValue == 200
+                  }),
                   fields.count == 1, let value = fields.first else {
+                if method == "POST" {
+                    throw MobileAPIError.transient(message: "业务回执未确认，请稍后查询。", retryAfterSeconds: retryAfter)
+                }
                 throw MobileAPIError.unavailable("核对回执格式异常，请重新查询。")
             }
             return value

@@ -35,22 +35,27 @@ struct NativeResourceBrowseResultsSection: View {
                             HStack(spacing: 6) {
                                 Text(item.name).font(.system(size: NativeTypography.size(14), weight: .semibold)).foregroundStyle(Brand.ink).lineLimit(1)
                                 Text(item.resourceType == "Facility" ? item.facilityTypeLabel : "景点")
-                                    .font(.system(size: NativeTypography.size(10))).foregroundStyle(Brand.muted)
+                                    .font(.system(size: NativeTypography.configuredSize(11))).foregroundStyle(Brand.muted)
+                                    .lineLimit(1).layoutPriority(1)
                             }
-                            Text(item.address.isEmpty ? "地址待补充" : item.address).font(.system(size: NativeTypography.size(14))).lineLimit(2).foregroundStyle(Brand.muted)
+                            Text(item.address.isEmpty ? "地址待补充" : item.address)
+                                .font(.system(size: NativeTypography.size(13)))
+                                .foregroundStyle(Brand.muted)
+                                .lineLimit(2)
                             Text(item.resourceType == "Facility"
                                  ? "\(item.facilityTypeLabel)  \(item.cardOpenStatusLabel)"
                                  : "\(item.cardOpenStatusLabel)  \(item.admissionCardLabel)")
-                                .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.primary)
+                                .font(.system(size: NativeTypography.configuredSize(12))).foregroundStyle(Brand.primary)
                             if mapMode && nearbyResultsActive && selectedManualRegion.isEmpty
                                 && (selectedFilter == "全部" || selectedFilter == "景点"),
                                let distanceKm = item.distanceKm,
                                let distanceText = nativeMapDistanceText(distanceKm * 1000) {
                                 Text(item.locationIsApproximate ? "所属景点约 \(distanceText)" : distanceText)
-                                    .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.primary)
+                                    .font(.system(size: NativeTypography.configuredSize(12))).foregroundStyle(Brand.primary)
                             }
                         }
-                        Spacer(minLength: 0)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.leading)
                         Image(systemName: "chevron.right").font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
                     }
                     .padding(.vertical, 8)

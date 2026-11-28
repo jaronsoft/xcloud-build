@@ -64,8 +64,32 @@ func nativeBusinessDateTime(_ value: String) -> Date? {
 func nativeBusinessTimestamp(_ value: Any?) -> Date? {
     guard let raw = value as? String else { return nil }
     let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard text.range(of: #"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|[+-]\d{2}:?\d{2})?$"#, options: .regularExpression) != nil else { return nil }
+    guard text.range(of: #"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|[+-]\d{2}:?\d{2})?$"#,
+                     options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
     return nativeBusinessDateTime(text)
+}
+
+func nativeActivityRegistrationWindowIssue(
+    _ activity: [String: Any], session: [String: Any]?, availability: [String: Any]?, now: Date
+) -> String? {
+    let unconfirmed = "暂无法确认活动报名时间，请刷新后重试。"
+    guard let signupStart = nativeBusinessTimestamp(activity["SignupStartTime"]),
+          let signupEnd = nativeBusinessTimestamp(activity["SignupEndTime"]), signupEnd > signupStart,
+          let sessions = activity["Sessions"] as? [[String: Any]] else { return unconfirmed }
+    if now < signupStart { return "活动报名尚未开始。" }
+
+    let hasSessions = !sessions.isEmpty
+    if hasSessions {
+        guard let sessionID = session?["Id"] as? String, !sessionID.isEmpty else { return "请选择要报名的活动场次。" }
+        guard availability?["Id"] as? String == sessionID else { return unconfirmed }
+    }
+    let start = nativeBusinessTimestamp(hasSessions ? session?["StartTime"] : activity["ActivityStartTime"])
+    // 场次开始时间来自活动详情，结束时间以同一场次的实时名额响应为准。
+    let end = nativeBusinessTimestamp(hasSessions ? availability?["EndTime"] : activity["ActivityEndTime"])
+    guard let start, let end, end > start else { return unconfirmed }
+    if now >= end { return "活动已结束，无法报名。" }
+    if now >= signupEnd && now < start { return "报名已截止，活动或场次开始后可继续报名。" }
+    return nil
 }
 
 private func nativeActivityQuotaField(_ quota: [String: Any], pascalName: String, camelName: String) -> Any? {
@@ -219,10 +243,10 @@ func nativeActivitySignupAnswerError(_ raw: Any?, participants: [[String: String
     if let error = nativeActivitySignupConfigurationError(raw) { return error }
     guard (1...100).contains(quantity), participants.count == quantity else { return "参与者资料不完整，请重新填写。" }
     let fields = raw as! [[String: Any]]
-    let keys = Set(fields.compactMap { ($0["Key"] as? String)?.lowercased() })
+    let keys = Set(fields.compactMap { $0["Key"] as? String })
     for (index, answers) in participants.enumerated() {
-        if Set(answers.keys.map { $0.lowercased() }).count != answers.count
-            || answers.keys.contains(where: { !keys.contains($0.lowercased()) }) { return "报名信息已变化，请重新加载活动后填写。" }
+        // 表单按配置原键读写，拒绝别名，避免跳过格式校验或实名授权。
+        if answers.keys.contains(where: { !keys.contains($0) }) { return "报名信息已变化，请重新加载活动后填写。" }
         for field in fields {
             let key = field["Key"] as! String; let label = field["Label"] as! String
             let value = (answers[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

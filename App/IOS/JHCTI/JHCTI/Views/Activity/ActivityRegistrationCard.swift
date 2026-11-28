@@ -15,6 +15,7 @@ struct ActivityRegistrationCard: View {
     let remainingQuota: Int?
     let loading: Bool
     let configurationError: String?
+    let windowIssue: String?
     let sessions: [[String: Any]]
     let chosenSession: [String: Any]?
     let remainingSeats: Int
@@ -92,6 +93,8 @@ struct ActivityRegistrationCard: View {
             } else if registrationEnabled != true {
                 Text("暂时不能报名，你仍可查看活动详情。")
                     .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
+            } else if let windowIssue {
+                Text(windowIssue).font(.footnote).foregroundStyle(Brand.muted)
             } else if !isAuthenticated {
                 Text("请先在“我的”登录并验证手机号，再返回此页报名。")
                     .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)

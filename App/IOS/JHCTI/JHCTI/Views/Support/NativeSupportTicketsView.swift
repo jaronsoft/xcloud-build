@@ -30,9 +30,44 @@ private func nativeSupportTicketId(_ value: Any?) -> String? {
     return text
 }
 
+private struct NativeSupportTicketAttempt: NativeMerchantRecoveryRecord {
+    let key: String
+
+    var valid: Bool {
+        key.utf8.count == 32 && key.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+    }
+
+    func readReceipt(_ response: Any) throws -> String? {
+        guard let row = response as? [String: Any], trackingField(row, "IdempotencyKey") as? String == key,
+              let ticketID = trackingField(row, "TicketId") else {
+            throw MobileAPIError.unavailable("工单回执与原请求不匹配，请重新核对。")
+        }
+        if ticketID is NSNull { return nil }
+        guard let id = nativeSupportTicketId(ticketID) else {
+            throw MobileAPIError.unavailable("工单编号无效，请重新核对。")
+        }
+        return id
+    }
+
+    func readReplyReceipt(_ response: Any, ticketID: String) throws -> String? {
+        guard valid, nativeSupportTicketId(ticketID) != nil, let row = response as? [String: Any],
+              trackingField(row, "TicketId") as? String == ticketID,
+              trackingField(row, "IdempotencyKey") as? String == key,
+              let messageID = trackingField(row, "MessageId") else {
+            throw MobileAPIError.unavailable("留言回执与原请求不匹配，请重新核对。")
+        }
+        if messageID is NSNull { return nil }
+        guard let id = nativeSupportTicketId(messageID) else {
+            throw MobileAPIError.unavailable("留言编号无效，请重新核对。")
+        }
+        return id
+    }
+}
+
 struct NativeSupportTicketsView: View {
     @ObservedObject var store: SessionStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var rows: [[String: Any]] = []
     @State private var page = 1
     @State private var total = 0
@@ -49,8 +84,18 @@ struct NativeSupportTicketsView: View {
     @State private var title = ""
     @State private var content = ""
     @State private var reply = ""
-    @State private var createRequestKeys: [String: String] = [:]
-    @State private var replyRequestKeys: [String: String] = [:]
+    @State private var createRecovery: NativeMerchantRecoveryState<NativeSupportTicketAttempt> = .unavailable
+    @State private var createRetry: NativeSupportTicketAttempt?
+    @State private var createNotice: String?
+    @State private var createTask: Task<Void, Never>?
+    @State private var checkingCreate = false
+    @State private var refreshListAfterWrite = false
+    @State private var displayedPrincipal: String?
+    @State private var replyRecovery: NativeMerchantRecoveryState<NativeSupportTicketAttempt> = .unavailable
+    @State private var replyRetry: NativeSupportTicketAttempt?
+    @State private var replyNotice: String?
+    @State private var replyTask: Task<Void, Never>?
+    @State private var checkingReply = false
     @State private var ticketAttachments: [String] = []
     @State private var replyAttachments: [String] = []
     @State private var selectedPhotos: [PhotosPickerItem] = []
@@ -74,6 +119,10 @@ struct NativeSupportTicketsView: View {
     private let categories = ["Order", "Payment", "Account", "Resource", "Data", "Security", "Other"]
 
     private var token: String? { store.session?.accessToken }
+    private var principal: String? { nativeTourismPrincipal(token) }
+    private var canEditReply: Bool {
+        replyRecovery == .ready || replyRetry.map { replyRecovery == .pending($0) } == true
+    }
 
     var body: some View {
         NavigationStack {
@@ -89,6 +138,8 @@ struct NativeSupportTicketsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(mode == .list ? "关闭" : "返回") {
+                        cancelCreateWork()
+                        cancelReplyWork()
                         if mode == .list {
                             uploadTask?.cancel()
                             detailTask?.cancel()
@@ -102,13 +153,20 @@ struct NativeSupportTicketsView: View {
                             writeSequence += 1
                             submitting = false
                             mode = .list; detail = nil; detailId = nil; error = nil
+                            if refreshListAfterWrite {
+                                refreshListAfterWrite = false
+                                Task { await load(reset: true) }
+                            }
                         }
                     }
                 }
-                if mode == .list {
+                if mode == .list && createRecovery == .ready {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("提交问题") { mode = .create; error = nil }
-                            .disabled(token == nil)
+                        Button("提交问题") {
+                            guard displayedPrincipal == principal, refreshCreateRecovery() == .ready else { return }
+                            mode = .create; error = nil; createNotice = nil
+                        }
+                        .disabled(submitting || checkingCreate)
                     }
                 }
             }
@@ -162,7 +220,19 @@ struct NativeSupportTicketsView: View {
             previewImage = image
             previewLoading = false
         }
-        .task(id: token) {
+        .onChange(of: scenePhase) { _, next in
+            if next == .background, createTask != nil || mode != .create { cancelCreateWork() }
+            if next == .background, replyTask != nil { cancelReplyWork() }
+            if next == .active {
+                let recovery = refreshCreateRecovery()
+                if mode == .detail, let detailId { refreshReplyRecovery(detailId) }
+                if mode == .create && recovery != .ready && createRetry.map({ recovery == .pending($0) }) != true {
+                    mode = .list
+                }
+            }
+        }
+        .onDisappear { cancelCreateWork(); cancelReplyWork() }
+        .task(id: principal) {
             uploadTask?.cancel()
             uploadTask = nil
             detailTask?.cancel()
@@ -173,10 +243,16 @@ struct NativeSupportTicketsView: View {
             rows = []; total = 0; page = 1; failedPage = nil; detail = nil; detailId = nil; mode = .list
             submitting = false
             ticketAttachments = []; replyAttachments = []; selectedPhotos = []; uploading = false
-            createRequestKeys.removeAll(); replyRequestKeys.removeAll()
+            cancelCreateWork()
+            cancelReplyWork()
+            replyRecovery = .unavailable
+            refreshListAfterWrite = false
+            title = ""; content = ""; category = "Other"; reply = ""
+            displayedPrincipal = principal
             photoPickerPrincipal = nil; photoPickerTicketId = nil
             previewAttachment = nil; previewImage = nil; previewLoading = false
             error = nil
+            refreshCreateRecovery()
             guard token != nil else { error = "请先登录文旅账号，再提交问题或查看处理进度。"; return }
             await load(reset: true)
         }
@@ -184,6 +260,25 @@ struct NativeSupportTicketsView: View {
 
     private var ticketList: some View {
         List {
+            if case .pending(let attempt) = createRecovery {
+                Section("建单待核对") {
+                    if let createNotice { Text(createNotice).foregroundStyle(Brand.muted) }
+                    Button(checkingCreate ? "查询中…" : "查询原工单") { startCreateCheck() }
+                        .disabled(checkingCreate || submitting)
+                    if createRetry == attempt {
+                        Button("用原请求号继续提交") {
+                            guard displayedPrincipal == principal, refreshCreateRecovery() == .pending(attempt) else { return }
+                            mode = .create; error = nil
+                        }
+                        .disabled(checkingCreate || submitting)
+                    }
+                }
+            } else if token != nil && createRecovery != .ready {
+                Section {
+                    Text(createNotice ?? "无法读取待核对记录，暂不能提交工单。").foregroundStyle(Brand.muted)
+                    Button("重新读取") { refreshCreateRecovery() }
+                }
+            }
             Section {
                 Text("提交问题后可在这里查看处理进度，并继续与客服沟通。")
                     .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
@@ -228,7 +323,7 @@ struct NativeSupportTicketsView: View {
                 }
             }
         }
-        .refreshable { await load(reset: true) }
+        .refreshable { refreshCreateRecovery(); await load(reset: true) }
     }
 
     private var createForm: some View {
@@ -260,8 +355,11 @@ struct NativeSupportTicketsView: View {
             }
             if let error { Section { Text(error).foregroundStyle(.red) } }
             Section {
-                Button(submitting ? "正在提交…" : "提交给客服") { Task { await submitTicket() } }
-                    .disabled(submitting || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button(submitting ? "正在提交…" : createRetry == nil ? "提交给客服" : "用原请求号提交") {
+                    guard createTask == nil else { return }
+                    createTask = Task { await submitTicket() }
+                }
+                .disabled(submitting || checkingCreate || uploading || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
     }
@@ -277,10 +375,21 @@ struct NativeSupportTicketsView: View {
             replyAttachments: replyAttachments,
             isSubmitting: submitting,
             isUploading: uploading,
+            canEditReply: canEditReply,
+            replyPending: replyRecovery != .ready,
+            replyLookupLabel: checkingReply ? "查询中…" : replyLookupLabel,
+            replyNotice: replyNotice ?? (replyRecovery == .ready ? nil : replyLookupLabel == "查询原留言"
+                ? "这张工单有一条留言待核对。" : "无法读取待核对记录，暂不能发送留言。"),
+            checkingReply: checkingReply,
+            retryOriginalReply: replyRetry != nil,
             previewAttachment: $previewAttachment,
             replyAttachmentPicker: AnyView(attachmentPicker(target: .reply, urls: replyAttachments)),
             onRetry: { if let detailId { startDetailLoad(["Id": detailId]) } },
-            onSubmitReply: { Task { await submitReply() } }
+            onCheckReply: startReplyCheck,
+            onSubmitReply: {
+                guard replyTask == nil else { return }
+                replyTask = Task { await submitReply() }
+            }
         )
     }
 
@@ -295,7 +404,7 @@ struct NativeSupportTicketsView: View {
         do {
             guard let result = try await MobileAPI(store: store).get("/api/JHCTISupportTicket/GetMyPage?page=\(target)&pageSize=\(pageSize)", authenticated: true,
                 expectedPrincipal: expectedPrincipal) as? [String: Any],
-                  store.session?.accessToken == token,
+                  principal == expectedPrincipal,
                   let expectedUserId = nativeTourismPrincipal(token)?.split(separator: ":").first.map(String.init),
                   nativeSupportTicketId(expectedUserId) != nil,
                   let responsePage = result["page"] as? Int, responsePage == target,
@@ -337,7 +446,7 @@ struct NativeSupportTicketsView: View {
             guard count >= loaded.count, replacesLoadedRows || (!loaded.isEmpty && ids.allSatisfy { !existing.contains($0) } && count >= rows.count + loaded.count) else {
                 throw MobileAPIError.unavailable("工单分页回执无效。")
             }
-            if requestID == requestSequence && store.session?.accessToken == token {
+            if requestID == requestSequence && principal == expectedPrincipal {
                 rows = replacesLoadedRows ? loaded : rows + loaded
                 total = max(count, rows.count); page = target; failedPage = nil; error = nil
             }
@@ -347,6 +456,8 @@ struct NativeSupportTicketsView: View {
     }
 
     private func startDetailLoad(_ row: [String: Any]) {
+        cancelCreateWork()
+        cancelReplyWork()
         detailTask?.cancel()
         writeSequence += 1
         submitting = false
@@ -363,15 +474,17 @@ struct NativeSupportTicketsView: View {
             photoPickerPrincipal = nil
             photoPickerTicketId = nil
             replyAttachments = []
+            reply = ""
         }
+        refreshReplyRecovery(id)
         requestSequence += 1
         let requestID = requestSequence
-        mode = .detail; detail = nil; detailId = id; detailLoading = true; error = nil; reply = ""
+        mode = .detail; detail = nil; detailId = id; detailLoading = true; error = nil
         defer { if requestID == requestSequence { detailLoading = false } }
         do {
             guard let value = try await MobileAPI(store: store).get("/api/JHCTISupportTicket/GetMyDetail?id=\(id)", authenticated: true,
                 expectedPrincipal: expectedPrincipal) as? [String: Any],
-                  store.session?.accessToken == token,
+                  principal == expectedPrincipal,
                   nativeSupportTicketId(value["Id"]) == id else {
                 throw MobileAPIError.unavailable("工单详情与所选编号不一致。")
             }
@@ -427,8 +540,82 @@ struct NativeSupportTicketsView: View {
         return true
     }
 
+    private func ticketStorage(for principal: String, ticketID: String? = nil) -> NativeMerchantRecoveryStore<NativeSupportTicketAttempt>? {
+        let parts = principal.split(separator: ":", maxSplits: 1)
+        guard parts.count == 2, let userID = nativeSupportTicketId(String(parts[0])) else { return nil }
+        if let ticketID {
+            guard nativeSupportTicketId(ticketID) != nil else { return nil }
+            return NativeMerchantRecoveryStore(directoryName: "jhcti-support-ticket-reply", principal: principal, scopeID: ticketID)
+        }
+        return NativeMerchantRecoveryStore(directoryName: "jhcti-support-ticket-create", principal: principal, scopeID: userID)
+    }
+
+    @discardableResult
+    private func refreshCreateRecovery() -> NativeMerchantRecoveryState<NativeSupportTicketAttempt> {
+        let recovery = principal.flatMap { ticketStorage(for: $0) }?.read() ?? .unavailable
+        createRecovery = recovery
+        return recovery
+    }
+
+    private func cancelCreateWork() {
+        if let createTask {
+            createTask.cancel()
+            writeSequence += 1
+            submitting = false
+        }
+        createTask = nil
+        checkingCreate = false
+        createRetry = nil
+        createNotice = nil
+    }
+
+    private func ticketWriteIsCurrent(_ expectedPrincipal: String, _ writeID: Int) -> Bool {
+        !Task.isCancelled && scenePhase == .active && writeID == writeSequence && principal == expectedPrincipal
+    }
+
+    private func startCreateCheck() {
+        guard scenePhase == .active, !submitting, createTask == nil, let principal, principal == displayedPrincipal,
+              case let .pending(attempt) = refreshCreateRecovery() else { return }
+        writeSequence += 1
+        let writeID = writeSequence
+        checkingCreate = true
+        createRetry = nil; createNotice = nil
+        createTask = Task {
+            await verifyCreate(attempt, principal: principal, writeID: writeID)
+            if writeID == writeSequence { createTask = nil; checkingCreate = false }
+        }
+    }
+
+    private func verifyCreate(_ attempt: NativeSupportTicketAttempt, principal expectedPrincipal: String,
+                              writeID: Int, submittedID: String? = nil) async {
+        guard ticketWriteIsCurrent(expectedPrincipal, writeID) else { return }
+        do {
+            let value = try await MobileAPI(store: store).get("/api/JHCTISupportTicket/GetMyCreateReceipt?idempotencyKey=\(attempt.key)",
+                authenticated: true, expectedPrincipal: expectedPrincipal, requireExplicitResponse: true)
+            guard ticketWriteIsCurrent(expectedPrincipal, writeID), refreshCreateRecovery() == .pending(attempt) else { return }
+            let ticketID = try attempt.readReceipt(value)
+            if let ticketID, submittedID == nil || ticketID == submittedID {
+                let cleared = ticketStorage(for: expectedPrincipal)?.clear(.pending(attempt)) == true
+                refreshCreateRecovery()
+                createNotice = cleared ? nil : "已找到原工单，但未能清除待核对记录。"
+                title = ""; content = ""; category = "Other"; ticketAttachments = []
+                refreshListAfterWrite = true
+                await openDetail(["Id": ticketID])
+            } else if ticketID == nil && submittedID == nil {
+                createRetry = attempt
+                createNotice = "暂未查到已提交的工单。可用原请求号继续提交。"
+            } else {
+                createNotice = "提交结果待核对，请查询原工单。"
+            }
+        } catch {
+            if ticketWriteIsCurrent(expectedPrincipal, writeID) { createNotice = error.localizedDescription }
+        }
+    }
+
     private func submitTicket() async {
-        guard let token, !submitting, !uploading else { return }
+        defer { if !Task.isCancelled { createTask = nil } }
+        guard createTask != nil, !Task.isCancelled, scenePhase == .active, mode == .create,
+              let principal, principal == displayedPrincipal, let storage = ticketStorage(for: principal), !submitting, !uploading else { return }
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanTitle.isEmpty, cleanTitle.utf16.count <= 160,
@@ -437,70 +624,154 @@ struct NativeSupportTicketsView: View {
         }
         writeSequence += 1
         let writeID = writeSequence
-        submitting = true; error = nil
+        let attempt: NativeSupportTicketAttempt
+        switch refreshCreateRecovery() {
+        case .ready:
+            attempt = NativeSupportTicketAttempt(key: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())
+            guard storage.save(attempt) else {
+                if refreshCreateRecovery() != .ready { mode = .list; createNotice = "无法保存待核对记录，工单未发送。" }
+                else { error = "无法保存待核对记录，工单未发送。" }
+                return
+            }
+        case .pending(let pending) where pending == createRetry:
+            attempt = pending
+        default:
+            mode = .list
+            return
+        }
+        refreshCreateRecovery()
+        createRetry = nil; createNotice = nil
+        submitting = true; error = nil; mode = .list
         defer { if writeID == writeSequence { submitting = false } }
         do {
-            var body: [String: Any] = ["Category": category, "Title": cleanTitle, "Content": cleanContent,
-                                       "Attachments": ticketAttachments]
-            let signature = supportTicketRequestSignature(body)
-            let requestKey = createRequestKeys[signature] ?? UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-            createRequestKeys[signature] = requestKey
-            body["IdempotencyKey"] = requestKey
             let value = try await MobileAPI(store: store).post("/api/JHCTISupportTicket/CreateMyTicket",
-                body: body, authenticated: true,
-                expectedPrincipal: nativeTourismPrincipal(token)) as? String
-            guard writeID == writeSequence, store.session?.accessToken == token else { return }
-            guard store.session?.accessToken == token, let id = nativeSupportTicketId(value) else {
-                throw MobileAPIError.unavailable("提交结果无法确认，请返回列表刷新核对。")
+                body: ["Category": category, "Title": cleanTitle, "Content": cleanContent,
+                       "Attachments": ticketAttachments, "IdempotencyKey": attempt.key],
+                authenticated: true, expectedPrincipal: principal, canRefresh: false, requireExplicitResponse: true)
+            guard ticketWriteIsCurrent(principal, writeID) else { return }
+            guard let id = nativeSupportTicketId(value) else {
+                throw MobileAPIError.unavailable("建单回执格式异常。")
             }
-            createRequestKeys.removeAll()
-            title = ""; content = ""; category = "Other"; ticketAttachments = []; mode = .list
-            await load(reset: true)
-        } catch let requestError {
-            if writeID == writeSequence, store.session?.accessToken == token { self.error = requestError.localizedDescription }
+            await verifyCreate(attempt, principal: principal, writeID: writeID, submittedID: id)
+        } catch {
+            if ticketWriteIsCurrent(principal, writeID) { createNotice = "提交结果待核对，请查询原工单。" }
+        }
+    }
+
+    private var replyLookupLabel: String {
+        if case .pending = replyRecovery { return "查询原留言" }
+        return "重新读取"
+    }
+
+    @discardableResult
+    private func refreshReplyRecovery(_ ticketID: String) -> NativeMerchantRecoveryState<NativeSupportTicketAttempt> {
+        let recovery = principal.flatMap { ticketStorage(for: $0, ticketID: ticketID) }?.read() ?? .unavailable
+        replyRecovery = recovery
+        return recovery
+    }
+
+    private func cancelReplyWork() {
+        if let replyTask {
+            replyTask.cancel()
+            writeSequence += 1
+            submitting = false
+        }
+        replyTask = nil
+        checkingReply = false
+        replyRetry = nil
+        replyNotice = nil
+    }
+
+    private func startReplyCheck() {
+        guard scenePhase == .active, mode == .detail, let detail, let id = detailId,
+              let principal, principal == displayedPrincipal, !submitting, !uploading, replyTask == nil else { return }
+        let recovery = refreshReplyRecovery(id)
+        replyRetry = nil; replyNotice = nil
+        guard case let .pending(attempt) = recovery else { return }
+        writeSequence += 1
+        let writeID = writeSequence
+        checkingReply = true
+        let closed = (detail["Status"] as? String) == "Closed"
+        replyTask = Task {
+            await verifyReply(attempt, ticketID: id, principal: principal, writeID: writeID, closed: closed)
+            if writeID == writeSequence { replyTask = nil; checkingReply = false }
+        }
+    }
+
+    private func verifyReply(_ attempt: NativeSupportTicketAttempt, ticketID: String, principal expectedPrincipal: String,
+                             writeID: Int, closed: Bool, afterSend: Bool = false) async {
+        func isCurrent() -> Bool {
+            ticketWriteIsCurrent(expectedPrincipal, writeID) && mode == .detail && detailId == ticketID
+        }
+        guard isCurrent() else { return }
+        do {
+            let receipt = try await MobileAPI(store: store).get(
+                "/api/JHCTISupportTicket/GetMyMessageReceipt?ticketId=\(ticketID)&idempotencyKey=\(attempt.key)",
+                authenticated: true, expectedPrincipal: expectedPrincipal, requireExplicitResponse: true)
+            guard isCurrent(), refreshReplyRecovery(ticketID) == .pending(attempt) else { return }
+            if try attempt.readReplyReceipt(receipt, ticketID: ticketID) != nil {
+                let cleared = ticketStorage(for: expectedPrincipal, ticketID: ticketID)?.clear(.pending(attempt)) == true
+                refreshReplyRecovery(ticketID)
+                replyNotice = cleared ? "已确认原留言送达。" : "已确认原留言送达，但未能清除待核对记录。"
+                reply = ""; replyAttachments = []; refreshListAfterWrite = true
+                await openDetail(["Id": ticketID])
+            } else if afterSend {
+                replyNotice = "留言待核对，请查询原请求。"
+            } else if closed {
+                replyNotice = "暂未查到已提交的留言。此工单已关闭。"
+            } else {
+                replyRetry = attempt
+                replyNotice = "暂未查到已提交的留言。可用原请求号继续发送。"
+            }
+        } catch {
+            if isCurrent() { replyNotice = error.localizedDescription }
         }
     }
 
     private func submitReply() async {
-        guard let detail, let token, !submitting, let id = nativeSupportTicketId(detail["Id"]) else { return }
+        defer { if !Task.isCancelled { replyTask = nil } }
+        guard !Task.isCancelled, scenePhase == .active, mode == .detail, let detail,
+              (detail["Status"] as? String) != "Closed", let id = nativeSupportTicketId(detail["Id"]), detailId == id,
+              let principal, principal == displayedPrincipal, !submitting, !uploading,
+              let storage = ticketStorage(for: principal, ticketID: id) else { return }
         let clean = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard clean.utf16.count <= 4000, !clean.isEmpty || !replyAttachments.isEmpty, !uploading else {
+        guard clean.utf16.count <= 4000, !clean.isEmpty || !replyAttachments.isEmpty else {
             error = clean.utf16.count > 4000 ? "留言最多 4000 字。" : "请填写留言内容或添加图片。"; return
         }
+        let attempt: NativeSupportTicketAttempt
+        switch refreshReplyRecovery(id) {
+        case .ready:
+            attempt = NativeSupportTicketAttempt(key: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())
+            guard storage.save(attempt) else {
+                refreshReplyRecovery(id)
+                replyNotice = "无法保存待核对记录，留言未发送。"
+                return
+            }
+        case .pending(let pending) where pending == replyRetry:
+            attempt = pending
+        default: return
+        }
+        refreshReplyRecovery(id)
+        replyRetry = nil; replyNotice = nil
         writeSequence += 1
         let writeID = writeSequence
         submitting = true; error = nil
         defer { if writeID == writeSequence { submitting = false } }
         do {
-            var body: [String: Any] = ["TicketId": id, "Content": clean.isEmpty ? "补充图片" : clean,
-                                       "Attachments": replyAttachments]
-            let signature = supportTicketRequestSignature(body)
-            let requestKey = replyRequestKeys[signature] ?? UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-            replyRequestKeys[signature] = requestKey
-            body["IdempotencyKey"] = requestKey
             let receipt = try await MobileAPI(store: store).post("/api/JHCTISupportTicket/AddMyMessage",
-                body: body, authenticated: true,
-                expectedPrincipal: nativeTourismPrincipal(token)) as? String
-            guard writeID == writeSequence, store.session?.accessToken == token else { return }
+                body: ["TicketId": id, "Content": clean.isEmpty ? "补充图片" : clean,
+                       "Attachments": replyAttachments, "IdempotencyKey": attempt.key],
+                authenticated: true, expectedPrincipal: principal, canRefresh: false, requireExplicitResponse: true)
+            guard ticketWriteIsCurrent(principal, writeID), mode == .detail, detailId == id else { return }
             guard nativeSupportTicketId(receipt) == id else {
-                throw MobileAPIError.unavailable("留言结果无法确认，请重新打开工单核对。")
+                throw MobileAPIError.unavailable("留言回执格式异常。")
             }
-            replyRequestKeys.removeAll()
-            if mode == .detail, detailId == id {
-                reply = ""; replyAttachments = []
-                await openDetail(["Id": id])
-                await load(reset: true)
-            } else if mode == .list {
-                await load(reset: true)
+            await verifyReply(attempt, ticketID: id, principal: principal, writeID: writeID, closed: false, afterSend: true)
+        } catch {
+            if ticketWriteIsCurrent(principal, writeID), mode == .detail, detailId == id {
+                replyNotice = "留言结果待核对，请查询原留言。"
             }
-        } catch let requestError {
-            if writeID == writeSequence, store.session?.accessToken == token { self.error = requestError.localizedDescription }
         }
-    }
-
-    private func supportTicketRequestSignature(_ body: [String: Any]) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else { return UUID().uuidString }
-        return data.base64EncodedString()
     }
 
     @ViewBuilder

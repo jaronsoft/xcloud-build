@@ -17,6 +17,13 @@ struct NativeBookingOrdersView: View {
     @State private var ownerContactRevealed = false
     @State private var cancellationConfirmationOrder: [String: Any]?
     @State private var cancellingOrderId = ""
+    @State private var cancellationNotices: [String: NativeBookingCancellationNotice] = [:]
+    @State private var pendingCancellations: [NativeBookingCancellationAttempt] = []
+    @State private var recoveryContext = ""
+    @State private var recoveryStorageError = false
+    @State private var recoveryResult: BookingCancellationLookupResult?
+    @State private var recoveryReadTask: Task<Void, Never>?
+    @State private var recoveryDetail = false
     @State private var busyPaymentOrderId = ""
     @State private var paymentNotice: String?
     @State private var bookingPurchaseAccess = NativePublicFeatureAccessState.unavailable
@@ -148,20 +155,26 @@ struct NativeBookingOrdersView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     if selectedOrder != nil { Button("返回") {
                         requestSequence += 1; detailReadTask?.cancel(); detailReadTask = nil
+                        recoveryReadTask?.cancel(); recoveryReadTask = nil; recoveryDetail = false
                         loading = false; self.selectedOrder = nil; ownerContactRevealed = false; error = nil
                     } }
                 }
                 ToolbarItem(placement: .topBarTrailing) { Button("关闭") { dismiss() } }
             }
             .task(id: "\(kind)-\(store.session?.accessToken ?? "")") { await load(reset: true) }
-            .onChange(of: store.session?.accessToken) { _, _ in
+            .onChange(of: store.session?.accessToken) { previous, current in
                 detailReadTask?.cancel(); detailReadTask = nil
+                recoveryReadTask?.cancel(); recoveryReadTask = nil; recoveryResult = nil; recoveryDetail = false
                 requestSequence += 1; rows = []; selectedOrder = nil; total = 0; page = 1
+                cancellationConfirmationOrder = nil
+                if nativeTourismPrincipal(previous) != nativeTourismPrincipal(current) { cancellationNotices = [:] }
                 error = nil; loading = false; ownerContactRevealed = false; paymentNotice = nil; busyPaymentOrderId = ""
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else {
+                    recoveryReadTask?.cancel(); recoveryReadTask = nil; recoveryResult = nil
                     ownerContactRevealed = false
+                    cancellationConfirmationOrder = nil
                     if busyPaymentOrderId.isEmpty {
                         requestSequence += 1; detailReadTask?.cancel(); detailReadTask = nil; loading = false
                     }
@@ -170,11 +183,16 @@ struct NativeBookingOrdersView: View {
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(250))
                     guard scenePhase == .active, busyPaymentOrderId.isEmpty else { return }
-                    if let id = selectedOrder?["Id"] as? String { await loadOrder(id: id) }
+                    if let id = selectedOrder?["Id"] as? String { await loadOrder(id: id, masked: recoveryDetail) }
                     else { await load(reset: true) }
                 }
             }
-            .onDisappear { detailReadTask?.cancel(); detailReadTask = nil; requestSequence += 1; rows = []; selectedOrder = nil; loading = false; ownerContactRevealed = false; paymentNotice = nil }
+            .onDisappear {
+                detailReadTask?.cancel(); detailReadTask = nil; recoveryReadTask?.cancel(); recoveryReadTask = nil
+                recoveryResult = nil; recoveryDetail = false
+                requestSequence += 1; rows = []; selectedOrder = nil; loading = false
+                ownerContactRevealed = false; paymentNotice = nil; cancellationConfirmationOrder = nil
+            }
             .confirmationDialog(cancellationConfirmationOrder.map { bookingCancellationTitle($0) } ?? "确认订单操作",
                 isPresented: Binding(get: { cancellationConfirmationOrder != nil }, set: { if !$0 { cancellationConfirmationOrder = nil } }),
                 titleVisibility: .visible) {
@@ -195,18 +213,20 @@ struct NativeBookingOrdersView: View {
                 Text("住宿订单").tag("hotel")
                 Text("旅游线路").tag("route")
             }.pickerStyle(.segmented).padding(.horizontal, 16).padding(.vertical, 10)
+                .disabled(!cancellingOrderId.isEmpty)
             Text("共 \(total) 笔\(kind == "hotel" ? "住宿" : "线路")订单")
                 .font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 6)
-            if loading && rows.isEmpty {
+            if loading && rows.isEmpty && !showsRecovery {
                 ProgressView("正在读取订单…").frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error, rows.isEmpty {
+            } else if let error, rows.isEmpty && !showsRecovery {
                 ContentUnavailableView(error, systemImage: "exclamationmark.arrow.circlepath", description: Text("检查登录状态后下拉重试。"))
-            } else if rows.isEmpty {
+            } else if rows.isEmpty && !showsRecovery {
                 ContentUnavailableView(kind == "hotel" ? "暂无住宿订单" : "暂无旅游线路订单",
                     systemImage: "ticket", description: Text("本人预订记录会显示在这里。"))
             } else {
                 List {
+                    recoveryControls().listRowBackground(Brand.background)
                     if kind == "route", let paymentNotice {
                         Text(paymentNotice).font(.system(size: NativeTypography.size(13))).foregroundStyle(Brand.primary)
                             .listRowBackground(Brand.background)
@@ -218,12 +238,12 @@ struct NativeBookingOrdersView: View {
                     }
                     if rows.count < total {
                         Button(loading ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }
-                            .frame(maxWidth: .infinity).listRowBackground(Brand.background).disabled(loading)
+                            .frame(maxWidth: .infinity).listRowBackground(Brand.background).disabled(loading || !cancellingOrderId.isEmpty)
                     }
                 }.listStyle(.plain).scrollContentBackground(.hidden).background(Brand.background)
-                    .refreshable { await load(reset: true) }
+                    .refreshable { if cancellingOrderId.isEmpty { await load(reset: true) } }
             }
-            if let error, !rows.isEmpty { Text(error).font(.system(size: NativeTypography.size(14))).foregroundStyle(.red).padding(8) }
+            if let error, !rows.isEmpty || showsRecovery { Text(error).font(.system(size: NativeTypography.size(14))).foregroundStyle(.red).padding(8) }
         }
     }
 
@@ -269,14 +289,15 @@ struct NativeBookingOrdersView: View {
                     if let rule = bookingCancellationRule(order, kind: kind) {
                         Text(rule).font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
                     }
+                    cancellationNotice(order)
                     HStack(spacing: 10) {
-                        if bookingPurchaseAccess == .open, bookingCanStartAlipayPayment(order, kind: kind) {
+                        if bookingPurchaseAccess == .open, !cancellationBlocked(order), bookingCanStartAlipayPayment(order, kind: kind) {
                             Button(busyPaymentOrderId == (order["Id"] as? String ?? "") ? "正在查询…" :
                                 ((order["PaymentStatus"] as? String ?? "").isEmpty ? "继续支付" : "查询并继续原支付")) {
                                 Task { await startAlipayPayment(order: order) }
                             }.disabled(!busyPaymentOrderId.isEmpty || !cancellingOrderId.isEmpty || loading)
                         }
-                        if bookingCanRequestCancellation(order, kind: kind) {
+                        if !cancellationBlocked(order), bookingCanRequestCancellation(order, kind: kind) {
                             Button(cancellingOrderId == (order["Id"] as? String ?? "")
                                 ? "正在提交…" : bookingCancellationTitle(order), role: .destructive) {
                                 cancellationConfirmationOrder = order
@@ -315,14 +336,14 @@ struct NativeBookingOrdersView: View {
                                  : "暂时无法确认预订开放状态，当前不能继续支付。")
                                 .font(.system(size: NativeTypography.size(14))).foregroundStyle(.orange)
                         }
-                        if bookingPurchaseAccess == .open, bookingCanStartAlipayPayment(order, kind: kind) {
+                        if bookingPurchaseAccess == .open, !cancellationBlocked(order), bookingCanStartAlipayPayment(order, kind: kind) {
                             Button(busyPaymentOrderId == (order["Id"] as? String ?? "")
                                 ? "正在查询原支付…" : (paymentStatus.isEmpty ? "使用支付宝支付" : "查询并继续支付宝支付")) {
                                 Task { await startAlipayPayment(order: order) }
                             }
                             .font(.system(size: NativeTypography.size(14), weight: .semibold))
                             .disabled(!busyPaymentOrderId.isEmpty || !cancellingOrderId.isEmpty || loading)
-                        } else if bookingPurchaseAccess == .open {
+                        } else if bookingPurchaseAccess == .open, !cancellationBlocked(order) {
                             Text(bookingPaymentStatusNotice(paymentStatus, provider: order["PaymentProvider"] as? String,
                                 scene: order["PaymentScene"] as? String, kind: kind,
                                 unavailable: order["HasUnavailablePayment"] as? Bool == true,
@@ -331,7 +352,7 @@ struct NativeBookingOrdersView: View {
                         }
                         Button("刷新本人订单状态") { openOrder(id: order["Id"] as? String ?? "") }
                             .font(.system(size: NativeTypography.size(14), weight: .semibold))
-                            .disabled(!busyPaymentOrderId.isEmpty || loading)
+                            .disabled(!busyPaymentOrderId.isEmpty || !cancellingOrderId.isEmpty || loading)
                     }
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 11))
                 }
@@ -348,8 +369,10 @@ struct NativeBookingOrdersView: View {
                                 .font(.system(size: NativeTypography.size(14), weight: .medium)).foregroundStyle(Brand.primary)
                         }
                         Button(ownerContactRevealed ? "隐藏完整入住联系人" : "查看完整入住联系人") {
-                            ownerContactRevealed.toggle()
+                            if recoveryDetail, let id = order["Id"] as? String { openOrder(id: id, revealOwnerContact: true) }
+                            else { ownerContactRevealed.toggle() }
                         }
+                        .disabled(loading || !cancellingOrderId.isEmpty)
                         .font(.system(size: NativeTypography.size(14), weight: .semibold)).foregroundStyle(Brand.primary)
                     } else {
                         Text("出发时间：\(bookingBusinessDateTime(order["DepartureDate"]) ?? "待确认")")
@@ -365,7 +388,9 @@ struct NativeBookingOrdersView: View {
                     Text("取消申请处理意见：\(remark)").font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
                         .padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 11))
                 }
-                if bookingCanRequestCancellation(order, kind: kind) {
+                recoveryControls(only: order["Id"] as? String)
+                cancellationNotice(order)
+                if !cancellationBlocked(order), bookingCanRequestCancellation(order, kind: kind) {
                     Button {
                         cancellationConfirmationOrder = order
                     } label: {
@@ -376,12 +401,14 @@ struct NativeBookingOrdersView: View {
                 }
                 if let error { Text(error).font(.system(size: NativeTypography.size(14))).foregroundStyle(.red) }
             }.padding(14)
-        }.refreshable { await loadOrder(id: order["Id"] as? String ?? "") }
+        }.refreshable { if cancellingOrderId.isEmpty { await loadOrder(id: order["Id"] as? String ?? "", masked: recoveryDetail) } }
     }
 
     private func load(reset: Bool) async {
         guard let token = store.session?.accessToken,
               let requestedPrincipal = nativeTourismPrincipal(token) else { rows = []; error = "请先登录文旅账号。"; return }
+        if !reset && !cancellingOrderId.isEmpty { return }
+        restoreCancellationRecovery(principal: requestedPrincipal)
         if reset { requestSequence += 1; page = 1; total = 0 }
         let sequence = requestSequence; let targetPage = reset ? 1 : page + 1
         loading = true; error = nil
@@ -416,9 +443,10 @@ struct NativeBookingOrdersView: View {
         if requestSequence == sequence { loading = false }
     }
 
-    private func loadOrder(id: String) async {
+    private func loadOrder(id: String, masked: Bool = false, revealOwnerContact: Bool = false) async {
         guard !id.isEmpty, let token = store.session?.accessToken,
               let requestedPrincipal = nativeTourismPrincipal(token) else { error = "请重新登录后查看订单。"; return }
+        restoreCancellationRecovery(principal: requestedPrincipal)
         requestSequence += 1; let sequence = requestSequence; loading = true; error = nil; paymentNotice = nil
         bookingPurchaseAccess = .unavailable
         let access = await MobileAPI(store: store).featureAccessState(bookingFeatureId, forceRefresh: true)
@@ -426,27 +454,34 @@ struct NativeBookingOrdersView: View {
         bookingPurchaseAccess = access
         do {
             let detailEndpoint = kind == "hotel" ? "/api/JHCTIHotelBooking/GetMyOrder" : "/api/JHCTITravelRouteBooking/GetMyOrder"
-            let response = try await MobileAPI(store: store).get("\(detailEndpoint)?id=\(id)", authenticated: true, expectedPrincipal: requestedPrincipal) as? [String: Any]
-            let order = response.map(normalizedNativeBookingPaymentStatus)
+            let contact = masked && kind == "hotel" ? "&includeOwnerContact=false" : ""
+            let response = try await MobileAPI(store: store).get("\(detailEndpoint)?id=\(id)\(contact)", authenticated: true, expectedPrincipal: requestedPrincipal) as? [String: Any]
+            var order = response.map(normalizedNativeBookingPaymentStatus)
             guard store.session?.accessToken == token, requestSequence == sequence,
-                  let order, isValidOrder(order, expectedId: id) else {
+                  let verified = order, isValidOrder(verified, expectedId: id) else {
                 throw MobileAPIError.unavailable("预订订单详情回执与当前订单不一致，请刷新后重试。")
             }
-            ownerContactRevealed = false
+            if masked && kind == "hotel" { order?["OwnerContactName"] = NSNull(); order?["OwnerContactPhone"] = NSNull() }
+            ownerContactRevealed = revealOwnerContact
+            recoveryDetail = masked
             selectedOrder = order
         } catch is CancellationError { return
         } catch { if store.session?.accessToken == token, requestSequence == sequence { self.error = error.localizedDescription } }
         if requestSequence == sequence { loading = false }
     }
 
-    private func openOrder(id: String) {
+    private func openOrder(id: String, revealOwnerContact: Bool = false) {
+        guard cancellingOrderId.isEmpty else { return }
         detailReadTask?.cancel()
-        detailReadTask = Task { await loadOrder(id: id) }
+        detailReadTask = Task { await loadOrder(id: id, revealOwnerContact: revealOwnerContact) }
     }
 
     @MainActor private func startAlipayPayment(order: [String: Any]) async {
         guard let orderId = order["Id"] as? String, let parsedId = Int64(orderId), parsedId > 0,
               let token = store.session?.accessToken, let requestedPrincipal = nativeTourismPrincipal(token), busyPaymentOrderId.isEmpty,
+              scenePhase == .active, !loading, cancellingOrderId.isEmpty, cancellationEntry(order)?.check == nil,
+              activeRecoveryContext == recoveryContext, hasVisibleOrder(orderId), isValidOrder(order, expectedId: orderId),
+              canStartBookingWrite(orderId, principal: requestedPrincipal),
               bookingCanStartAlipayPayment(order, kind: kind) else {
             error = "当前订单或支付状态不适合发起此支付，请刷新本人订单状态。"; return
         }
@@ -465,6 +500,7 @@ struct NativeBookingOrdersView: View {
                     : "暂时无法确认\(requestedKind == "hotel" ? "住宿" : "旅游线路")预订状态，当前不能继续支付。"
                 return
             }
+            guard scenePhase == .active, canStartBookingWrite(orderId, principal: requestedPrincipal) else { return }
             let controller = kind == "hotel" ? "JHCTIHotelBooking" : "JHCTITravelRouteBooking"
             guard let payment = try await MobileAPI(store: store).post("/api/\(controller)/CreateOrderPayment", body: [
                 "OrderId": orderId, "Provider": "alipay", "Scene": "wap"
@@ -492,7 +528,7 @@ struct NativeBookingOrdersView: View {
             guard store.session?.accessToken == token, requestSequence == activeSequence, kind == requestedKind else { return }
             if requestedKind == "route" {
                 let wasOrderDetailOpen = selectedOrder?["Id"] as? String == orderId
-                if wasOrderDetailOpen { await loadOrder(id: orderId) }
+                if wasOrderDetailOpen { await loadOrder(id: orderId, masked: recoveryDetail) }
                 else { await load(reset: true) }
                 guard store.session?.accessToken == token, kind == requestedKind else { return }
             }
@@ -500,39 +536,257 @@ struct NativeBookingOrdersView: View {
         }
     }
 
-    private func cancelOrder(_ order: [String: Any]) async {
-        guard let id = order["Id"] as? String, !id.isEmpty,
-              let token = store.session?.accessToken, let requestedPrincipal = nativeTourismPrincipal(token), cancellingOrderId.isEmpty else { return }
+    private struct BookingCancellationLookupResult {
+        let attempt: NativeBookingCancellationAttempt
+        let orderLabel: String?
+        let message: String
+        let canReopen: Bool
+    }
+
+    private var activeRecoveryContext: String? {
+        nativeTourismPrincipal(store.session?.accessToken).map { "\($0):\(kind)" }
+    }
+
+    private var showsRecovery: Bool {
+        activeRecoveryContext == recoveryContext && (recoveryStorageError || !pendingCancellations.isEmpty || recoveryResult != nil)
+    }
+
+    private func hasVisibleOrder(_ id: String) -> Bool {
+        selectedOrder?["Id"] as? String == id || rows.contains { $0["Id"] as? String == id }
+    }
+
+    private func restoreCancellationRecovery(principal: String) {
+        let context = "\(principal):\(kind)"
+        if recoveryContext != context { recoveryResult = nil; pendingCancellations = [] }
+        recoveryContext = context
+        do {
+            pendingCancellations = try NativeBookingCancellationRecovery(principal: principal, kind: kind).read()
+            recoveryStorageError = false
+        } catch { recoveryStorageError = true }
+    }
+
+    private func cancellationBlocked(_ order: [String: Any]) -> Bool {
+        guard let id = order["Id"] as? String else { return true }
+        return activeRecoveryContext != recoveryContext || recoveryStorageError
+            || pendingCancellations.contains { $0.id == id } || cancellationEntry(order)?.check != nil
+    }
+
+    private func canStartBookingWrite(_ id: String, principal: String) -> Bool {
+        restoreCancellationRecovery(principal: principal)
+        return !recoveryStorageError && !pendingCancellations.contains { $0.id == id }
+    }
+
+    @ViewBuilder private func recoveryControls(only id: String? = nil) -> some View {
+        if showsRecovery {
+            let attempts = pendingCancellations.filter { id == nil || $0.id == id }
+            let result = recoveryResult.flatMap { id == nil || $0.attempt.id == id ? $0 : nil }
+            if !attempts.isEmpty || result != nil || recoveryStorageError {
+                VStack(alignment: .leading, spacing: 8) {
+                    if recoveryStorageError { Text("暂时无法读取或保存取消核对记录，请刷新订单后重试。") }
+                    if !attempts.isEmpty { Text("待核对的取消").fontWeight(.semibold) }
+                    ForEach(attempts) { attempt in
+                        Button(cancellingOrderId == attempt.id ? "正在核对…" : "核对订单编号 \(attempt.id)") {
+                            startRecoveryRead(attempt)
+                        }.disabled(loading || !cancellingOrderId.isEmpty || !busyPaymentOrderId.isEmpty)
+                    }
+                    if let result {
+                        if let orderLabel = result.orderLabel { Text(orderLabel) }
+                        Text(result.message)
+                        if result.canReopen {
+                            Button("按最新状态处理") { startRecoveryRead(result.attempt, reopen: true) }
+                                .disabled(loading || !cancellingOrderId.isEmpty || !busyPaymentOrderId.isEmpty)
+                        }
+                    }
+                }.font(.system(size: NativeTypography.size(13))).buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private func startRecoveryRead(_ attempt: NativeBookingCancellationAttempt, reopen: Bool = false) {
+        guard cancellingOrderId.isEmpty else { return }
+        recoveryReadTask?.cancel()
+        recoveryReadTask = Task { await readCancellationRecovery(attempt, reopen: reopen) }
+    }
+
+    @MainActor private func readCancellationRecovery(_ attempt: NativeBookingCancellationAttempt, reopen: Bool) async {
+        guard scenePhase == .active, !loading, cancellingOrderId.isEmpty, busyPaymentOrderId.isEmpty,
+              let token = store.session?.accessToken, let principal = nativeTourismPrincipal(token),
+              !reopen || (recoveryResult?.attempt == attempt && recoveryResult?.canReopen == true) else { return }
         let requestedKind = kind
+        let sequence = requestSequence
+        cancellingOrderId = attempt.id; recoveryResult = nil
+        defer { if cancellingOrderId == attempt.id { cancellingOrderId = "" } }
+        func isCurrent() -> Bool {
+            !Task.isCancelled && scenePhase == .active && store.session?.accessToken == token
+                && kind == requestedKind && requestSequence == sequence
+        }
+        do {
+            let recovery = try NativeBookingCancellationRecovery(principal: principal, kind: requestedKind)
+            guard try recovery.read().contains(attempt) else { restoreCancellationRecovery(principal: principal); return }
+            let order = try await readCancellationOrder(attempt.id, kind: requestedKind, principal: principal)
+            guard isCurrent() else { return }
+            let progressed = attempt.hasProgress(order)
+            let canReopen = !progressed && bookingCanRequestCancellation(order, kind: requestedKind)
+            let opened = reopen && canReopen
+            if progressed || opened {
+                pendingCancellations = try recovery.remove(attempt)
+                recoveryStorageError = false
+                cancellationNotices["\(requestedKind):\(attempt.id)"] = nil
+            }
+            if let index = rows.firstIndex(where: { $0["Id"] as? String == attempt.id }) { rows[index] = order }
+            if opened || selectedOrder?["Id"] as? String == attempt.id {
+                selectedOrder = order; recoveryDetail = true; ownerContactRevealed = false
+            }
+            let status = bookingStatus(order["Status"] as? String ?? "", paymentStatus: order["PaymentStatus"] as? String ?? "")
+            recoveryResult = BookingCancellationLookupResult(attempt: attempt,
+                orderLabel: "订单 \(order["OrderNo"] as? String ?? attempt.id) · \(status)",
+                message: progressed ? "已读取原订单最新进度。" : opened ? "已打开最新订单，可按当前条件重新确认。" : "原订单暂未显示新的取消进度。",
+                canReopen: canReopen && !opened)
+        } catch is CancellationError { return }
+        catch {
+            guard isCurrent() else { return }
+            restoreCancellationRecovery(principal: principal)
+            recoveryResult = BookingCancellationLookupResult(attempt: attempt, orderLabel: nil,
+                message: "暂时无法核对原订单，请稍后再试。", canReopen: false)
+        }
+    }
+
+    private func readCancellationOrder(_ id: String, kind: String, principal: String) async throws -> [String: Any] {
+        let controller = kind == "hotel" ? "JHCTIHotelBooking" : "JHCTITravelRouteBooking"
+        let contact = kind == "hotel" ? "&includeOwnerContact=false" : ""
+        guard let response = try await MobileAPI(store: store).get("/api/\(controller)/GetMyOrder?id=\(id)\(contact)",
+            authenticated: true, expectedPrincipal: principal, requireExplicitResponse: true) as? [String: Any] else {
+            throw MobileAPIError.unavailable("订单详情格式异常")
+        }
+        var order = normalizedNativeBookingPaymentStatus(response)
+        guard self.kind == kind, isValidOrder(order, expectedId: id) else { throw MobileAPIError.unavailable("订单详情与原订单不一致") }
+        if kind == "hotel" { order["OwnerContactName"] = NSNull(); order["OwnerContactPhone"] = NSNull() }
+        return order
+    }
+
+    private func cancellationEntry(_ order: [String: Any]) -> NativeBookingCancellationNotice? {
+        guard let id = order["Id"] as? String else { return nil }
+        return cancellationNotices["\(kind):\(id)"]
+    }
+
+    @ViewBuilder private func cancellationNotice(_ order: [String: Any]) -> some View {
+        if let notice = cancellationEntry(order) {
+            Text(notice.message).font(.system(size: NativeTypography.size(13))).foregroundStyle(Brand.muted)
+            if notice.check != nil {
+                Button("核对此订单的取消状态") { Task { await cancelOrder(order, checkOnly: true) } }
+                    .disabled(loading || !cancellingOrderId.isEmpty || !busyPaymentOrderId.isEmpty)
+            }
+        }
+    }
+
+    @MainActor private func cancelOrder(_ order: [String: Any], checkOnly: Bool = false) async {
+        guard scenePhase == .active, !loading, busyPaymentOrderId.isEmpty, cancellingOrderId.isEmpty,
+              let id = order["Id"] as? String, isValidOrder(order, expectedId: id), activeRecoveryContext == recoveryContext, hasVisibleOrder(id),
+              let token = store.session?.accessToken, let requestedPrincipal = nativeTourismPrincipal(token) else { return }
+        let requestedKind = kind
+        let key = "\(requestedKind):\(id)"
+        let previous = cancellationNotices[key]
+        guard (previous?.check != nil) == checkOnly,
+              checkOnly || (bookingCanRequestCancellation(order, kind: requestedKind)
+                && canStartBookingWrite(id, principal: requestedPrincipal)) else { return }
+        let baseline = (checkOnly ? previous?.baseline : nil) ?? NativeBookingCancellationBaseline(order)
+        let sequence = requestSequence
         cancellingOrderId = id; error = nil
         defer { if cancellingOrderId == id { cancellingOrderId = "" } }
-        do {
-            let path: String
-            if kind == "hotel", (order["Status"] as? String) == "PendingPayment" {
-                path = "/api/JHCTIHotelBooking/CancelMyPendingOrder?id=\(id)"
-            } else {
-                let controller = kind == "hotel" ? "JHCTIHotelBooking" : "JHCTITravelRouteBooking"
-                path = "/api/\(controller)/RequestCancellation?id=\(id)"
+        func isCurrent() -> Bool {
+            !Task.isCancelled && scenePhase == .active && store.session?.accessToken == token
+                && kind == requestedKind && requestSequence == sequence
+        }
+        func notice(_ message: String, check: NativeBookingCancellationCheck? = nil) {
+            cancellationNotices[key] = NativeBookingCancellationNotice(message: message, check: check, baseline: baseline)
+        }
+        let controller = requestedKind == "hotel" ? "JHCTIHotelBooking" : "JHCTITravelRouteBooking"
+        let api = MobileAPI(store: store)
+        func readOrder() async throws -> [String: Any] {
+            let latest = try await readCancellationOrder(id, kind: requestedKind, principal: requestedPrincipal)
+            guard nativeBookingCancellationMatchesOrder(order, latest, kind: requestedKind) else {
+                throw MobileAPIError.unavailable("订单详情与原订单不一致")
             }
-            let receipt = try await MobileAPI(store: store).post(path, body: [:], authenticated: true, expectedPrincipal: requestedPrincipal) as? String
-            guard store.session?.accessToken == token else { return }
-            guard receipt == id else { throw MobileAPIError.unavailable("取消回执与当前订单不一致，请刷新状态核对") }
-            if selectedOrder?["Id"] as? String == id { await loadOrder(id: id) }
-            else { await load(reset: true) }
-        } catch {
-            guard store.session?.accessToken == token, kind == requestedKind else { return }
-            if requestedKind == "route" {
-                let wasOrderDetailOpen = selectedOrder?["Id"] as? String == id
-                if wasOrderDetailOpen { await loadOrder(id: id) }
-                else { await load(reset: true) }
-                guard store.session?.accessToken == token, kind == requestedKind else { return }
-                let latest = wasOrderDetailOpen ? selectedOrder : rows.first(where: { $0["Id"] as? String == id })
-                if let latest, (latest["Status"] as? String) != (order["Status"] as? String) {
-                    self.error = "订单状态已更新，请查看订单。"
+            return latest
+        }
+        func reconcile(_ latest: [String: Any], rejected: Bool = false) {
+            do {
+                let recovery = try NativeBookingCancellationRecovery(principal: requestedPrincipal, kind: requestedKind)
+                if let attempt = try recovery.read().first(where: { $0.id == id }), rejected || attempt.hasProgress(latest) {
+                    pendingCancellations = try recovery.remove(attempt)
+                    recoveryStorageError = false
+                }
+            } catch { recoveryStorageError = true }
+        }
+        func apply(_ latest: [String: Any]) {
+            if let index = rows.firstIndex(where: { $0["Id"] as? String == id }) { rows[index] = latest }
+            if let selectedOrder, selectedOrder["Id"] as? String == id {
+                var detail = latest
+                if requestedKind == "hotel" {
+                    // 状态核对只读脱敏数据，详情保留本次打开时已校验的联系人。
+                    detail["OwnerContactName"] = selectedOrder["OwnerContactName"]
+                    detail["OwnerContactPhone"] = selectedOrder["OwnerContactPhone"]
+                }
+                self.selectedOrder = detail
+                ownerContactRevealed = false
+            }
+        }
+        var check = previous?.check ?? .refresh
+        var rejection: String?
+        do {
+            let current = try await readOrder()
+            guard isCurrent() else { return }
+            let latest: [String: Any]
+            if checkOnly { latest = current }
+            else {
+                guard nativeBookingCancellationConditionsMatch(order, current) else {
+                    apply(current)
+                    notice("订单状态或取消条件已变化，请按最新状态处理。")
                     return
                 }
+                let expectedAction = nativeBookingCancellationAction(order)
+                let action = requestedKind == "hotel" && expectedAction == "CloseUnpaid"
+                    ? "CancelMyPendingOrder" : "RequestCancellation"
+                let confirmation = action == "RequestCancellation" ? "&expectedAction=\(expectedAction)" : ""
+                do {
+                    let recovery = try NativeBookingCancellationRecovery(principal: requestedPrincipal, kind: requestedKind)
+                    pendingCancellations = try recovery.add(NativeBookingCancellationAttempt(order: current))
+                    recoveryStorageError = false; recoveryResult = nil
+                } catch {
+                    recoveryStorageError = true
+                    notice("取消请求尚未提交，请刷新后核对本机记录。")
+                    return
+                }
+                check = .pending
+                notice("取消结果尚未确认，请核对此订单。", check: check)
+                do {
+                    let receipt = try await api.post("/api/\(controller)/\(action)?id=\(id)\(confirmation)", body: [:], authenticated: true,
+                        expectedPrincipal: requestedPrincipal, canRefresh: false) as? String
+                    if receipt == id { check = .accepted }
+                } catch is CancellationError { return
+                } catch {
+                    if let status = (error as? MobileAPIError)?.httpStatusCode,
+                       (400..<500).contains(status), status != 408, status != 429 {
+                        rejection = error.localizedDescription
+                        if action == "RequestCancellation", status == 409, isCurrent() { reconcile(current, rejected: true) }
+                    }
+                }
+                guard isCurrent() else { return }
+                latest = try await readOrder()
             }
-            self.error = "\(error.localizedDescription)。请刷新订单核对；为避免重复提交，不会自动再次申请。"
+            guard isCurrent() else { return }
+            reconcile(latest)
+            apply(latest)
+            if baseline.hasResult(in: latest) || check == .refresh { notice("已核对订单，请查看最新状态。") }
+            else if let rejection { notice(rejection) }
+            else if check == .accepted { notice("取消请求已受理，可在此订单继续核对。", check: check) }
+            else { notice("取消结果尚未确认，请稍后核对此订单。", check: check) }
+        } catch is CancellationError { return
+        } catch {
+            guard isCurrent() else { return }
+            if let rejection { notice(rejection, check: .refresh) }
+            else if !checkOnly && check == .refresh { notice("暂时无法核对订单，取消请求尚未提交。", check: .refresh) }
+            else { notice("暂时无法读取此订单，请稍后再核对。", check: check) }
         }
     }
 
@@ -598,10 +852,12 @@ private func bookingCancellationTitle(_ order: [String: Any]) -> String {
 }
 
 private func bookingCancellationConfirmation(_ order: [String: Any], kind: String) -> String {
-    if (order["Status"] as? String) == "PendingPayment" {
-        return kind == "hotel" ? "关闭后会释放预留房间；未支付订单不会产生退款。" : "关闭后会释放预留名额；未支付订单不会产生退款。"
+    let action = nativeBookingCancellationAction(order)
+    if action == "CloseUnpaid" {
+        return kind == "hotel" ? "系统会先核对支付结果，确认未收款后关闭订单并释放预留房间。" : "关闭后会释放预留名额；未支付订单不会产生退款。"
     }
-    return "系统会按下单时保存的取消规则处理；符合免费取消条件时按原支付渠道退款，其他情况转平台审核。"
+    if action == "FreeCancellation" { return "当前仍在免费取消期限内，系统将按下单时的规则办理原渠道退款。" }
+    return "提交后由平台审核，审核通过后按原支付渠道退款。"
 }
 
 func nativeTradePaymentNeedsReconciliation(_ order: [String: Any]) -> Bool {

@@ -35,6 +35,8 @@ func nativeDiningQueuePage(_ response: [String: Any], page: Int, pageSize: Int,
           consistentInteger(["PageSize", "pageSize"]) == pageSize,
           let total = consistentInteger(["DataCount", "dataCount", "Total", "total"]),
           total >= rows.count else { return nil }
+    let lastPage = max(1, total / pageSize + (total % pageSize == 0 ? 0 : 1))
+    guard page <= lastPage, rows.count == min(pageSize, total - (page - 1) * pageSize) else { return nil }
 
     let allowedStatuses: Set<String> = ["Waiting", "Called", "Completed", "Missed", "Cancelled"]
     var ids = Set<String>()
@@ -53,13 +55,13 @@ func nativeDiningQueuePage(_ response: [String: Any], page: Int, pageSize: Int,
               string("SessionId") == sessionID, string("StoreId") == storeID,
               let userID = string("UserId"), userID.range(of: "^[1-9][0-9]{0,18}$", options: .regularExpression) != nil,
               userID.count < 19 || userID <= "9223372036854775807",
-              let date = string("QueueDate"), date.hasPrefix(queueDate),
-              let queueNumber = integer(row["QueueNumber"]), queueNumber > 0,
+              nativeQueueDayMatches(string("QueueDate"), queueDate),
+              let queueNumber = nativeQueueInteger(row, "QueueNumber"), queueNumber > 0,
               let guestName = string("GuestName"), !guestName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, guestName.count <= 80,
               let guestPhone = string("GuestPhone"), !guestPhone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, guestPhone.count <= 40,
-              let guestCount = integer(row["GuestCount"]), (1...30).contains(guestCount),
+              let guestCount = nativeQueueInteger(row, "GuestCount"), (1...30).contains(guestCount),
               let status = string("Status"), allowedStatuses.contains(status),
-              let createdAt = string("CreateTime"), bookingBusinessDateTime(createdAt) != nil,
+              let createdAt = string("CreateTime"), nativeBusinessDateTime(createdAt) != nil,
               ids.insert(id).inserted, queueNumbers.insert(queueNumber).inserted else { return nil }
     }
     return (rows, total)

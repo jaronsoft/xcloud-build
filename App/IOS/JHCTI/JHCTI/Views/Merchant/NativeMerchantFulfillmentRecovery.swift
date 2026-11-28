@@ -14,8 +14,12 @@ struct NativeMerchantRecoveryStore<Record: NativeMerchantRecoveryRecord> {
     private let fileName: String
 
     init(directoryName: String, principal: String, merchantID: String) {
+        self.init(directoryName: directoryName, principal: principal, scopeID: merchantID)
+    }
+
+    init(directoryName: String, principal: String, scopeID: String) {
         self.directoryName = directoryName
-        let digest = SHA256.hash(data: Data("\(principal):\(merchantID)".utf8))
+        let digest = SHA256.hash(data: Data("\(principal):\(scopeID)".utf8))
             .map { String(format: "%02x", $0) }.joined()
         fileName = "\(digest).json"
     }
@@ -43,7 +47,11 @@ struct NativeMerchantRecoveryStore<Record: NativeMerchantRecoveryRecord> {
     }
 
     func save(_ record: Record) -> Bool {
-        guard read() == .ready, record.valid else { return false }
+        replace(.ready, with: record)
+    }
+
+    func replace(_ expected: NativeMerchantRecoveryState<Record>, with record: Record) -> Bool {
+        guard expected != .unavailable, expected != .damaged, read() == expected, record.valid else { return false }
         do {
             // 发出写请求前原子落盘并读回，应用重新启动后仍能核对原操作。
             try JSONEncoder().encode(record).write(to: fileURL(), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])

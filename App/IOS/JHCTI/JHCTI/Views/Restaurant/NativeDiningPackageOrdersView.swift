@@ -3,6 +3,8 @@ import SwiftUI
 struct NativeDiningPackageOrdersView: View {
     @ObservedObject var store: SessionStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var recovery = NativeDiningPackageRefundRecovery()
     @State private var rows = [[String: Any]]()
     @State private var revealed = Set<String>()
     @State private var refundCredential: [String: Any]?
@@ -14,33 +16,37 @@ struct NativeDiningPackageOrdersView: View {
     @State private var page = 1
     @State private var total = 0
     @State private var loading = false
-    @State private var busy = false
     @State private var error: String?
     @State private var notice: String?
     @State private var revision = 0
     @State private var requestSequence = 0
     @State private var refundRequestSequence = 0
-    @State private var refundSubmissionSequence = 0
+    @State private var visible = false
     private let pageSize = 20
+    private var busy: Bool { recovery.busy }
+    private var principal: String? { nativeTourismPrincipal(store.session?.accessToken) }
 
     var body: some View {
         NavigationStack {
-            Group {
-                if loading && rows.isEmpty { ProgressView("正在读取团购订单…") }
-                else if let error, rows.isEmpty {
-                    ContentUnavailableView(error, systemImage: "exclamationmark.arrow.circlepath", description: Text("检查登录状态后重试。"))
-                } else if rows.isEmpty {
-                    ContentUnavailableView("暂无团购订单", systemImage: "ticket", description: Text("购买的套餐、凭证和退款状态会显示在这里。"))
-                } else {
+            VStack(spacing: 0) {
+                if recovery.attempts?.isEmpty == false || recovery.message != nil || !rows.isEmpty {
                     List {
+                        refundRecoverySection
+                        if let error { Text(error).font(.caption).foregroundStyle(.red) }
                         ForEach(Array(rows.enumerated()), id: \.offset) { _, order in orderCard(order) }
                         if rows.count < total {
                             Button(loading ? "正在加载…" : "加载更多") { Task { await load(reset: false) } }
                                 .frame(maxWidth: .infinity).disabled(loading)
                         }
                     }.listStyle(.plain)
+                } else if loading { ProgressView("正在读取团购订单…") }
+                else if let error, rows.isEmpty {
+                    ContentUnavailableView(error, systemImage: "exclamationmark.arrow.circlepath", description: Text("检查登录状态后重试。"))
+                } else {
+                    ContentUnavailableView("暂无团购订单", systemImage: "ticket", description: Text("购买的套餐、凭证和退款状态会显示在这里。"))
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Brand.background)
             .navigationTitle("我的团购券")
             .navigationBarTitleDisplayMode(.inline)
@@ -48,13 +54,25 @@ struct NativeDiningPackageOrdersView: View {
                 ToolbarItem(placement: .topBarLeading) { Button("刷新") { revision += 1 }.disabled(loading || busy) }
                 ToolbarItem(placement: .topBarTrailing) { Button("关闭") { dismiss() } }
             }
-            .task(id: "\(store.session?.accessToken ?? "")-\(revision)") { await load(reset: true) }
-            .onChange(of: store.session?.accessToken) { _, _ in
-                requestSequence += 1; refundRequestSequence += 1; refundSubmissionSequence += 1
-                busy = false; rows = []; revealed = []; refunds = []; refundCredential = nil
-                refundOrder = nil; refundReason = ""; total = 0; page = 1; error = nil; notice = nil
+            .onAppear { visible = true }
+            .task(id: "\(store.session?.accessToken ?? "")-\(revision)") {
+                if scenePhase == .active { recovery.reload(store: store) }
+                await load(reset: true)
             }
-            .onDisappear { requestSequence += 1; refundRequestSequence += 1; refundSubmissionSequence += 1; rows = []; revealed = []; refunds = [] }
+            .onChange(of: principal) { _, _ in
+                rows = []; revealed = []; total = 0; page = 1; error = nil; notice = nil; paymentOrderID = ""
+                invalidateRefunds()
+                if scenePhase == .active { recovery.reload(store: store) }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { recovery.reload(store: store) }
+                else { invalidateRefunds() }
+            }
+            .onDisappear {
+                visible = false
+                requestSequence += 1; rows = []; revealed = []
+                invalidateRefunds()
+            }
             .sheet(item: Binding(
                 get: { refundCredential.map { RefundCredentialItem(value: $0) } },
                 set: { if $0 == nil { refundCredential = nil; refundOrder = nil; refundReason = "" } }
@@ -82,6 +100,40 @@ struct NativeDiningPackageOrdersView: View {
             .alert("服务提示", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
                 Button("知道了") { notice = nil }
             } message: { Text(notice ?? "") }
+        }
+    }
+
+    private func invalidateRefunds() {
+        recovery.invalidate()
+        refundRequestSequence += 1
+        refunds = []; refundsOrderNo = ""; refundCredential = nil; refundOrder = nil; refundReason = ""; notice = nil
+    }
+
+    @ViewBuilder private var refundRecoverySection: some View {
+        if let message = recovery.message { Text(message).font(.callout) }
+        if let attempts = recovery.attempts {
+            if !attempts.isEmpty {
+                Section("待核对退款申请") {
+                    ForEach(attempts) { attempt in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("订单编号 \(attempt.orderID)").font(.callout)
+                            Text("原申请号 \(attempt.requestID)").font(.caption).foregroundStyle(Brand.muted).textSelection(.enabled)
+                            Button("查询原申请") { Task { await lookupRefund(attempt, release: false) } }.buttonStyle(.borderless)
+                            if recovery.missingRequestID == attempt.requestID {
+                                Text("暂未查到原申请。请先核对该订单的退款记录，再复查一次。").font(.caption)
+                                Button("查看退款记录") {
+                                    Task { await loadRefunds(orderID: attempt.orderID, orderNo: attempt.orderID) }
+                                }.buttonStyle(.borderless)
+                                Button("已核对退款记录，复查原申请") {
+                                    Task { await lookupRefund(attempt, release: true) }
+                                }.buttonStyle(.borderless)
+                            }
+                        }.disabled(busy || scenePhase != .active)
+                    }
+                }
+            }
+        } else if !rows.isEmpty && scenePhase == .active {
+            Text("暂时无法读取退款待核对记录，请刷新后再试。").font(.caption)
         }
     }
 
@@ -133,9 +185,11 @@ struct NativeDiningPackageOrdersView: View {
             } else {
                 Button("显示凭证码") { revealed.insert(id) }.font(.caption)
             }
-            if state == "Active", (order["Status"] as? String) == "Paid" {
+            if state == "Active", (order["Status"] as? String) == "Paid",
+               order["HasUnavailablePayment"] as? Bool != true, order["HasUnmatchedPayment"] as? Bool != true,
+               recovery.attempts?.contains(where: { $0.credentialID == id }) == false {
                 Button("申请退款") { refundOrder = order; refundCredential = credential; refundReason = "" }
-                    .font(.caption).foregroundStyle(.red).disabled(busy)
+                    .font(.caption).foregroundStyle(.red).disabled(busy || loading || scenePhase != .active)
             }
         }
         .padding(9).frame(maxWidth: .infinity, alignment: .leading)
@@ -149,8 +203,9 @@ struct NativeDiningPackageOrdersView: View {
                     .font(.caption).foregroundStyle(Brand.muted)
                 TextField("请填写退款原因", text: $refundReason, axis: .vertical).lineLimit(3...6)
                 if let error { Text(error).foregroundStyle(.red) }
+                if let message = recovery.message { Text(message).foregroundStyle(.red) }
                 Button(busy ? "正在提交…" : "提交退款申请") { Task { await submitRefund(credential) } }
-                    .disabled(busy || refundReason.trimmingCharacters(in: .whitespacesAndNewlines).count < 2)
+                    .disabled(busy || scenePhase != .active || refundReason.trimmingCharacters(in: .whitespacesAndNewlines).count < 2)
             }
             .navigationTitle("申请团购券退款")
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("取消") { refundCredential = nil; refundOrder = nil } } }
@@ -187,27 +242,25 @@ struct NativeDiningPackageOrdersView: View {
     }
 
     private func submitRefund(_ credential: [String: Any]) async {
-        guard !busy, let token = store.session?.accessToken, let order = refundOrder,
-              let orderID = order["Id"] as? String, let credentialID = credential["Id"] as? String else { return }
-        let requestedPrincipal = MobileAPI(store: store).nativeTourismPrincipal(token)
+        guard visible, !busy, !loading, scenePhase == .active, let order = refundOrder,
+              let orderID = order["Id"] as? String, let credentialID = credential["Id"] as? String,
+              refundCredential?["Id"] as? String == credentialID,
+              credential["Status"] as? String == "Active", order["Status"] as? String == "Paid",
+              order["HasUnavailablePayment"] as? Bool != true, order["HasUnmatchedPayment"] as? Bool != true else { return }
         let reason = refundReason.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard reason.count >= 2, reason.count <= 500 else { error = "退款原因需为 2 至 500 个字符"; return }
-        refundSubmissionSequence += 1
-        let sequence = refundSubmissionSequence
-        busy = true; error = nil
-        defer { if sequence == refundSubmissionSequence { busy = false } }
-        do {
-            _ = try await MobileAPI(store: store).post("/api/JHCTIDiningPackage/RequestRefund", body: ["OrderId": orderID, "CredentialIds": [credentialID], "Reason": reason], authenticated: true, expectedPrincipal: requestedPrincipal)
-            guard store.session?.accessToken == token else { return }
-            refundCredential = nil; refundOrder = nil; refundReason = ""; notice = "退款申请已提交，处理状态以订单退款记录为准。"
+        guard (2...500).contains(reason.utf16.count) else { error = "退款原因需为 2 至 500 个字符"; return }
+        error = nil
+        let attempt = NativeDiningRefundAttempt(orderID: orderID, credentialID: credentialID)
+        if await recovery.submit(attempt, reason: reason, store: store, onDispatched: {
+            refundCredential = nil; refundOrder = nil; refundReason = ""
+        }) {
             revision += 1
-        } catch is CancellationError {
-            if store.session?.accessToken == token {
-                self.error = "退款申请结果未确认。请先刷新团购订单并查看退款记录，确认前不要重复提交。"
-            }
-        } catch {
-            if store.session?.accessToken == token { self.error = error.localizedDescription }
         }
+    }
+
+    private func lookupRefund(_ attempt: NativeDiningRefundAttempt, release: Bool) async {
+        guard visible, scenePhase == .active else { return }
+        if await recovery.lookup(attempt, release: release, store: store) { revision += 1 }
     }
 
     private func canContinueAlipayPayment(_ order: [String: Any]) -> Bool {
@@ -234,7 +287,7 @@ struct NativeDiningPackageOrdersView: View {
     }
 
     private func loadRefunds(orderID: String, orderNo: String) async {
-        guard !orderID.isEmpty, let token = store.session?.accessToken else { return }
+        guard visible, scenePhase == .active, trackingID(orderID), let token = store.session?.accessToken else { return }
         let requestedPrincipal = MobileAPI(store: store).nativeTourismPrincipal(token)
         refundRequestSequence += 1
         let sequence = refundRequestSequence
@@ -263,7 +316,7 @@ struct NativeDiningPackageOrdersView: View {
     private func date(_ value: Any?) -> String { String((value as? String ?? "").prefix(10)).isEmpty ? "—" : String((value as? String ?? "").prefix(10)) }
     private func orderStatus(_ value: String) -> String { ["PendingPayment":"待支付", "Paid":"已付款", "Closed":"已关闭", "Refunded":"已退款"][value] ?? "状态待确认" }
     private func credentialStatus(_ value: String) -> String { ["Active":"可使用", "Redeemed":"已核销", "RefundPending":"退款审核中", "Refunded":"已退款", "Expired":"已过期"][value] ?? "状态待确认" }
-    private func refundStatus(_ value: String) -> String { ["Requested":"待审核", "Processing":"退款处理中", "Refunded":"已退款", "Rejected":"未通过", "Failed":"退款失败"][value] ?? "状态待确认" }
+    private func refundStatus(_ value: String) -> String { nativeDiningRefundStatus(value) }
 }
 
 

@@ -49,6 +49,7 @@
         B66D00000000000000000001 /* ResourceDetailSupportingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66D00000000000000000002 /* ResourceDetailSupportingViews.swift */; };
         B66C00000000000000000001 /* NativeHomeRecommendationRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66C00000000000000000002 /* NativeHomeRecommendationRules.swift */; };
         B66B00000000000000000001 /* NativeBookingPresentationRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66B00000000000000000002 /* NativeBookingPresentationRules.swift */; };
+        B6F400000000000000000001 /* NativeBookingCancellationRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6F400000000000000000002 /* NativeBookingCancellationRecovery.swift */; };
         B6D100000000000000000001 /* NativeTicketCatalogSelectionRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D100000000000000000002 /* NativeTicketCatalogSelectionRules.swift */; };
         B64C00000000000000000001 /* HotelPublicDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64C00000000000000000002 /* HotelPublicDetailView.swift */; };
 		B6E400000000000000000001 /* HotelPublicDetailSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E400000000000000000002 /* HotelPublicDetailSupport.swift */; };
@@ -75,6 +76,7 @@
         B66200000000000000000001 /* NativeRestaurantWorkbenchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66200000000000000000002 /* NativeRestaurantWorkbenchViews.swift */; };
         B6C900000000000000000001 /* NativeRestaurantSupplementaryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C900000000000000000002 /* NativeRestaurantSupplementaryViews.swift */; };
         B6C900000000000000000009 /* NativeDiningPackageRedemption.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C90000000000000000000A /* NativeDiningPackageRedemption.swift */; };
+        B6C90000000000000000000B /* NativeDiningPackageRefundRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C90000000000000000000C /* NativeDiningPackageRefundRecovery.swift */; };
         B66300000000000000000001 /* DiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66300000000000000000002 /* DiscoverView.swift */; };
         B66400000000000000000001 /* NativeCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66400000000000000000002 /* NativeCatalogView.swift */; };
         B66500000000000000000001 /* HotelCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66500000000000000000002 /* HotelCatalogView.swift */; };
@@ -105,9 +107,12 @@
         B64600000000000000000001 /* NativeCommerceOrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64600000000000000000002 /* NativeCommerceOrdersView.swift */; };
 		B6CE00000000000000000001 /* NativeCommerceDigitalDeliverySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6CE00000000000000000002 /* NativeCommerceDigitalDeliverySection.swift */; };
 		B6CA00000000000000000001 /* NativeCommerceOrderItemsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6CA00000000000000000002 /* NativeCommerceOrderItemsSection.swift */; };
+		B6CB00000000000000000001 /* NativeCommerceOrderReviewRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6CB00000000000000000002 /* NativeCommerceOrderReviewRecovery.swift */; };
 		B6C100000000000000000001 /* NativeCommerceShipmentCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C100000000000000000002 /* NativeCommerceShipmentCard.swift */; };
+		B6C100000000000000000003 /* NativeCommerceShipmentReceipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C100000000000000000004 /* NativeCommerceShipmentReceipt.swift */; };
         B64700000000000000000001 /* NativeCommerceOrderSupportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64700000000000000000002 /* NativeCommerceOrderSupportViews.swift */; };
         B64400000000000000000001 /* ActivityRegistrationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64400000000000000000002 /* ActivityRegistrationsView.swift */; };
+        B64400000000000000000005 /* NativeRecordOperationRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64400000000000000000004 /* NativeRecordOperationRecovery.swift */; };
         B6E800000000000000000001 /* MyActivityRegistrationRecordCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E800000000000000000002 /* MyActivityRegistrationRecordCard.swift */; };
         B6D200000000000000000001 /* ActivityRegistrationConfirmationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D200000000000000000002 /* ActivityRegistrationConfirmationOverlay.swift */; };
         B64500000000000000000001 /* NativeActivityQrScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64500000000000000000002 /* NativeActivityQrScanner.swift */; };
@@ -130,6 +135,9 @@
         B63100000000000000000001 /* NativeDiningQueuePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63100000000000000000002 /* NativeDiningQueuePage.swift */; };
         B63000000000000000000001 /* RestaurantQueueManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63000000000000000000002 /* RestaurantQueueManagementView.swift */; };
         B62900000000000000000001 /* RestaurantReservationManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62900000000000000000002 /* RestaurantReservationManagementView.swift */; };
+        B62900000000000000000005 /* NativeDiningReservationRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62900000000000000000004 /* NativeDiningReservationRecovery.swift */; };
+        B62900000000000000000007 /* NativeDiningReservationCreation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62900000000000000000006 /* NativeDiningReservationCreation.swift */; };
+        B63100000000000000000005 /* NativeDiningQueueRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63100000000000000000004 /* NativeDiningQueueRecovery.swift */; };
         B62800000000000000000001 /* NativeIdentityConsentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62800000000000000000002 /* NativeIdentityConsentView.swift */; };
         B62700000000000000000001 /* NativeAccountCancellationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62700000000000000000002 /* NativeAccountCancellationView.swift */; };
         B62600000000000000000001 /* NativeTicketOrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62600000000000000000002 /* NativeTicketOrdersView.swift */; };
@@ -206,6 +214,7 @@
         B66D00000000000000000002 /* ResourceDetailSupportingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceDetailSupportingViews.swift; sourceTree = "<group>"; };
         B66C00000000000000000002 /* NativeHomeRecommendationRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeRecommendationRules.swift; sourceTree = "<group>"; };
         B66B00000000000000000002 /* NativeBookingPresentationRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBookingPresentationRules.swift; sourceTree = "<group>"; };
+        B6F400000000000000000002 /* NativeBookingCancellationRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBookingCancellationRecovery.swift; sourceTree = "<group>"; };
         B6D100000000000000000002 /* NativeTicketCatalogSelectionRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketCatalogSelectionRules.swift; sourceTree = "<group>"; };
         B64C00000000000000000002 /* HotelPublicDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotelPublicDetailView.swift; sourceTree = "<group>"; };
         B6E400000000000000000002 /* HotelPublicDetailSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotelPublicDetailSupport.swift; sourceTree = "<group>"; };
@@ -232,6 +241,7 @@
         B66200000000000000000002 /* NativeRestaurantWorkbenchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRestaurantWorkbenchViews.swift; sourceTree = "<group>"; };
         B6C900000000000000000002 /* NativeRestaurantSupplementaryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRestaurantSupplementaryViews.swift; sourceTree = "<group>"; };
         B6C90000000000000000000A /* NativeDiningPackageRedemption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningPackageRedemption.swift; sourceTree = "<group>"; };
+        B6C90000000000000000000C /* NativeDiningPackageRefundRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningPackageRefundRecovery.swift; sourceTree = "<group>"; };
         B66300000000000000000002 /* DiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverView.swift; sourceTree = "<group>"; };
         B66400000000000000000002 /* NativeCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCatalogView.swift; sourceTree = "<group>"; };
         B66500000000000000000002 /* HotelCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotelCatalogView.swift; sourceTree = "<group>"; };
@@ -262,9 +272,12 @@
         B64600000000000000000002 /* NativeCommerceOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceOrdersView.swift; sourceTree = "<group>"; };
 		B6CE00000000000000000002 /* NativeCommerceDigitalDeliverySection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceDigitalDeliverySection.swift; sourceTree = "<group>"; };
 		B6CA00000000000000000002 /* NativeCommerceOrderItemsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceOrderItemsSection.swift; sourceTree = "<group>"; };
+		B6CB00000000000000000002 /* NativeCommerceOrderReviewRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceOrderReviewRecovery.swift; sourceTree = "<group>"; };
 		B6C100000000000000000002 /* NativeCommerceShipmentCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceShipmentCard.swift; sourceTree = "<group>"; };
+		B6C100000000000000000004 /* NativeCommerceShipmentReceipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceShipmentReceipt.swift; sourceTree = "<group>"; };
         B64700000000000000000002 /* NativeCommerceOrderSupportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCommerceOrderSupportViews.swift; sourceTree = "<group>"; };
         B64400000000000000000002 /* ActivityRegistrationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationsView.swift; sourceTree = "<group>"; };
+        B64400000000000000000004 /* NativeRecordOperationRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeRecordOperationRecovery.swift; sourceTree = "<group>"; };
         B6E800000000000000000002 /* MyActivityRegistrationRecordCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyActivityRegistrationRecordCard.swift; sourceTree = "<group>"; };
         B6D200000000000000000002 /* ActivityRegistrationConfirmationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRegistrationConfirmationOverlay.swift; sourceTree = "<group>"; };
         B64500000000000000000002 /* NativeActivityQrScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeActivityQrScanner.swift; sourceTree = "<group>"; };
@@ -287,6 +300,9 @@
         B63100000000000000000002 /* NativeDiningQueuePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningQueuePage.swift; sourceTree = "<group>"; };
         B63000000000000000000002 /* RestaurantQueueManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestaurantQueueManagementView.swift; sourceTree = "<group>"; };
         B62900000000000000000002 /* RestaurantReservationManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestaurantReservationManagementView.swift; sourceTree = "<group>"; };
+        B62900000000000000000004 /* NativeDiningReservationRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningReservationRecovery.swift; sourceTree = "<group>"; };
+        B62900000000000000000006 /* NativeDiningReservationCreation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningReservationCreation.swift; sourceTree = "<group>"; };
+        B63100000000000000000004 /* NativeDiningQueueRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDiningQueueRecovery.swift; sourceTree = "<group>"; };
         B62800000000000000000002 /* NativeIdentityConsentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeIdentityConsentView.swift; sourceTree = "<group>"; };
         B62700000000000000000002 /* NativeAccountCancellationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAccountCancellationView.swift; sourceTree = "<group>"; };
         B62600000000000000000002 /* NativeTicketOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTicketOrdersView.swift; sourceTree = "<group>"; };
@@ -411,6 +427,7 @@
 			children = (
 				B6CD00000000000000000002 /* NativeScenicReservationRecoveryRules.swift */,
 				B68900000000000000000002 /* NativeRecoveryRecords.swift */,
+				B64400000000000000000004 /* NativeRecordOperationRecovery.swift */,
 			);
 			path = Domain/Recovery;
 			sourceTree = "<group>";
@@ -420,6 +437,7 @@
 			children = (
 				B61900000000000000000002 /* NativeBookingPaymentRules.swift */,
 				B66B00000000000000000002 /* NativeBookingPresentationRules.swift */,
+				B6F400000000000000000002 /* NativeBookingCancellationRecovery.swift */,
 				B6D100000000000000000002 /* NativeTicketCatalogSelectionRules.swift */,
 			);
 			path = Domain/Booking;
@@ -511,7 +529,9 @@
 				B64600000000000000000002 /* NativeCommerceOrdersView.swift */,
 				B6CE00000000000000000002 /* NativeCommerceDigitalDeliverySection.swift */,
 				B6CA00000000000000000002 /* NativeCommerceOrderItemsSection.swift */,
+				B6CB00000000000000000002 /* NativeCommerceOrderReviewRecovery.swift */,
 				B6C100000000000000000002 /* NativeCommerceShipmentCard.swift */,
+				B6C100000000000000000004 /* NativeCommerceShipmentReceipt.swift */,
 				B64700000000000000000002 /* NativeCommerceOrderSupportViews.swift */,
 				B6C500000000000000000002 /* NativeTradePaymentView.swift */,
 				B62500000000000000000002 /* NativeProductReviewsView.swift */,
@@ -674,6 +694,9 @@
 			isa = PBXGroup;
 			children = (
 				B62900000000000000000002 /* RestaurantReservationManagementView.swift */,
+				B62900000000000000000004 /* NativeDiningReservationRecovery.swift */,
+				B62900000000000000000006 /* NativeDiningReservationCreation.swift */,
+				B63100000000000000000004 /* NativeDiningQueueRecovery.swift */,
 				B63000000000000000000002 /* RestaurantQueueManagementView.swift */,
 				B63200000000000000000002 /* RestaurantMenuManagementView.swift */,
 				B63300000000000000000002 /* DiningPublicDetailView.swift */,
@@ -689,6 +712,7 @@
 				B66200000000000000000002 /* NativeRestaurantWorkbenchViews.swift */,
 				B6C900000000000000000002 /* NativeRestaurantSupplementaryViews.swift */,
 				B6C90000000000000000000A /* NativeDiningPackageRedemption.swift */,
+				B6C90000000000000000000C /* NativeDiningPackageRefundRecovery.swift */,
 			);
 			path = Views/Restaurant;
 			sourceTree = "<group>";
@@ -798,6 +822,9 @@
 				A00000000000000000000013 /* ContentView.swift in Sources */,
 				B68900000000000000000001 /* NativeRecoveryRecords.swift in Sources */,
 				B62900000000000000000001 /* RestaurantReservationManagementView.swift in Sources */,
+				B62900000000000000000005 /* NativeDiningReservationRecovery.swift in Sources */,
+				B62900000000000000000007 /* NativeDiningReservationCreation.swift in Sources */,
+				B63100000000000000000005 /* NativeDiningQueueRecovery.swift in Sources */,
 				B63000000000000000000001 /* RestaurantQueueManagementView.swift in Sources */,
 				B63100000000000000000001 /* NativeDiningQueuePage.swift in Sources */,
 				B63200000000000000000001 /* RestaurantMenuManagementView.swift in Sources */,
@@ -814,6 +841,7 @@
 				B66200000000000000000001 /* NativeRestaurantWorkbenchViews.swift in Sources */,
 				B6C900000000000000000001 /* NativeRestaurantSupplementaryViews.swift in Sources */,
 				B6C900000000000000000009 /* NativeDiningPackageRedemption.swift in Sources */,
+				B6C90000000000000000000B /* NativeDiningPackageRefundRecovery.swift in Sources */,
 				B63600000000000000000001 /* ActivityDetailView.swift in Sources */,
 				B6A600000000000000000001 /* ActivityRegistrationCard.swift in Sources */,
 				B6A500000000000000000001 /* ActivityRegistrationFormSection.swift in Sources */,
@@ -842,6 +870,7 @@
 				B66900000000000000000001 /* ArticleDetailView.swift in Sources */,
 				B66A00000000000000000001 /* NativePageResponseRules.swift in Sources */,
 				B66B00000000000000000001 /* NativeBookingPresentationRules.swift in Sources */,
+				B6F400000000000000000001 /* NativeBookingCancellationRecovery.swift in Sources */,
 				B6D100000000000000000001 /* NativeTicketCatalogSelectionRules.swift in Sources */,
 				B61800000000000000000001 /* NativeHTMLContent.swift in Sources */,
 				B61900000000000000000001 /* NativeBookingPaymentRules.swift in Sources */,
@@ -857,6 +886,7 @@
 				B64100000000000000000001 /* NativeSupportTicketsView.swift in Sources */,
 				B6D400000000000000000001 /* NativeSupportTicketDetailView.swift in Sources */,
 				B64400000000000000000001 /* ActivityRegistrationsView.swift in Sources */,
+				B64400000000000000000005 /* NativeRecordOperationRecovery.swift in Sources */,
 				B6E800000000000000000001 /* MyActivityRegistrationRecordCard.swift in Sources */,
 				B6D200000000000000000001 /* ActivityRegistrationConfirmationOverlay.swift in Sources */,
 				B68400000000000000000001 /* ActivityRegistrationSelfCheckIn.swift in Sources */,
@@ -865,7 +895,9 @@
 				B64600000000000000000001 /* NativeCommerceOrdersView.swift in Sources */,
 				B6CE00000000000000000001 /* NativeCommerceDigitalDeliverySection.swift in Sources */,
 				B6CA00000000000000000001 /* NativeCommerceOrderItemsSection.swift in Sources */,
+				B6CB00000000000000000001 /* NativeCommerceOrderReviewRecovery.swift in Sources */,
 				B6C100000000000000000001 /* NativeCommerceShipmentCard.swift in Sources */,
+				B6C100000000000000000003 /* NativeCommerceShipmentReceipt.swift in Sources */,
 				B64700000000000000000001 /* NativeCommerceOrderSupportViews.swift in Sources */,
 				B6C500000000000000000001 /* NativeTradePaymentView.swift in Sources */,
 				B64800000000000000000001 /* NativeHomeView.swift in Sources */,

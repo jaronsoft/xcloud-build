@@ -8,6 +8,7 @@ struct NativeCommerceOrderItemsSection: View {
     let reviewStatusLoading: Bool
     let reviewStatusError: String?
     let reviewedOrderItemIds: Set<String>
+    let pendingReviewItemIds: Set<String>
     let reviewDraftItemId: String?
     let uploadingReviewPhotos: Bool
     let submittingReview: Bool
@@ -39,29 +40,31 @@ struct NativeCommerceOrderItemsSection: View {
                     if orderStatus == "Completed", !itemId.isEmpty {
                         if reviewedOrderItemIds.contains(itemId) {
                             Text("已评价").font(.system(size: NativeTypography.size(14), weight: .semibold)).foregroundStyle(Brand.primary)
-                        } else if reviewsEnabled {
+                        } else if reviewsEnabled || pendingReviewItemIds.contains(itemId) || reviewDraftItemId == itemId {
                             if reviewDraftItemId == itemId {
+                                let editingLocked = !reviewsEnabled || submittingReview || uploadingReviewPhotos
+                                    || reviewStatusLoading || reviewNeedsVerification
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("商品评分").font(.system(size: NativeTypography.size(14), weight: .medium))
                                     Picker("商品评分", selection: $reviewRating) {
                                         ForEach(1...5, id: \.self) { value in Text("\(value) 星").tag(value) }
-                                    }.pickerStyle(.segmented).disabled(submittingReview || uploadingReviewPhotos)
+                                    }.pickerStyle(.segmented).disabled(editingLocked)
                                     TextField("评价内容（2 至 2000 字）", text: $reviewContent, axis: .vertical)
                                         .lineLimit(3...6).textFieldStyle(.roundedBorder)
-                                        .disabled(submittingReview || uploadingReviewPhotos)
+                                        .disabled(editingLocked)
                                     HStack(spacing: 8) {
                                         PhotosPicker(selection: $selectedReviewPhotos, maxSelectionCount: max(1, 9 - reviewPhotoCount), matching: .images) {
                                             Text(reviewPhotoPickerTitle)
-                                        }.disabled(submittingReview || uploadingReviewPhotos || reviewMediaUrls.count >= 9)
+                                        }.disabled(editingLocked || reviewMediaUrls.count >= 9)
                                         Button("取消", role: .cancel, action: onClearDraft)
-                                            .disabled(submittingReview || uploadingReviewPhotos)
+                                            .disabled(submittingReview || uploadingReviewPhotos || reviewStatusLoading || reviewNeedsVerification)
                                     }
                                     ForEach(reviewMediaUrls, id: \.self) { url in
                                         HStack {
                                             Text("已添加评价图片").font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
                                             Spacer()
                                             Button("移除") { onRemoveImage(url) }
-                                                .font(.system(size: NativeTypography.size(12))).disabled(submittingReview || uploadingReviewPhotos)
+                                                .font(.system(size: NativeTypography.size(12))).disabled(editingLocked)
                                         }
                                     }
                                     if let reviewMessage {
@@ -74,17 +77,18 @@ struct NativeCommerceOrderItemsSection: View {
                                                 .disabled(submittingReview || uploadingReviewPhotos || reviewStatusLoading)
                                         }
                                         Spacer()
-                                        Button(submittingReview ? "正在提交…" : reviewNeedsVerification ? "确认未提交后重试" : "提交评价") {
+                                        Button(submittingReview ? "正在提交…" : "提交评价") {
                                             onStartReview(itemId)
                                         }
-                                        .disabled(submittingReview || uploadingReviewPhotos || reviewContent.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count < 2
-                                            || reviewContent.utf16.count > 2000 || (reviewNeedsVerification && reviewStatusLoading))
+                                        .disabled(editingLocked || reviewContent.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count < 2
+                                            || reviewContent.utf16.count > 2000)
                                     }
                                 }
                                 .padding(10).background(Brand.background, in: RoundedRectangle(cornerRadius: 8))
                             } else {
-                                Button("评价商品") { onStartDraft(itemId) }
+                                Button(pendingReviewItemIds.contains(itemId) ? "核对评价状态" : "评价商品") { onStartDraft(itemId) }
                                     .font(.system(size: NativeTypography.size(14), weight: .semibold))
+                                    .disabled(submittingReview || uploadingReviewPhotos || reviewStatusLoading)
                             }
                         } else if reviewStatusLoading {
                             Text("正在读取评价状态…").font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)

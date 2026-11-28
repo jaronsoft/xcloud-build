@@ -36,7 +36,8 @@ struct NativeDiningThemeImage: View {
 struct DiningPublicDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
-    let store: SessionStore
+    @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject var store: SessionStore
     let id: String
     @State private var menu: [String: Any]?
     @State private var packages: [[String: Any]] = []
@@ -60,8 +61,9 @@ struct DiningPublicDetailView: View {
     @State private var featureState = "loading"
     @State private var loading = true
     @State private var reservationsLoading = false
-    @State private var submitting = false
-    @State private var cancelling = false
+    @StateObject private var creation = NativeDiningCreation()
+    @State private var preferredCreationSlotID: String?
+    @StateObject private var withdrawal = NativeDiningWithdrawal()
     @State private var error: String?
     @State private var reservationError: String?
     @State var queueState = "loading"
@@ -76,13 +78,17 @@ struct DiningPublicDetailView: View {
     @State var queueBusy = false
     @State var queueCancelID = ""
     @State private var showQueueCancelConfirmation = false
-    @State private var notice: String?
     @State private var pendingCancelID = ""
     @State private var showCancelConfirmation = false
     @State private var requestSequence = 0
+    @State private var slotRequestSequence = 0
     @State private var packageRequestSequence = 0
     @State private var reservationSequence = 0
     private let businessTimeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+
+    private var reservationPrincipal: String? {
+        store.session.flatMap { nativeTourismPrincipal($0.accessToken) }
+    }
 
     private var businessCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
@@ -90,13 +96,16 @@ struct DiningPublicDetailView: View {
         return calendar
     }
 
-    private var dateText: String {
+    private var businessDateFormatter: DateFormatter {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = businessCalendar
         formatter.timeZone = businessTimeZone
         formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: selectedDate)
+        return formatter
     }
+
+    private var dateText: String { businessDateFormatter.string(from: selectedDate) }
 
     private var selectedSlot: [String: Any]? {
         slots.first { Self.string($0["Id"] ?? $0["id"]) == selectedSlotID }
@@ -216,16 +225,16 @@ struct DiningPublicDetailView: View {
                         guestPhone: $guestPhone,
                         guestNote: $guestNote,
                         isAuthenticated: store.session != nil,
-                        isSubmitting: submitting,
-                        isCancelling: cancelling,
+                        creation: creation,
+                        withdrawal: withdrawal,
                         reservationsLoading: reservationsLoading,
                         reservations: reservations,
-                        notice: notice,
-                        pendingCancelID: pendingCancelID,
                         onDateChanged: {
+                            let preferred = preferredCreationSlotID
+                            preferredCreationSlotID = nil
                             loading = true
                             Task {
-                                await loadSlots()
+                                await loadSlots(preferredSlotID: preferred)
                                 loading = false
                             }
                         },
@@ -234,10 +243,20 @@ struct DiningPublicDetailView: View {
                             selectedSlotID = Self.string(slot["Id"] ?? slot["id"])
                             guestCount = min(guestBounds.upperBound, max(guestBounds.lowerBound, guestCount))
                         },
-                        onSubmit: { Task { await submitReservation() } },
+                        onSubmit: submitReservation,
+                        onCheckCreation: { attempt in
+                            guard scenePhase == .active else { return }
+                            creation.check(attempt, store: store, onResolved: refreshAfterCreation)
+                        },
+                        onLocateCreation: locateCreation,
                         onRequestCancel: { reservationID in
+                            guard canWithdraw(reservationID) else { return }
                             pendingCancelID = reservationID
                             showCancelConfirmation = true
+                        },
+                        onCheckWithdrawal: { attempt, release in
+                            guard scenePhase == .active else { return }
+                            withdrawal.check(attempt, release: release, store: store, onResolved: refreshAfterWithdrawal)
                         }
                     )
                 }
@@ -264,6 +283,15 @@ struct DiningPublicDetailView: View {
             }
         }
         .refreshable { await load() }
+        .onAppear { configureReservationRecovery() }
+        .onDisappear {
+            withdrawal.configure(principal: nil, storeID: id)
+            creation.configure(principal: nil, storeID: id)
+            showCancelConfirmation = false
+        }
+        .onChange(of: scenePhase) { _, _ in configureReservationRecovery() }
+        .onChange(of: reservationPrincipal) { _, _ in configureReservationRecovery() }
+        .onChange(of: id) { _, _ in configureReservationRecovery() }
         .onChange(of: selectedDiningPackage != nil) { _, presented in
             if !presented { refreshPendingPackageRecoveryAvailability() }
         }
@@ -285,7 +313,12 @@ struct DiningPublicDetailView: View {
                 Button("确认取消", role: .destructive) { Task { await cancelQueueEntry(queueCancelID) } }
                 Button("暂不取消", role: .cancel) { queueCancelID = "" }
             } else {
-                Button("确认撤回", role: .destructive) { Task { await cancelReservation(pendingCancelID) } }
+                Button("确认撤回", role: .destructive) {
+                    let reservationID = pendingCancelID
+                    pendingCancelID = ""
+                    guard canWithdraw(reservationID) else { return }
+                    withdrawal.withdraw(reservationID, store: store, onResolved: refreshAfterWithdrawal)
+                }
                 Button("暂不撤回", role: .cancel) { pendingCancelID = "" }
             }
         } message: {
@@ -459,13 +492,16 @@ struct DiningPublicDetailView: View {
         }
     }
 
-    @MainActor private func loadSlots(sequence: Int? = nil) async {
+    @MainActor private func loadSlots(sequence: Int? = nil, preferredSlotID: String? = nil) async {
         let requestID = sequence ?? requestSequence
+        slotRequestSequence += 1
+        let slotRequest = slotRequestSequence
+        let requestedDate = dateText
         reservationError = nil; slots = []; selectedSlotID = ""; unsupportedSlotCount = 0
         do {
-            let path = "/api/JHCTIDining/GetAvailableReservationSlots?storeId=\(id)&date=\(dateText)"
+            let path = "/api/JHCTIDining/GetAvailableReservationSlots?storeId=\(id)&date=\(requestedDate)"
             let value = try await MobileAPI(store: store).get(path)
-            guard requestID == requestSequence else { return }
+            guard requestID == requestSequence, slotRequest == slotRequestSequence, dateText == requestedDate else { return }
             guard let rows = value as? [[String: Any]], rows.allSatisfy({
                 Int64(Self.string($0["Id"] ?? $0["id"])) .map({ $0 > 0 }) == true
                     && (Self.int($0["Capacity"] ?? $0["capacity"]) ?? -1) >= 0
@@ -474,12 +510,17 @@ struct DiningPublicDetailView: View {
             let usableRows = rows.filter(isBookableDiningSlot)
             unsupportedSlotCount = rows.count - usableRows.count
             slots = usableRows
-            if let first = usableRows.first {
+            let first = preferredSlotID.flatMap { preferred in
+                usableRows.first { Self.string($0["Id"] ?? $0["id"]) == preferred }
+            } ?? (preferredSlotID == nil ? usableRows.first : nil)
+            if let first {
                 selectedSlotID = Self.string(first["Id"] ?? first["id"])
                 guestCount = min(guestBounds.upperBound, max(guestBounds.lowerBound, guestCount))
-            }
+            } else if preferredSlotID != nil { reservationError = "原时段当前不在可预订列表。" }
         } catch {
-            if requestID == requestSequence { reservationError = error.localizedDescription }
+            if requestID == requestSequence && slotRequest == slotRequestSequence && dateText == requestedDate {
+                reservationError = error.localizedDescription
+            }
         }
     }
 
@@ -508,111 +549,70 @@ struct DiningPublicDetailView: View {
         }
     }
 
-    @MainActor private func submitReservation() async {
-        guard !submitting, let session = store.session, let slot = selectedSlot,
+    @MainActor private func submitReservation() {
+        guard scenePhase == .active, !creation.blocked(selectedSlotID), selectedSlot != nil,
               !guestName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               guestName.count <= 80,
               isValidDiningContactPhone(guestPhone), guestNote.count <= 500,
               guestBounds.contains(guestCount) else {
             reservationError = "请检查联系人、有效联系电话、人数和所选时段"; return
         }
-        let slotID = Self.string(slot["Id"] ?? slot["id"])
-        submitting = true; reservationError = nil; notice = nil
-        defer { submitting = false }
-        let latestReservationEnabled = await MobileAPI(store: store).featureEnabled("F-FNB-002", forceRefresh: true)
-        guard store.session?.accessToken == session.accessToken else { reservationError = "登录账号已变化，请重新确认后提交。"; return }
-        featureState = latestReservationEnabled ? "open" : "closed"
-        guard latestReservationEnabled else {
-            slots = []
-            reservationError = "餐饮预订已关闭或暂时无法确认，本次没有提交申请。"
+        reservationError = nil
+        creation.submit(slotID: selectedSlotID, date: dateText, form: [
+            "GuestName": guestName.trimmingCharacters(in: .whitespacesAndNewlines),
+            "GuestPhone": guestPhone.trimmingCharacters(in: .whitespacesAndNewlines),
+            "GuestCount": guestCount, "GuestNote": guestNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        ], store: store, onAccess: { access in
+            switch access {
+            case .open: featureState = "open"
+            case .closed, .pendingConfirmation: featureState = "closed"; slots = []
+            case .unavailable: featureState = "error"; slots = []
+            }
+        }, onResolved: refreshAfterCreation)
+    }
+
+    @MainActor private func locateCreation(_ attempt: NativeDiningCreationAttempt) {
+        guard featureState == "open", creation.retry == attempt,
+              let targetDate = businessDateFormatter.date(from: attempt.date),
+              targetDate >= businessCalendar.startOfDay(for: Date()) else {
+            reservationError = "原时段当前不在可预订列表。"
             return
         }
-        var mutationConfirmed = false
-        do {
-            let latestReservationEnabled = await MobileAPI(store: store).featureEnabled("F-FNB-002", forceRefresh: true)
-            guard store.session?.accessToken == session.accessToken else { return }
-            featureState = latestReservationEnabled ? "open" : "closed"
-            guard latestReservationEnabled else {
-                reservationError = "餐饮预订服务已关闭或暂时无法确认，本次没有提交申请。"
-                return
-            }
-            let result = try await MobileAPI(store: store).post("/api/JHCTIDining/CreateReservation", body: [
-                "SlotId": slotID,
-                "GuestName": guestName.trimmingCharacters(in: .whitespacesAndNewlines),
-                "GuestPhone": guestPhone.trimmingCharacters(in: .whitespacesAndNewlines),
-                "GuestCount": guestCount,
-                "GuestNote": guestNote.trimmingCharacters(in: .whitespacesAndNewlines)
-            ], authenticated: true, expectedPrincipal: nativeTourismPrincipal(session.accessToken))
-            guard store.session?.accessToken == session.accessToken,
-                  Int64(Self.string(result)).map({ $0 > 0 }) != nil else {
-                throw MobileAPIError.unavailable("预约回执无法确认，请刷新本人预订记录")
-            }
-            mutationConfirmed = true
-            notice = "预订申请已提交，等待门店确认。"
-            guestNote = ""
-        } catch is CancellationError {
-            if !mutationConfirmed, store.session?.accessToken == session.accessToken {
-                reservationError = "提交请求已取消，结果可能已提交；请刷新本人预订记录核对。"
-            }
-            return
-        } catch {
-            if Task.isCancelled {
-                if !mutationConfirmed, store.session?.accessToken == session.accessToken {
-                    reservationError = "提交请求已取消，结果可能已提交；请刷新本人预订记录核对。"
-                }
-                return
-            }
-            guard store.session?.accessToken == session.accessToken else { return }
-            let refreshed = await loadReservations()
-            guard store.session?.accessToken == session.accessToken else { return }
-            await loadSlots()
-            guard store.session?.accessToken == session.accessToken else { return }
-            if refreshed?.contains(where: {
-                Self.string($0["SlotId"] ?? $0["slotId"]) == slotID
-                    && ($0["Status"] as? String ?? $0["status"] as? String ?? "").lowercased() == "pending"
-            }) == true {
-                mutationConfirmed = true
-                notice = "该时段的预订申请已提交，请查看本人记录。"; guestNote = ""
-            } else if refreshed == nil {
-                reservationError = "提交结果暂无法确认，请刷新本人预订记录后再试。"
-            } else { reservationError = error.localizedDescription }
-        }
-        if store.session?.accessToken == session.accessToken {
-            await loadSlots()
-            _ = await loadReservations()
+        if dateText != attempt.date {
+            preferredCreationSlotID = attempt.slotID
+            selectedDate = targetDate
+        } else {
+            loading = true
+            Task { await loadSlots(preferredSlotID: attempt.slotID); loading = false }
         }
     }
 
-    @MainActor private func cancelReservation(_ reservationID: String) async {
-        guard !cancelling, let session = store.session, Int64(reservationID).map({ $0 > 0 }) == true else { return }
-        cancelling = true; reservationError = nil
-        defer { cancelling = false; pendingCancelID = "" }
-        var mutationConfirmed = false
-        do {
-            let result = try await MobileAPI(store: store).post("/api/JHCTIDining/CancelMyReservation?id=\(reservationID)", body: [:],
-                authenticated: true, expectedPrincipal: nativeTourismPrincipal(session.accessToken))
-            guard store.session?.accessToken == session.accessToken, Self.string(result) == reservationID else {
-                throw MobileAPIError.unavailable("撤回回执无法确认，请刷新本人预订记录")
-            }
-            mutationConfirmed = true
-            notice = "预订申请已撤回，名额已释放。"
-        } catch is CancellationError {
-            if !mutationConfirmed, store.session?.accessToken == session.accessToken {
-                reservationError = "撤回请求已取消，结果可能已提交；请刷新本人预订记录核对。"
-            }
-            return
-        } catch {
-            if Task.isCancelled {
-                if !mutationConfirmed, store.session?.accessToken == session.accessToken {
-                    reservationError = "撤回请求已取消，结果可能已提交；请刷新本人预订记录核对。"
-                }
-                return
-            }
-            if store.session?.accessToken == session.accessToken { reservationError = error.localizedDescription }
+    @MainActor private func refreshAfterCreation() {
+        guestNote = ""
+        refreshAfterWithdrawal()
+    }
+
+    @MainActor private func configureReservationRecovery() {
+        showCancelConfirmation = false
+        pendingCancelID = ""
+        withdrawal.configure(principal: scenePhase == .active ? reservationPrincipal : nil, storeID: id)
+        creation.configure(principal: scenePhase == .active ? reservationPrincipal : nil, storeID: id)
+    }
+
+    @MainActor private func canWithdraw(_ reservationID: String) -> Bool {
+        guard scenePhase == .active, NativeDiningReservationAttempt.validID(reservationID),
+              !withdrawal.blocked(reservationID) else { return false }
+        if let row = reservations.first(where: { ($0["Id"] ?? $0["id"]) as? String == reservationID }) {
+            return (row["Status"] ?? row["status"]) as? String == "Pending"
         }
-        guard store.session?.accessToken == session.accessToken else { return }
-        if featureState == "open" { await loadSlots() }
-        _ = await loadReservations()
+        return withdrawal.retryID == reservationID
+    }
+
+    @MainActor private func refreshAfterWithdrawal() {
+        Task {
+            _ = await loadReservations()
+            if featureState == "open" { await loadSlots() }
+        }
     }
 
     private func reservationsErrorReset() { reservationError = nil }

@@ -1,5 +1,7 @@
 import SwiftUI
 
+@MainActor private var inFlightRegistrationWrites = Set<UUID>()
+
 struct ActivityRegistrationQrRetry: Equatable {
     let registrationID: String
     let title: String
@@ -20,7 +22,6 @@ struct ActivityRegistrationsView: View {
     @State private var pendingCancellation: [String: Any]?
     @State private var cancelBusyId = ""
     @State private var cancellationToken = ""
-    @State private var cancelSequence = 0
     @State private var qrImage: Data?
     @State private var qrTitle = ""
     @State private var qrBusyId = ""
@@ -36,14 +37,23 @@ struct ActivityRegistrationsView: View {
     @State private var pendingDeletion: [String: Any]?
     @State private var deletionToken = ""
     @State private var deleteBusyId = ""
-    @State private var deleteSequence = 0
-    @State private var expiredDeleteRetryItem: [String: Any]?
-    @State private var expiredDeleteRetryToken = ""
+    @State private var operationSequence = 0
+    @State private var pendingAttempt: ActivityRegistrationAttempt?
+    @State private var reviewedAttempt: ActivityRegistrationAttempt?
+    @State private var recoveryOwner: String?
+    @State private var recoveryStorageFailed = false
+    @State private var checkingOutcome = false
     @State private var pageVisible = true
     @State private var canLoadMore = false
     @State private var cancellationNotice: String?
 
     private let filters = [("", "全部"), ("Registered", "已报名"), ("CheckedIn", "已签到"), ("Cancelled", "已取消")]
+    private var principal: String? {
+        guard let token = store.session?.accessToken, !token.isEmpty else { return nil }
+        return nativeTourismPrincipal(token)
+    }
+    private var recoveryReady: Bool { recoveryOwner != nil && recoveryOwner == principal && !recoveryStorageFailed }
+    private func operationLocked(_ id: String) -> Bool { !recoveryReady || pendingAttempt?.id == id }
 
     var body: some View {
         NavigationStack {
@@ -109,17 +119,7 @@ struct ActivityRegistrationsView: View {
                 .background(Brand.background)
                 .refreshable { await load(reset: true) }
                 ActivityCancellationStatusBanner(message: cancellationNotice)
-                if let expiredDeleteRetryItem, !expiredDeleteRetryToken.isEmpty {
-                    Button(deleteBusyId.isEmpty ? "重试删除过期报名" : "正在删除…") {
-                        guard store.session?.accessToken == expiredDeleteRetryToken else {
-                            cancellationNotice = "登录账号已变化，请刷新报名记录后重试。"
-                            self.expiredDeleteRetryItem = nil; self.expiredDeleteRetryToken = ""; return
-                        }
-                        Task { await deleteExpired(expiredDeleteRetryItem, expectedToken: expiredDeleteRetryToken) }
-                    }
-                    .disabled(loading || !deleteBusyId.isEmpty || store.session?.accessToken != expiredDeleteRetryToken)
-                    .padding(.horizontal, 14).padding(.bottom, 6)
-                }
+                recoveryControls
                 if let error, !rows.isEmpty {
                     VStack(spacing: 4) {
                         Text(error).font(.system(size: NativeTypography.size(14))).foregroundStyle(.red)
@@ -139,35 +139,42 @@ struct ActivityRegistrationsView: View {
             .task {
                 while !Task.isCancelled {
                     refreshCredentialClock()
-                    if !qrRegistrationId.isEmpty && !qrCheckedIn {
-                        if qrStatusCountdown <= 1 {
-                            qrStatusCountdown = 5
-                            await load(reset: true, preserveQr: true)
-                        } else { qrStatusCountdown -= 1 }
-                    }
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                 }
             }
+            .task(id: qrImage == nil ? nil : qrSequence) {
+                guard qrImage != nil, let token = store.session?.accessToken else { return }
+                let id = qrRegistrationId
+                let sequence = qrSequence
+                while canPollQr(id: id, token: token, sequence: sequence) {
+                    do { try await Task.sleep(nanoseconds: 1_000_000_000) }
+                    catch { return }
+                    guard canPollQr(id: id, token: token, sequence: sequence) else { return }
+                    if qrStatusCountdown <= 1 {
+                        qrStatusCountdown = 5
+                        await refreshQrStatus(id: id, token: token, sequence: sequence)
+                    } else { qrStatusCountdown -= 1 }
+                }
+            }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { refreshCredentialClock(); revision += 1 }
+                if phase == .active { restoreRecovery(); refreshCredentialClock(); revision += 1 }
                 else {
                     requestSequence += 1; clearQr(); rows = []; total = 0; loadedToken = ""; canLoadMore = false; loading = false
                     pendingCancellation = nil; pendingDeletion = nil
-                    expiredDeleteRetryItem = nil; expiredDeleteRetryToken = ""
+                    reviewedAttempt = nil
                 }
             }
             .onChange(of: filter) { _, _ in
-                clearQr(); pendingCancellation = nil; expiredDeleteRetryItem = nil; expiredDeleteRetryToken = ""
+                clearQr(); pendingCancellation = nil; pendingDeletion = nil
             }
             .onChange(of: store.session?.accessToken) { _, newToken in
                 clearQr()
-                cancelSequence += 1; cancelBusyId = ""; pendingCancellation = nil; cancellationToken = ""
-                deleteSequence += 1; deleteBusyId = ""; pendingDeletion = nil; deletionToken = ""
-                requestSequence += 1; rows = []; total = 0; loadedToken = newToken ?? ""; loading = false
+                pendingCancellation = nil; cancellationToken = ""; pendingDeletion = nil; deletionToken = ""
+                requestSequence += 1; rows = []; total = 0; loadedToken = ""; loading = false
                 canLoadMore = false
-                expiredDeleteRetryItem = nil; expiredDeleteRetryToken = ""
+                if nativeTourismPrincipal(newToken) != recoveryOwner { resetRecoveryContext(); restoreRecovery() }
             }
-            .sheet(isPresented: Binding(get: { qrImage != nil }, set: { if !$0 { closeQrAndRefresh() } })) {
+            .sheet(isPresented: Binding(get: { qrImage != nil || qrCheckedIn }, set: { if !$0 { closeQrAndRefresh() } })) {
                 NavigationStack {
                     VStack(spacing: 12) {
                         Text(qrCheckedIn ? "活动签到成功" : qrTitle).font(.system(size: NativeTypography.size(18), weight: .semibold))
@@ -192,11 +199,10 @@ struct ActivityRegistrationsView: View {
             .onDisappear {
                 pageVisible = false; canLoadMore = false
                 requestSequence += 1; rows = []; clearQr(); pendingCancellation = nil
-                cancelSequence += 1; cancelBusyId = ""; cancellationToken = ""
-                deleteSequence += 1; deleteBusyId = ""; pendingDeletion = nil; deletionToken = ""
-                expiredDeleteRetryItem = nil; expiredDeleteRetryToken = ""
+                cancellationToken = ""; pendingDeletion = nil; deletionToken = ""
+                resetRecoveryContext()
             }
-            .onAppear { pageVisible = true }
+            .onAppear { pageVisible = true; restoreRecovery() }
             .overlay {
                 ActivityRegistrationConfirmationOverlay(
                     pendingDeletion: pendingDeletion,
@@ -207,12 +213,12 @@ struct ActivityRegistrationsView: View {
                     onConfirmDeletion: { item in
                         let token = store.session?.accessToken ?? ""
                         deletionToken = token
-                        Task { await deleteExpired(item, expectedToken: token) }
+                        Task { await submit(item, expectedToken: token, action: .delete) }
                     },
                     onKeepCancellation: { self.pendingCancellation = nil },
                     onConfirmCancellation: { item in
                         let token = cancellationToken
-                        Task { await cancel(item, expectedToken: token) }
+                        Task { await submit(item, expectedToken: token, action: .cancel) }
                     }
                 )
             }
@@ -220,7 +226,7 @@ struct ActivityRegistrationsView: View {
     }
 
     private func closeQrAndRefresh() {
-        let wasVisible = qrImage != nil
+        let wasVisible = qrImage != nil || qrCheckedIn
         clearQr()
         if wasVisible && pageVisible && scenePhase == .active { revision += 1 }
     }
@@ -235,9 +241,11 @@ struct ActivityRegistrationsView: View {
             loading: loading,
             cancelBusyId: cancelBusyId,
             deleteBusyId: deleteBusyId,
+            credentialLocked: operationLocked(item["Id"] as? String ?? ""),
+            mutationBlocked: !recoveryReady || pendingAttempt != nil,
             onCopyCode: { id, code, expectedToken in
                 guard pageVisible, scenePhase == .active,
-                      let expectedToken, !expectedToken.isEmpty,
+                      !operationLocked(id), let expectedToken, !expectedToken.isEmpty,
                       store.session?.accessToken == expectedToken, loadedToken == expectedToken,
                       let currentItem = rows.first(where: { $0["Id"] as? String == id }),
                       currentItem["Status"] as? String == "Registered",
@@ -267,7 +275,7 @@ struct ActivityRegistrationsView: View {
         )
     }
 
-    @MainActor private func load(reset: Bool, preserveQr: Bool = false) async {
+    @MainActor private func load(reset: Bool) async {
         guard pageVisible, scenePhase == .active else { return }
         if !reset && (loading || !canLoadMore) { return }
         guard let token = store.session?.accessToken, !token.isEmpty,
@@ -281,11 +289,11 @@ struct ActivityRegistrationsView: View {
         if !reset && cursor.flatMap({ Int64($0) }).map({ $0 > 0 && String($0) == cursor }) != true {
             canLoadMore = false; error = "报名记录游标无效，请刷新后继续。"; return
         }
-        if !preserveQr { clearQr(); pendingCancellation = nil; pendingDeletion = nil }
+        clearQr(); pendingCancellation = nil; pendingDeletion = nil
         let targetPage = reset ? 1 : page + 1
-        if reset && !preserveQr { rows = []; total = 0; page = 1; loadedToken = ""; canLoadMore = false }
+        if reset { rows = []; total = 0; page = 1; loadedToken = ""; canLoadMore = false }
         loading = true
-        if !preserveQr { error = nil }
+        error = nil
         let sequence = requestSequence + 1; requestSequence = sequence
         func isCurrent() -> Bool {
             !Task.isCancelled && sequence == requestSequence && store.session?.accessToken == token
@@ -293,19 +301,6 @@ struct ActivityRegistrationsView: View {
         }
         defer { if isCurrent() { loading = false } }
         do {
-            if preserveQr {
-                guard !qrRegistrationId.isEmpty else { return }
-                guard let latestStatus = try await MobileAPI(store: store).get(
-                    "/api/JHCTIActivity/GetMyRegistrationStatus?id=\(qrRegistrationId)", authenticated: true,
-                    expectedPrincipal: expectedPrincipal) as? String,
-                    isCurrent() else { return }
-                switch latestStatus {
-                case "CheckedIn": qrCheckedIn = true
-                case "Registered": qrCheckedIn = false
-                default: clearQr()
-                }
-                return
-            }
             let encodedStatus = queryFilter.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
             let before = cursor.map { "&beforeRegistrationId=\($0)" } ?? ""
             let value = try await MobileAPI(store: store).get("/api/JHCTIActivity/GetMyRegistrationsPage?page=\(targetPage)&pageSize=20&status=\(encodedStatus)\(before)", authenticated: true,
@@ -333,164 +328,137 @@ struct ActivityRegistrationsView: View {
             total = max(count, rows.count); page = targetPage; loadedToken = token
             canLoadMore = data.count == 20 && rows.count < total
         } catch {
-            if isCurrent() && !preserveQr { self.error = error.localizedDescription }
-        }
-    }
-
-    @MainActor private func loadOutcomeSnapshot(id: String, throughPage: Int, expectedToken: String) async -> [[String: Any]]? {
-        guard pageVisible, scenePhase == .active, store.session?.accessToken == expectedToken,
-              let expectedPrincipal = nativeTourismPrincipal(expectedToken) else { return nil }
-        let requestedFilter = filter
-        clearQr(); pendingCancellation = nil; pendingDeletion = nil
-        loading = true; error = nil
-        let sequence = requestSequence + 1; requestSequence = sequence
-        func isCurrent() -> Bool {
-            !Task.isCancelled && sequence == requestSequence && store.session?.accessToken == expectedToken
-                && filter == requestedFilter && pageVisible && scenePhase == .active
-        }
-        defer { if isCurrent() { loading = false } }
-        var refreshedRows: [[String: Any]] = []
-        var refreshedTotal = 0
-        var cursor: String?
-        var pagesRead = 0
-        do {
-            let encodedStatus = requestedFilter.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-            for requestedPage in 1...max(1, throughPage) {
-                guard isCurrent() else { return nil }
-                let before = cursor.map { "&beforeRegistrationId=\($0)" } ?? ""
-                let value = try await MobileAPI(store: store).get(
-                    "/api/JHCTIActivity/GetMyRegistrationsPage?page=\(requestedPage)&pageSize=20&status=\(encodedStatus)\(before)",
-                    authenticated: true, expectedPrincipal: expectedPrincipal) as? [String: Any]
-                guard isCurrent(), let value,
-                      let data = (value["data"] ?? value["Data"]) as? [[String: Any]] else {
-                    throw MobileAPIError.unavailable("报名记录响应格式异常")
-                }
-                var receivedIds = Set<String>()
-                guard data.allSatisfy({ item in
-                    guard let id = item["Id"] as? String, let number = Int64(id), number > 0, String(number) == id else { return false }
-                    return receivedIds.insert(id).inserted
-                }) else { throw MobileAPIError.unavailable("报名记录编号异常，请刷新后重试。") }
-                guard let receivedTotal = nativeActivityRegistrationPageTotal(value, rowCount: data.count) else {
-                    throw MobileAPIError.unavailable("报名数量异常，请刷新后重试。")
-                }
-                if requestedPage == 1 {
-                    refreshedTotal = receivedTotal
-                }
-                refreshedRows.append(contentsOf: data)
-                pagesRead = requestedPage
-                if data.contains(where: { $0["Id"] as? String == id }) || data.count < 20 { break }
-                guard let lastId = data.last?["Id"] as? String, let lastNumber = Int64(lastId), lastNumber > 0,
-                      String(lastNumber) == lastId else { throw MobileAPIError.unavailable("报名记录游标无效，请刷新后继续。") }
-                cursor = lastId
-            }
-            guard isCurrent() else { return nil }
-            rows = refreshedRows
-            total = max(refreshedTotal, refreshedRows.count)
-            page = pagesRead
-            loadedToken = expectedToken
-            canLoadMore = rows.count < total
-            return refreshedRows
-        } catch {
             if isCurrent() { self.error = error.localizedDescription }
-            return nil
         }
     }
 
-    @MainActor private func cancel(_ item: [String: Any], expectedToken: String) async {
-        guard cancelBusyId.isEmpty, deleteBusyId.isEmpty, !expectedToken.isEmpty, store.session?.accessToken == expectedToken,
-              let id = item["Id"] as? String, let number = Int64(id), number > 0, String(number) == id,
-              let current = rows.first(where: { $0["Id"] as? String == id }), current["CanCancel"] as? Bool == true,
-              !activityRegistrationCredentialUnavailable(current) else { pendingCancellation = nil; return }
-        cancelSequence += 1; let operation = cancelSequence
-        requestSequence += 1; loading = false
-        pendingCancellation = nil; cancelBusyId = id; error = nil; cancellationNotice = nil; clearQr()
-        defer { if operation == cancelSequence { cancelBusyId = "" } }
-        do {
-            let value = try await MobileAPI(store: store).post("/api/JHCTIActivity/CancelRegistration?id=\(id)", body: [:], authenticated: true,
-                expectedPrincipal: nativeTourismPrincipal(expectedToken)) as? String
-            guard operation == cancelSequence, store.session?.accessToken == expectedToken else { return }
-            guard value == id else { throw MobileAPIError.unavailable("取消结果无法确认，请刷新报名状态") }
-            // 已确认的取消立即收起旧凭证；读取仍由服务端刷新完整报名快照。
-            requestSequence += 1
-            if filter == "Registered" {
-                rows.removeAll { $0["Id"] as? String == id }; total = max(0, total - 1)
-            } else if let index = rows.firstIndex(where: { $0["Id"] as? String == id }) {
-                rows[index]["Status"] = "Cancelled"; rows[index]["CanCancel"] = false
-                rows[index]["CredentialCode"] = nil
-            }
-            revision += 1
-        } catch {
-            if operation == cancelSequence, store.session?.accessToken == expectedToken {
-                if isUnknownActivityRegistrationMutationOutcome(error) {
-                    let refreshedRows = await loadOutcomeSnapshot(id: id, throughPage: page, expectedToken: expectedToken)
-                    guard operation == cancelSequence, store.session?.accessToken == expectedToken else { return }
-                    if refreshedRows == nil || self.error != nil {
-                        cancellationNotice = "取消结果暂未确认，报名记录未能刷新。请先重试刷新，再决定是否重新取消。"
-                    } else if let refreshed = refreshedRows?.first(where: { $0["Id"] as? String == id }) {
-                        switch refreshed["Status"] as? String {
-                        case "Cancelled":
-                            cancellationNotice = "取消已完成，最新报名记录已刷新。"
-                        case "Registered":
-                            let label = activityRegistrationStatusLabel(refreshed)
-                            cancellationNotice = "取消结果暂未确认，报名仍显示“\(label)”。请核对后再决定是否重新取消。"
-                        case "CheckedIn":
-                            cancellationNotice = "报名状态已更新为“已签到”，取消操作未完成。请刷新核对后再操作。"
-                        default:
-                            cancellationNotice = "报名状态已变化或无法识别，当前状态：“\(activityRegistrationStatusLabel(refreshed))”。请刷新核对后再操作。"
-                        }
-                    } else {
-                        cancellationNotice = "取消已完成，最新报名记录已刷新。"
-                    }
-                } else { self.error = error.localizedDescription }
-            }
-        }
-    }
+    private var hasOperationInProgress: Bool { checkingOutcome || !cancelBusyId.isEmpty || !deleteBusyId.isEmpty }
 
-    @MainActor private func deleteExpired(_ item: [String: Any], expectedToken: String) async {
-        guard deleteBusyId.isEmpty, cancelBusyId.isEmpty, !expectedToken.isEmpty, store.session?.accessToken == expectedToken,
-              let id = item["Id"] as? String, let number = Int64(id), number > 0, String(number) == id,
-              let current = rows.first(where: { $0["Id"] as? String == id }),
-              current["Status"] as? String == "Registered", activityRegistrationExpired(current) else {
-            pendingDeletion = nil; return
-        }
-        deleteSequence += 1; let operation = deleteSequence
-        requestSequence += 1; loading = false
-        pendingDeletion = nil; expiredDeleteRetryItem = nil; expiredDeleteRetryToken = ""
-        deleteBusyId = id; error = nil; cancellationNotice = nil; clearQr()
-        defer { if operation == deleteSequence { deleteBusyId = "" } }
-        do {
-            let receipt = try await MobileAPI(store: store).post(
-                "/api/JHCTIActivity/DeleteExpiredMyRegistration?id=\(id)", body: [:], authenticated: true,
-                expectedPrincipal: nativeTourismPrincipal(expectedToken)) as? String
-            guard operation == deleteSequence, store.session?.accessToken == expectedToken else { return }
-            guard receipt == id else { throw MobileAPIError.unavailable("删除结果暂未确认，请刷新报名状态后重试。") }
-            // 仅在回执匹配后移除当前记录，迟到的列表也不能重新回填该行。
-            requestSequence += 1
-            rows.removeAll { $0["Id"] as? String == id }; total = max(0, total - 1)
-            expiredDeleteRetryItem = nil; expiredDeleteRetryToken = ""
-            revision += 1
-        } catch {
-            if operation == deleteSequence, store.session?.accessToken == expectedToken {
-                if isUnknownActivityRegistrationMutationOutcome(error) {
-                    let refreshedRows = await loadOutcomeSnapshot(id: id, throughPage: page, expectedToken: expectedToken)
-                    guard operation == deleteSequence, store.session?.accessToken == expectedToken else { return }
-                    if refreshedRows == nil || self.error != nil {
-                        cancellationNotice = "删除结果暂未确认，报名记录未能刷新。请先重试刷新，再决定是否重新删除。"
-                        expiredDeleteRetryItem = nil; expiredDeleteRetryToken = ""
-                    } else if let refreshed = refreshedRows?.first(where: { $0["Id"] as? String == id }) {
-                        cancellationNotice = "删除结果暂未确认，记录仍在列表中，当前状态：“\(activityRegistrationStatusLabel(refreshed))”。请核对后再决定是否重试。"
-                        if refreshed["Status"] as? String == "Registered" && activityRegistrationExpired(refreshed) {
-                            expiredDeleteRetryItem = refreshed; expiredDeleteRetryToken = expectedToken
-                        } else { expiredDeleteRetryItem = nil; expiredDeleteRetryToken = "" }
-                    } else {
-                        cancellationNotice = "过期报名已从列表移除，删除操作已完成。"
-                        expiredDeleteRetryItem = nil; expiredDeleteRetryToken = ""
+    @ViewBuilder private var recoveryControls: some View {
+        if recoveryOwner != nil && recoveryOwner == principal {
+            if recoveryStorageFailed {
+                Text("无法读取本机报名核对记录，报名操作暂不可用。")
+                    .font(.footnote).foregroundStyle(Brand.muted)
+                Button("重读核对记录") { restoreRecovery() }
+            }
+            if let attempt = pendingAttempt {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("待核对 · \(attempt.action.label) · 报名编号 \(attempt.id)")
+                        .font(.footnote).foregroundStyle(Brand.muted)
+                    Button("核对原报名") { Task { await checkOutcome() } }
+                    if reviewedAttempt == attempt {
+                        Button("确认并解除保护") { Task { await checkOutcome(release: true) } }
                     }
-                } else {
-                    expiredDeleteRetryItem = item; expiredDeleteRetryToken = expectedToken
-                    self.error = error.localizedDescription
                 }
+                .disabled(hasOperationInProgress)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14).padding(.vertical, 6)
             }
+        }
+    }
+
+    private func resetRecoveryContext() {
+        operationSequence += 1
+        recoveryOwner = nil; recoveryStorageFailed = false; pendingAttempt = nil; reviewedAttempt = nil
+        checkingOutcome = false; cancelBusyId = ""; deleteBusyId = ""; cancellationNotice = nil
+    }
+
+    private func restoreRecovery() {
+        guard pageVisible, let owner = principal else { return }
+        recoveryOwner = owner
+        do {
+            pendingAttempt = try ActivityRegistrationRecovery(principal: owner).read()
+            recoveryStorageFailed = false
+        } catch {
+            pendingAttempt = nil; recoveryStorageFailed = true
+        }
+        if reviewedAttempt != pendingAttempt { reviewedAttempt = nil }
+    }
+
+    private func finishRecovery(_ recovery: ActivityRegistrationRecovery, attempt: ActivityRegistrationAttempt, message: String) throws {
+        try recovery.remove(attempt)
+        pendingAttempt = nil; reviewedAttempt = nil; cancellationNotice = message
+        requestSequence += 1; rows = []; loadedToken = ""; canLoadMore = false; clearQr(); revision += 1
+    }
+
+    @MainActor private func checkOutcome(release: Bool = false) async {
+        guard pageVisible, scenePhase == .active, recoveryReady, !hasOperationInProgress,
+              let owner = principal, let attempt = pendingAttempt, !release || reviewedAttempt == attempt else { return }
+        guard !inFlightRegistrationWrites.contains(attempt.marker) else {
+            cancellationNotice = "原报名请求仍在处理中，请稍后核对。"; return
+        }
+        operationSequence += 1
+        let operation = operationSequence
+        checkingOutcome = true; reviewedAttempt = nil
+        defer { if operation == operationSequence { checkingOutcome = false } }
+        func isCurrent() -> Bool {
+            !Task.isCancelled && pageVisible && scenePhase == .active
+                && operation == operationSequence && principal == owner && pendingAttempt == attempt
+        }
+        do {
+            let raw = try await MobileAPI(store: store).get("/api/JHCTIActivity/GetMyRegistrationStatus?id=\(attempt.id)",
+                authenticated: true, expectedPrincipal: owner, requireExplicitResponse: true)
+            guard isCurrent() else { return }
+            let recovery = try ActivityRegistrationRecovery(principal: owner)
+            switch (raw as? String).flatMap(ActivityRegistrationReadStatus.init(rawValue:)) {
+            case .registered:
+                if release { try finishRecovery(recovery, attempt: attempt, message: "已解除保护。请按最新报名状态操作。") }
+                else {
+                    reviewedAttempt = attempt
+                    cancellationNotice = "原记录仍显示已报名。核对后可恢复该记录的操作。"
+                }
+            case .cancelled: try finishRecovery(recovery, attempt: attempt, message: "原报名已取消。")
+            case .checkedIn: try finishRecovery(recovery, attempt: attempt, message: "原报名已签到。")
+            case .unavailable: try finishRecovery(recovery, attempt: attempt, message: "原报名记录已不在列表中。")
+            case nil: throw MobileAPIError.unavailable("报名状态回执异常")
+            }
+        } catch {
+            if isCurrent() { cancellationNotice = "暂时无法核对原报名，请稍后重试。" }
+        }
+    }
+
+    @MainActor private func submit(_ item: [String: Any], expectedToken: String, action: ActivityRegistrationAction) async {
+        pendingCancellation = nil; pendingDeletion = nil
+        guard pageVisible, scenePhase == .active, recoveryReady, pendingAttempt == nil, !hasOperationInProgress,
+              let owner = principal, store.session?.accessToken == expectedToken, loadedToken == expectedToken,
+              let id = item["Id"] as? String, let current = rows.first(where: { $0["Id"] as? String == id }) else { return }
+        let attempt = ActivityRegistrationAttempt(id: id, action: action)
+        let allowed = action == .cancel
+            ? current["CanCancel"] as? Bool == true && !activityRegistrationCredentialUnavailable(current)
+            : activityRegistrationExpired(current)
+        guard attempt.valid, allowed else { return }
+        let recovery: ActivityRegistrationRecovery
+        do {
+            recovery = try ActivityRegistrationRecovery(principal: owner)
+            try recovery.add(attempt)
+        } catch {
+            restoreRecovery(); cancellationNotice = "无法保存报名核对记录，本次操作未发送。"; return
+        }
+        pendingAttempt = attempt; reviewedAttempt = nil
+        if action == .cancel { cancelBusyId = id } else { deleteBusyId = id }
+        operationSequence += 1
+        let operation = operationSequence
+        requestSequence += 1; loading = false; error = nil; cancellationNotice = nil; clearQr()
+        inFlightRegistrationWrites.insert(attempt.marker)
+        defer {
+            inFlightRegistrationWrites.remove(attempt.marker)
+            if operation == operationSequence { cancelBusyId = ""; deleteBusyId = "" }
+        }
+        func isCurrent() -> Bool {
+            !Task.isCancelled && pageVisible && scenePhase == .active
+                && operation == operationSequence && principal == owner && pendingAttempt == attempt
+        }
+        do {
+            let receipt = try await MobileAPI(store: store).post("/api/JHCTIActivity/\(action.rawValue)?id=\(id)", body: [:],
+                authenticated: true, expectedPrincipal: owner, canRefresh: false, requireExplicitResponse: true)
+            guard isCurrent() else { return }
+            guard attempt.matchesReceipt(receipt) else { throw MobileAPIError.unavailable("报名操作回执不匹配") }
+            try finishRecovery(recovery, attempt: attempt, message: action == .cancel ? "报名已取消。" : "过期报名记录已删除。")
+        } catch {
+            guard isCurrent() else { return }
+            if let status = (error as? MobileAPIError)?.httpStatusCode, [400, 403, 409].contains(status),
+               (try? finishRecovery(recovery, attempt: attempt, message: error.localizedDescription)) != nil { return }
+            cancellationNotice = "\(action.label)结果暂未确认，请核对原报名。"
         }
     }
 
@@ -500,15 +468,46 @@ struct ActivityRegistrationsView: View {
 
     private func refreshCredentialClock() {
         credentialClock = Date()
-        guard !qrRegistrationId.isEmpty else { return }
+        guard !qrRegistrationId.isEmpty, !qrCheckedIn else { return }
         if let item = rows.first(where: { $0["Id"] as? String == qrRegistrationId }),
            !activityRegistrationCredentialUnavailable(item, now: credentialClock) { return }
         clearQr()
     }
 
+    private func canPollQr(id: String, token: String, sequence: Int) -> Bool {
+        !Task.isCancelled && pageVisible && scenePhase == .active && qrImage != nil
+            && qrRegistrationId == id && qrSequence == sequence && store.session?.accessToken == token
+            && !operationLocked(id)
+    }
+
+    private func refreshQrStatus(id: String, token: String, sequence: Int) async {
+        guard canPollQr(id: id, token: token, sequence: sequence),
+              let principal = nativeTourismPrincipal(token) else { return }
+        do {
+            let raw = try await MobileAPI(store: store).get("/api/JHCTIActivity/GetMyRegistrationStatus?id=\(id)",
+                authenticated: true, expectedPrincipal: principal, requireExplicitResponse: true)
+            guard canPollQr(id: id, token: token, sequence: sequence),
+                  let status = (raw as? String).flatMap(ActivityRegistrationReadStatus.init(rawValue:)) else { return }
+            switch status {
+            case .checkedIn:
+                qrCheckedIn = true; qrImage = nil
+            case .cancelled, .unavailable:
+                closeQrAndRefresh()
+            case .registered: break
+            }
+        } catch {
+            // 暂时无法确认时继续核对，二维码到期仍由独立时钟处理。
+        }
+    }
+
     @MainActor private func showQr(id: String, title: String) async {
-        guard !id.isEmpty, qrBusyId.isEmpty, let token = store.session?.accessToken,
-              let item = rows.first(where: { $0["Id"] as? String == id }) else { return }
+        guard !Task.isCancelled, pageVisible, scenePhase == .active,
+              !id.isEmpty, !operationLocked(id), qrBusyId.isEmpty,
+              let token = store.session?.accessToken, loadedToken == token,
+              let principal = nativeTourismPrincipal(token),
+              let item = rows.first(where: { $0["Id"] as? String == id }),
+              let code = item["CredentialCode"] as? String,
+              !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard !activityRegistrationCredentialUnavailable(item) else {
             refreshCredentialClock(); revision += 1; return
         }
@@ -518,41 +517,35 @@ struct ActivityRegistrationsView: View {
         qrStatusCountdown = 5
         qrBusyId = id; qrRetry = nil
         defer { if operation == qrSequence { qrBusyId = "" } }
+        // 回包只允许更新仍处于当前列表、账号和凭证上下文的请求。
+        func currentRow() -> [String: Any]? {
+            guard !Task.isCancelled, pageVisible, scenePhase == .active,
+                  operation == qrSequence, qrRegistrationId == id, !operationLocked(id),
+                  store.session?.accessToken == token, loadedToken == token,
+                  let current = rows.first(where: { $0["Id"] as? String == id }),
+                  current["Status"] as? String == "Registered", current["CredentialCode"] as? String == code else { return nil }
+            return current
+        }
         do {
-            guard let value = try await MobileAPI(store: store).get("/api/JHCTIActivity/GetMyRegistrationQr?id=\(id)", authenticated: true,
-                expectedPrincipal: nativeTourismPrincipal(token)) as? String,
-                  let encoded = value.components(separatedBy: "base64,").last,
-                  let data = Data(base64Encoded: encoded), store.session?.accessToken == token else {
-                throw MobileAPIError.unavailable("活动二维码暂时无法显示")
-            }
-            guard operation == qrSequence, qrRegistrationId == id, store.session?.accessToken == token else { return }
+            let value = try await MobileAPI(store: store).get("/api/JHCTIActivity/GetMyRegistrationQr?id=\(id)",
+                authenticated: true, expectedPrincipal: principal, requireExplicitResponse: true)
+            guard let current = currentRow() else { return }
+            let data = activityRegistrationQrPng(value)
             // 回包和图像处理可能跨过活动截止时间，展示前必须重新判定。
-            guard !activityRegistrationCredentialUnavailable(item) else {
+            guard !activityRegistrationCredentialUnavailable(current) else {
                 clearQr(); credentialClock = Date(); revision += 1; return
             }
+            guard !Task.isCancelled else { return }
+            guard let data else { throw MobileAPIError.unavailable("活动二维码数据无效，请重试。") }
             qrTitle = title; qrImage = data
         } catch {
-            if operation == qrSequence, qrRegistrationId == id, store.session?.accessToken == token {
-                qrRetry = ActivityRegistrationQrRetry(
-                    registrationID: id,
-                    title: title,
-                    token: token,
-                    message: error.localizedDescription,
-                )
+            guard let current = currentRow() else { return }
+            guard !activityRegistrationCredentialUnavailable(current) else {
+                clearQr(); credentialClock = Date(); revision += 1; return
             }
+            qrRetry = ActivityRegistrationQrRetry(
+                registrationID: id, title: title, token: token, message: error.localizedDescription)
         }
-    }
-}
-
-private func activityRegistrationStatusLabel(_ item: [String: Any]) -> String {
-    switch item["Status"] as? String {
-    case "Registered":
-        if activityRegistrationExpired(item) { return "已过期" }
-        if activityRegistrationExpiryUnknown(item) { return "确认状态中" }
-        return "已报名"
-    case "CheckedIn": return "已签到"
-    case "Cancelled": return "已取消"
-    default: return "状态待核对"
     }
 }
 
@@ -578,9 +571,4 @@ func activityRegistrationParticipantStatus(_ value: Any?) -> String {
     case "Cancelled": return "已取消"
     default: return "待核对"
     }
-}
-
-private func isUnknownActivityRegistrationMutationOutcome(_ error: Error) -> Bool {
-    guard let status = (error as? MobileAPIError)?.httpStatusCode else { return true }
-    return status < 400 || status == 408 || status == 429 || status >= 500
 }

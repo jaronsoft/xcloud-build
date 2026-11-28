@@ -296,7 +296,7 @@ struct NativeMerchantTrackingView: View {
         do {
             let response = try await MobileAPI(store: store).post("/api/JHCTIMerchantOrder/AddTrackingEvent?merchantId=\(merchantID)",
                 body: ["ShipmentId": id, "Description": description, "IdempotencyKey": attempt.requestID],
-                authenticated: true, expectedPrincipal: principal, canRefresh: false)
+                authenticated: true, expectedPrincipal: principal, canRefresh: false, requireExplicitResponse: true)
             guard current else { return }
             guard response as? String == id else { throw MobileAPIError.unavailable("回执不匹配") }
             finish(.pending(attempt), recorded: true)
@@ -319,11 +319,12 @@ struct NativeMerchantTrackingView: View {
         do {
             let response = try await MobileAPI(store: store).post("/api/JHCTIMerchantOrder/GetTrackingReceipt?merchantId=\(merchantID)",
                 body: ["ShipmentId": attempt.shipmentID, "RequestId": attempt.requestID],
-                authenticated: true, expectedPrincipal: principal)
+                authenticated: true, expectedPrincipal: principal, requireExplicitResponse: true)
             guard current else { return }
             guard let row = response as? [String: Any], trackingField(row, "ShipmentId") as? String == attempt.shipmentID,
+                  trackingField(row, "RequestId") as? String == attempt.requestID,
                   let eventID = trackingField(row, "EventId") as? String, eventID == "0" || trackingID(eventID) else {
-                throw MobileAPIError.unavailable("核对回执格式或履约单不匹配。")
+                throw MobileAPIError.unavailable("物流核对回执与原履约单或请求号不匹配。")
             }
             if eventID != "0" || release {
                 finish(.pending(attempt), recorded: eventID != "0")

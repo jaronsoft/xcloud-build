@@ -10,10 +10,19 @@ struct NativeSupportTicketDetailView: View {
     let replyAttachments: [String]
     let isSubmitting: Bool
     let isUploading: Bool
+    let canEditReply: Bool
+    let replyPending: Bool
+    let replyLookupLabel: String
+    let replyNotice: String?
+    let checkingReply: Bool
+    let retryOriginalReply: Bool
     @Binding var previewAttachment: URL?
     let replyAttachmentPicker: AnyView
     let onRetry: () -> Void
+    let onCheckReply: () -> Void
     let onSubmitReply: () -> Void
+
+    private var replyLocked: Bool { !canEditReply || isSubmitting || isUploading || checkingReply }
 
     var body: some View {
         Group {
@@ -39,19 +48,26 @@ struct NativeSupportTicketDetailView: View {
                             messageCard(message)
                         }
                         if let error { Text(error).foregroundStyle(.red).font(.system(size: NativeTypography.size(14))) }
+                        if let replyNotice { Text(replyNotice).font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted) }
+                        if replyPending {
+                            Button(replyLookupLabel, action: onCheckReply)
+                                .buttonStyle(.bordered).tint(Brand.primary)
+                                .disabled(isSubmitting || isUploading || checkingReply)
+                        }
                         if (detail["Status"] as? String) != "Closed" {
                             TextField("补充说明或回复客服", text: $reply, axis: .vertical)
                                 .lineLimit(4...8).padding(10).background(.white, in: RoundedRectangle(cornerRadius: 10))
+                                .disabled(replyLocked)
                                 .onChange(of: reply) { _, value in
                                     let limited = nativeLimitUtf16Text(value, maximum: 4000)
                                     if limited != value { reply = limited }
                                 }
                             Text("\(reply.utf16.count)/4000").font(.system(size: NativeTypography.size(12)))
                                 .foregroundStyle(Brand.muted).frame(maxWidth: .infinity, alignment: .trailing)
-                            replyAttachmentPicker
-                            Button(isSubmitting ? "正在发送…" : "发送留言", action: onSubmitReply)
+                            replyAttachmentPicker.disabled(replyLocked)
+                            Button(isSubmitting ? "正在发送…" : retryOriginalReply ? "用原请求号发送" : "发送留言", action: onSubmitReply)
                                 .buttonStyle(.borderedProminent).tint(Brand.primary)
-                                .disabled(isSubmitting || isUploading
+                                .disabled(replyLocked
                                     || (reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && replyAttachments.isEmpty))
                         } else {
                             Text("工单已关闭，如仍需帮助，请重新提交问题。")

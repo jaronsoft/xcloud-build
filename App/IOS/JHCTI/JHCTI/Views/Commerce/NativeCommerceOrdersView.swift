@@ -6,6 +6,7 @@ struct NativeCommerceOrdersView: View {
     @ObservedObject var store: SessionStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showTradePaymentPage = false
     @State private var rows: [[String: Any]] = []
     @State private var selectedOrder: [String: Any]?
@@ -13,7 +14,12 @@ struct NativeCommerceOrdersView: View {
     @State private var page = 1
     @State private var total = 0
     @State private var loading = false
-    @State private var busyShipmentId = ""
+    @State private var receiptRecovery: NativeShipmentReceiptState = .unavailable
+    @State private var receiptPrincipal: String?
+    @State private var verifiedReceipt: UUID?
+    @State private var receiptProposal: ReceiptProposal?
+    @State private var receiptTask: Task<Void, Never>?
+    @State private var receiptSequence = 0
     @State private var busyPaymentOrderId = ""
     @State private var paymentNotice: String?
     @State private var digitalDeliveryNotice: String?
@@ -30,6 +36,7 @@ struct NativeCommerceOrdersView: View {
     @State private var reviewStatusLoading = false
     @State private var reviewStatusError: String?
     @State private var reviewedOrderItemIds = Set<String>()
+    @State private var pendingReviewItemIds = Set<String>()
     @State private var reviewDraftItemId: String?
     @State private var reviewRating = 5
     @State private var reviewContent = ""
@@ -42,6 +49,12 @@ struct NativeCommerceOrdersView: View {
 
     private let filters = [("", "全部"), ("PendingPayment", "待付款"), ("PendingShipment", "待发货"), ("Shipped", "已发货"),
                            ("PendingPickup", "待自提"), ("Completed", "已完成"), ("Closed", "已关闭")]
+
+    private struct ReceiptProposal {
+        let orderID: String
+        let shipmentID: String
+        let principal: String
+    }
 
     var body: some View {
         NavigationStack {
@@ -67,16 +80,36 @@ struct NativeCommerceOrdersView: View {
                 NativeTradePaymentView(store: store, orderId: selectedOrder?["Id"] as? String ?? "")
             }
             .task(id: "\(nativeTourismPrincipal(store.session?.accessToken) ?? "")-\(status)") { await loadOrders(reset: true) }
+            .confirmationDialog("确认收货", isPresented: Binding(get: { receiptProposal != nil }, set: { if !$0 { receiptProposal = nil } }),
+                                titleVisibility: .visible, presenting: receiptProposal) { proposal in
+                Button("确认收货") { startReceipt(proposal) }
+                Button("返回", role: .cancel) {}
+            } message: { _ in
+                Text("请确认已经收到这张履约单发出的商品。")
+            }
             .onChange(of: nativeTourismPrincipal(store.session?.accessToken)) { _, _ in
                 detailReadTask?.cancel(); detailReadTask = nil
                 reviewReadTask?.cancel(); reviewReadTask = nil
                 reviewReadSequence += 1
                 requestSequence += 1; rows = []; selectedOrder = nil; total = 0; page = 1
-                error = nil; loading = false; busyShipmentId = ""; digitalDeliveryNotice = nil
+                resetReceipt()
+                error = nil; loading = false; digitalDeliveryNotice = nil
                 reviewsEnabled = false; reviewStatusLoading = false; reviewStatusError = nil
-                reviewedOrderItemIds = []; clearReviewDraft(queueImages: false)
+                reviewedOrderItemIds = []; pendingReviewItemIds = []; clearReviewDraft(queueImages: false)
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active {
+                    resetReceipt()
+                    if selectedOrder != nil {
+                        detailReadTask?.cancel(); detailReadTask = nil
+                        requestSequence += 1; loading = false
+                    }
+                } else if let id = selectedOrder?["Id"] as? String {
+                    openOrder(id: id)
+                }
             }
             .onDisappear {
+                resetReceipt()
                 detailReadTask?.cancel(); detailReadTask = nil
                 reviewReadTask?.cancel(); reviewReadTask = nil
                 reviewReadSequence += 1
@@ -152,7 +185,7 @@ struct NativeCommerceOrdersView: View {
         let orderId = order["Id"] as? String ?? ""
         let paymentStatus = order["PaymentStatus"] as? String
         let items = order["Items"] as? [[String: Any]] ?? []
-        let shipments = order["Fulfillments"] as? [[String: Any]] ?? []
+        let shipments = (try? readNativeBuyerShipments(order, orderID: orderId)) ?? []
         return ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -193,6 +226,7 @@ struct NativeCommerceOrdersView: View {
                     reviewStatusLoading: reviewStatusLoading,
                     reviewStatusError: reviewStatusError,
                     reviewedOrderItemIds: reviewedOrderItemIds,
+                    pendingReviewItemIds: pendingReviewItemIds,
                     reviewDraftItemId: reviewDraftItemId,
                     uploadingReviewPhotos: uploadingReviewPhotos,
                     submittingReview: submittingReview,
@@ -219,26 +253,21 @@ struct NativeCommerceOrdersView: View {
                 }
                 NativeCommerceDigitalDeliverySection(orderStatus: order["Status"] as? String ?? "",
                     items: items, notice: $digitalDeliveryNotice)
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("履约与物流轨迹").font(.system(size: NativeTypography.size(14), weight: .semibold))
-                    if shipments.isEmpty { Text("暂无履约记录").font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted) }
-                    ForEach(shipments.indices, id: \.self) { index in
-                        let shipment = shipments[index]
-                        let shipmentId = shipment["Id"] as? String ?? ""
-                        NativeCommerceShipmentCard(
-                            shipment: shipment,
-                            statusText: shipmentStatus(shipment["Status"] as? String ?? ""),
-                            isConfirming: busyShipmentId == shipmentId,
-                            isConfirmationBusy: !busyShipmentId.isEmpty,
-                            onConfirm: { Task { await confirmReceipt(shipmentId) } }
-                        )
-                    }
-                }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 11))
+                NativeCommerceShipmentsSection(shipments: shipments, recovery: receiptRecovery,
+                    verifiedReceipt: verifiedReceipt, busy: loading || receiptTask != nil,
+                    onVerify: { openOrder(id: orderId, allowReceiptRetry: true) },
+                    onConfirm: { shipment in
+                        guard scenePhase == .active, let principal = receiptPrincipal,
+                              nativeTourismPrincipal(store.session?.accessToken) == principal else { return }
+                        receiptProposal = ReceiptProposal(orderID: orderId, shipmentID: shipment.id, principal: principal)
+                    })
                 if let error { Text(error).font(.system(size: NativeTypography.size(14))).foregroundStyle(.red) }
                 Button("刷新订单与物流") { openOrder(id: order["Id"] as? String ?? "") }
                     .font(.system(size: NativeTypography.size(14), weight: .semibold)).frame(maxWidth: .infinity).padding(10)
+                    .disabled(loading || receiptTask != nil)
             }.padding(14)
         }.refreshable {
+            guard receiptTask == nil else { return }
             detailReadTask?.cancel(); detailReadTask = nil
             reviewReadTask?.cancel(); reviewReadTask = nil
             await loadOrder(id: order["Id"] as? String ?? "")
@@ -296,17 +325,33 @@ struct NativeCommerceOrdersView: View {
         if requestSequence == sequence { loading = false }
     }
 
-    private func loadOrder(id: String) async {
-        guard !id.isEmpty, let token = store.session?.accessToken,
+    private func loadOrder(id: String, allowReceiptRetry: Bool = false) async {
+        guard trackingID(id), let token = store.session?.accessToken,
               let requestedPrincipal = nativeTourismPrincipal(token) else { error = "请重新登录后查看订单。"; return }
+        verifiedReceipt = nil; receiptProposal = nil
         requestSequence += 1; let sequence = requestSequence; loading = true; error = nil; paymentNotice = nil; digitalDeliveryNotice = nil
+        defer { if requestSequence == sequence { loading = false } }
         do {
-            let order = try await MobileAPI(store: store).get("/api/JHCTITradeOrder/GetMyOrder?id=\(id)", authenticated: true, expectedPrincipal: requestedPrincipal) as? [String: Any]
-            guard nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal, requestSequence == sequence, let order else { throw MobileAPIError.unavailable("订单详情格式无效") }
+            let result = try await MobileAPI(store: store).get("/api/JHCTITradeOrder/GetMyOrder?id=\(id)",
+                authenticated: true, expectedPrincipal: requestedPrincipal, requireExplicitResponse: true)
+            guard !Task.isCancelled, nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal, requestSequence == sequence else { return }
+            guard var order = result as? [String: Any] else { throw MobileAPIError.unavailable("订单详情格式无效") }
+            let shipments = try readNativeBuyerShipments(order, orderID: id)
+            order["Id"] = id
+            let storage = nativeShipmentReceiptStore(principal: requestedPrincipal, orderID: id)
+            let recovery = storage.read()
+            if let attempt = recovery.attempt, let shipment = shipments.first(where: { $0.id == attempt.shipmentID }) {
+                if shipment.delivered { _ = storage.clear(recovery) }
+                if allowReceiptRetry && shipment.canConfirm { verifiedReceipt = attempt.marker }
+            }
+            receiptRecovery = storage.read(); receiptPrincipal = requestedPrincipal
             selectedOrder = order
             await loadReviewStatus(for: order)
-        } catch { if nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal, requestSequence == sequence { self.error = error.localizedDescription } }
-        if requestSequence == sequence { loading = false }
+        } catch {
+            if !Task.isCancelled, nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal, requestSequence == sequence {
+                self.error = error.localizedDescription
+            }
+        }
     }
 
     private func loadReviewStatus(for order: [String: Any]) async {
@@ -314,10 +359,14 @@ struct NativeCommerceOrdersView: View {
               let token = store.session?.accessToken,
               let requestedPrincipal = nativeTourismPrincipal(token),
               let items = order["Items"] as? [[String: Any]] else {
-            reviewsEnabled = false; reviewStatusLoading = false; reviewStatusError = nil; reviewedOrderItemIds = []
+            reviewsEnabled = false; reviewStatusLoading = false; reviewStatusError = nil; reviewedOrderItemIds = []; pendingReviewItemIds = []
             return
         }
         reviewsEnabled = false; reviewStatusLoading = true; reviewStatusError = nil; reviewedOrderItemIds = []
+        let ids = Array(Set(items.compactMap { $0["Id"] as? String }.filter(validProductReviewItemID))).sorted()
+        pendingReviewItemIds = Set(ids.filter {
+            nativeProductReviewRecoveryStore(principal: requestedPrincipal, itemID: $0).read() != .ready
+        })
         let orderId = order["Id"] as? String ?? ""
         reviewReadSequence += 1
         let sequence = reviewReadSequence
@@ -341,24 +390,29 @@ struct NativeCommerceOrdersView: View {
             case .unavailable:
                 throw MobileAPIError.unavailable("评价功能开放状态暂时无法确认，请重试")
             }
-            let ids = items.compactMap { $0["Id"] as? String }
-                .filter { Int64($0).map({ $0 > 0 }) == true }
             var reviewed = Set<String>()
             for start in stride(from: 0, to: ids.count, by: 200) {
                 let batch = Array(ids[start..<min(start + 200, ids.count)])
-                guard let result = try await api.postJSON("/api/JHCTIProductReview/GetMineReviewedOrderItemIds",
-                    body: batch, authenticated: true, expectedPrincipal: requestedPrincipal) as? [String],
-                    !Task.isCancelled, sequence == reviewReadSequence,
+                let result = try await api.postJSON("/api/JHCTIProductReview/GetMineReviewedOrderItemIds",
+                    body: batch, authenticated: true, expectedPrincipal: requestedPrincipal, requireExplicitResponse: true)
+                guard !Task.isCancelled, sequence == reviewReadSequence,
                     nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal,
                     selectedOrder?["Id"] as? String == orderId else {
                     throw MobileAPIError.unavailable("评价状态响应无效或登录账号已变化")
                 }
-                reviewed.formUnion(result.filter { batch.contains($0) })
+                reviewed.formUnion(try readNativeReviewedProductItems(result, requested: batch))
             }
             guard !Task.isCancelled, sequence == reviewReadSequence,
                   nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal,
                   selectedOrder?["Id"] as? String == orderId else { return }
-            reviewedOrderItemIds = reviewed; reviewsEnabled = true
+            for itemID in reviewed {
+                let recovery = nativeProductReviewRecoveryStore(principal: requestedPrincipal, itemID: itemID)
+                _ = recovery.clear(recovery.read())
+            }
+            pendingReviewItemIds.subtract(reviewed)
+            reviewedOrderItemIds.formUnion(reviewed)
+            if let itemID = reviewDraftItemId, reviewed.contains(itemID) { clearReviewDraft(queueImages: false) }
+            reviewsEnabled = true
         } catch {
             if !Task.isCancelled, sequence == reviewReadSequence,
                nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal,
@@ -370,11 +424,12 @@ struct NativeCommerceOrdersView: View {
     }
 
     private func clearReviewDraft(queueImages: Bool) {
+        let mayQueue = queueImages && !submittingReview && !reviewNeedsVerification
         reviewSubmitSequence += 1
         reviewSubmitTask?.cancel(); reviewSubmitTask = nil
         submittingReview = false
         cancelReviewUpload()
-        if queueImages { queueReviewImageCleanup(reviewMediaUrls) }
+        if mayQueue { queueReviewImageCleanup(reviewMediaUrls) }
         reviewDraftItemId = nil; reviewRating = 5; reviewContent = ""; reviewMediaUrls = []
         selectedReviewPhotos = []; reviewNeedsVerification = false; reviewMessage = nil
     }
@@ -387,10 +442,16 @@ struct NativeCommerceOrdersView: View {
     }
 
     private func startReviewDraft(itemId: String) {
-        cancelReviewUpload()
-        if !reviewMediaUrls.isEmpty { queueReviewImageCleanup(reviewMediaUrls) }
+        guard validProductReviewItemID(itemId), !reviewedOrderItemIds.contains(itemId),
+              !submittingReview, !uploadingReviewPhotos, !reviewStatusLoading,
+              let principal = nativeTourismPrincipal(store.session?.accessToken) else { return }
+        let pending = nativeProductReviewRecoveryStore(principal: principal, itemID: itemId).read() != .ready
+        guard reviewsEnabled || pending else { return }
+        clearReviewDraft(queueImages: true)
         reviewDraftItemId = itemId; reviewRating = 5; reviewContent = ""
-        reviewMediaUrls = []; reviewMessage = nil; reviewNeedsVerification = false
+        if pending { pendingReviewItemIds.insert(itemId) }
+        reviewNeedsVerification = pending
+        reviewMessage = pending ? "此前评价结果待核对，请先读取该商品的本人评价状态。" : nil
     }
 
     private func queueReviewImageCleanup(_ urls: [String]) {
@@ -403,12 +464,12 @@ struct NativeCommerceOrdersView: View {
     }
 
     private func removeReviewImage(_ url: String) {
-        guard !submittingReview, !uploadingReviewPhotos else { return }
+        guard !submittingReview, !uploadingReviewPhotos, !reviewNeedsVerification, !reviewStatusLoading else { return }
         queueReviewImageCleanup([url]); reviewMediaUrls.removeAll { $0 == url }; reviewMessage = nil
     }
 
     private func uploadReviewPhotos(_ items: [PhotosPickerItem], orderItemId: String, sequence: Int) async {
-        guard !items.isEmpty, !uploadingReviewPhotos, !submittingReview,
+        guard !items.isEmpty, !uploadingReviewPhotos, !submittingReview, !reviewNeedsVerification, !reviewStatusLoading,
               sequence == reviewUploadSequence, reviewDraftItemId == orderItemId, let token = store.session?.accessToken,
               let requestedPrincipal = nativeTourismPrincipal(token) else { return }
         let capacity = max(0, 9 - reviewMediaUrls.count)
@@ -457,26 +518,35 @@ struct NativeCommerceOrdersView: View {
     }
 
     private func verifyReviewSubmission() async {
-        guard let itemId = reviewDraftItemId, let token = store.session?.accessToken,
-              let requestedPrincipal = nativeTourismPrincipal(token) else { return }
+        guard let itemId = reviewDraftItemId, reviewNeedsVerification, !submittingReview,
+              let requestedPrincipal = nativeTourismPrincipal(store.session?.accessToken) else { return }
+        let recovery = nativeProductReviewRecoveryStore(principal: requestedPrincipal, itemID: itemId)
+        let pending = recovery.read()
         reviewStatusLoading = true; reviewMessage = nil
         reviewReadSequence += 1
         let sequence = reviewReadSequence
         defer { if sequence == reviewReadSequence { reviewStatusLoading = false } }
         do {
-            guard let result = try await MobileAPI(store: store).postJSON("/api/JHCTIProductReview/GetMineReviewedOrderItemIds",
-                body: [itemId], authenticated: true, expectedPrincipal: requestedPrincipal) as? [String], !Task.isCancelled,
+            let result = try await MobileAPI(store: store).postJSON("/api/JHCTIProductReview/GetMineReviewedOrderItemIds",
+                body: [itemId], authenticated: true, expectedPrincipal: requestedPrincipal, requireExplicitResponse: true)
+            guard !Task.isCancelled,
                 sequence == reviewReadSequence,
                 nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal,
                 reviewDraftItemId == itemId else {
                 throw MobileAPIError.unavailable("评价状态响应无效或登录账号已变化")
             }
-            if result.contains(itemId) {
+            if try readNativeReviewedProductItems(result, requested: [itemId]).contains(itemId) {
+                _ = recovery.clear(pending)
+                pendingReviewItemIds.remove(itemId)
                 reviewedOrderItemIds.insert(itemId); clearReviewDraft(queueImages: false)
                 reviewStatusError = nil
             } else {
+                guard pending == .ready ? recovery.read() == .ready : recovery.clear(pending) else {
+                    throw MobileAPIError.unavailable("暂时无法解除本机评价保护")
+                }
+                pendingReviewItemIds.remove(itemId)
                 reviewNeedsVerification = false
-                reviewMessage = "暂未查到已提交评价；草稿已保留，可在确认后重新提交。"
+                reviewMessage = reviewsEnabled ? "暂未查到已提交评价，可确认后提交。" : "暂未查到已提交评价，恢复开放后可重新填写。"
             }
         } catch {
             if !Task.isCancelled, sequence == reviewReadSequence,
@@ -487,14 +557,16 @@ struct NativeCommerceOrdersView: View {
         }
     }
 
-    private func openOrder(id: String) {
+    private func openOrder(id: String, allowReceiptRetry: Bool = false) {
+        guard receiptTask == nil else { return }
         detailReadTask?.cancel()
         reviewReadTask?.cancel(); reviewReadTask = nil
         reviewReadSequence += 1
-        detailReadTask = Task { await loadOrder(id: id) }
+        detailReadTask = Task { await loadOrder(id: id, allowReceiptRetry: allowReceiptRetry) }
     }
 
     private func closeOrderDetail() {
+        resetReceipt()
         detailReadTask?.cancel(); detailReadTask = nil
         reviewReadTask?.cancel(); reviewReadTask = nil
         reviewReadSequence += 1
@@ -512,12 +584,23 @@ struct NativeCommerceOrdersView: View {
     private func submitProductReview(itemId: String, sequence: Int) async {
         let content = reviewContent.trimmingCharacters(in: .whitespacesAndNewlines)
         guard reviewsEnabled, reviewDraftItemId == itemId, !submittingReview, !uploadingReviewPhotos,
+              !reviewNeedsVerification, !reviewStatusLoading, !reviewedOrderItemIds.contains(itemId),
               content.utf16.count >= 2, content.utf16.count <= 2000, let token = store.session?.accessToken,
               let requestedPrincipal = nativeTourismPrincipal(token) else {
             if content.utf16.count < 2 || content.utf16.count > 2000 { reviewMessage = "评价内容须为 2 至 2000 个字符。" }
             if sequence == reviewSubmitSequence { reviewSubmitTask = nil; submittingReview = false }
             return
         }
+        let recovery = nativeProductReviewRecoveryStore(principal: requestedPrincipal, itemID: itemId)
+        let marker = NativeProductReviewRecoveryMarker(itemID: itemId)
+        guard recovery.save(marker) else {
+            pendingReviewItemIds.insert(itemId)
+            reviewNeedsVerification = true
+            reviewMessage = "未能保存评价保护记录，评价未发送。请核对状态后重试。"
+            if sequence == reviewSubmitSequence { reviewSubmitTask = nil }
+            return
+        }
+        pendingReviewItemIds.insert(itemId)
         submittingReview = true; reviewMessage = nil
         defer {
             if sequence == reviewSubmitSequence {
@@ -528,13 +611,17 @@ struct NativeCommerceOrdersView: View {
         do {
             let result = try await MobileAPI(store: store).post("/api/JHCTIProductReview/Submit", body: [
                 "OrderItemId": itemId, "Rating": reviewRating, "Content": content, "MediaUrls": reviewMediaUrls
-            ], authenticated: true, expectedPrincipal: requestedPrincipal) as? [String: Any]
+            ], authenticated: true, expectedPrincipal: requestedPrincipal, canRefresh: false, requireExplicitResponse: true)
+            guard nativeProductReviewReceiptMatches(result, itemID: itemId) else {
+                throw MobileAPIError.unavailable("评价回执无法确认，请核对本人评价状态")
+            }
+            _ = recovery.clear(.pending(marker))
             guard !Task.isCancelled, sequence == reviewSubmitSequence,
-                  nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal,
-                  (result?["OrderItemId"] as? String ?? "") == itemId else {
+                  nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal else {
                 throw MobileAPIError.unavailable("评价回执无法确认，请核对本人评价状态")
             }
             reviewSubmitTask = nil
+            pendingReviewItemIds.remove(itemId)
             reviewedOrderItemIds.insert(itemId); clearReviewDraft(queueImages: false); reviewStatusError = nil
         } catch {
             guard !Task.isCancelled, sequence == reviewSubmitSequence,
@@ -582,26 +669,64 @@ struct NativeCommerceOrdersView: View {
         }
     }
 
-    private func confirmReceipt(_ shipmentId: String) async {
-        guard !shipmentId.isEmpty, let orderId = selectedOrder?["Id"] as? String,
-              let token = store.session?.accessToken,
-              let requestedPrincipal = nativeTourismPrincipal(token) else { error = "履约信息无效，请刷新后重试。"; return }
-        busyShipmentId = shipmentId; error = nil
+    private func resetReceipt() {
+        receiptSequence += 1
+        receiptTask?.cancel(); receiptTask = nil
+        receiptProposal = nil; verifiedReceipt = nil; receiptPrincipal = nil
+        receiptRecovery = .unavailable
+    }
+
+    private func startReceipt(_ proposal: ReceiptProposal) {
+        receiptProposal = nil
+        guard receiptTask == nil, !loading, scenePhase == .active,
+              receiptPrincipal == proposal.principal,
+              nativeTourismPrincipal(store.session?.accessToken) == proposal.principal,
+              let order = selectedOrder,
+              let shipments = try? readNativeBuyerShipments(order, orderID: proposal.orderID),
+              let shipment = shipments.first(where: { $0.id == proposal.shipmentID }) else { return }
+        let storage = nativeShipmentReceiptStore(principal: proposal.principal, orderID: proposal.orderID)
+        let current = storage.read()
+        receiptRecovery = current
+        guard current.canConfirm(shipment, verified: verifiedReceipt) else { return }
+        verifiedReceipt = nil
+        if current == .ready {
+            guard storage.save(NativeShipmentReceiptAttempt(shipmentID: shipment.id)) else {
+                receiptRecovery = storage.read()
+                error = "设备无法保存收货待核对记录，确认请求未发送。"
+                return
+            }
+            receiptRecovery = storage.read()
+        }
+        receiptSequence += 1
+        let sequence = receiptSequence
+        let detailRevision = requestSequence
+        error = nil
+        receiptTask = Task { await confirmReceipt(proposal, sequence: sequence, detailRevision: detailRevision) }
+    }
+
+    private func confirmReceipt(_ proposal: ReceiptProposal, sequence: Int, detailRevision: Int) async {
+        defer { if receiptSequence == sequence { receiptTask = nil } }
+        func isCurrent() -> Bool {
+            !Task.isCancelled && scenePhase == .active && receiptSequence == sequence
+                && nativeTourismPrincipal(store.session?.accessToken) == proposal.principal
+                && selectedOrder?["Id"] as? String == proposal.orderID
+        }
+        guard isCurrent(), requestSequence == detailRevision else { return }
         do {
-            let result = try await MobileAPI(store: store).post("/api/JHCTITradeOrder/ConfirmShipmentReceipt?shipmentId=\(shipmentId)", body: [:], authenticated: true, expectedPrincipal: requestedPrincipal) as? String
-            guard nativeTourismPrincipal(store.session?.accessToken) == requestedPrincipal, result == shipmentId else { throw MobileAPIError.unavailable("收货结果未确认，请刷新订单核对") }
-            await loadOrder(id: orderId)
-        } catch { self.error = error.localizedDescription }
-        busyShipmentId = ""
+            let receipt = try await MobileAPI(store: store).post("/api/JHCTITradeOrder/ConfirmShipmentReceipt?shipmentId=\(proposal.shipmentID)",
+                body: [:], authenticated: true, expectedPrincipal: proposal.principal, canRefresh: false, requireExplicitResponse: true)
+            guard receipt as? String == proposal.shipmentID else { throw MobileAPIError.unavailable("收货回执与原履约单不一致。") }
+            guard isCurrent(), requestSequence == detailRevision else { return }
+            await loadOrder(id: proposal.orderID)
+        } catch {
+            if isCurrent(), requestSequence == detailRevision { self.error = "收货结果待核对，请重新读取原履约状态。" }
+        }
     }
 
     private func orderStatus(_ value: String) -> String {
         ["PendingPayment": "待付款", "PendingShipment": "待发货", "Shipped": "已发货", "PendingPickup": "待自提", "Completed": "已完成", "Closed": "已关闭", "Refunded": "已退款"][value] ?? "状态待核对"
     }
 
-    private func shipmentStatus(_ value: String) -> String {
-        ["PendingShipment": "待发货", "Shipped": "已发货", "Delivered": "已收货", "PickedUp": "已取货", "Completed": "已完成", "Cancelled": "已取消"][value] ?? "状态待核对"
-    }
 
     private func money(_ value: Any?) -> String {
         if let number = value as? NSNumber { return String(format: "%.2f", number.doubleValue) }

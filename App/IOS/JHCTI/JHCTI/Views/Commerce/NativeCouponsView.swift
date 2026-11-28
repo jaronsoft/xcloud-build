@@ -19,7 +19,9 @@ struct NativeCouponsView: View {
     @State private var loading = false
     @State private var loadingMore = false
     @State private var claimingID = ""
-    @State private var requestIDs = [String: String]()
+    @State private var receiptAttempts = [String: String]()
+    @State private var receiptNotice: String?
+    @State private var receiptTask: Task<Void, Never>?
     @State private var error: String?
     @State private var retryPage: Int?
     @State private var retryTab: String?
@@ -36,6 +38,8 @@ struct NativeCouponsView: View {
     @State private var requestSequence = 0
 
     private let pageSize = 20
+    // 原回执查询和领券共用服务端准入队列。
+    private let couponClaimTimeout: TimeInterval = 45
     private let statuses = [("", "全部"), ("Available", "可使用"), ("Reserved", "使用中"), ("Redeemed", "已使用"), ("Expired", "已过期")]
 
     var body: some View {
@@ -165,6 +169,18 @@ struct NativeCouponsView: View {
                                 .disabled(loadingMore).frame(maxWidth: .infinity)
                         }
                     } else if store.session != nil {
+                        if !receiptAttempts.isEmpty || receiptNotice != nil {
+                            VStack(alignment: .leading, spacing: 8) {
+                                if !receiptAttempts.isEmpty {
+                                    Text("有领取结果待核对。").font(.caption).foregroundStyle(Brand.ink)
+                                    Button(receiptTask != nil ? "核对中…" : "核对领取结果") {
+                                        guard receiptTask == nil else { return }
+                                        receiptTask = Task { await checkClaimReceipts() }
+                                    }.buttonStyle(.bordered).tint(Brand.primary).disabled(receiptTask != nil)
+                                }
+                                if let receiptNotice { Text(receiptNotice).font(.caption).foregroundStyle(Brand.ink) }
+                            }.frame(maxWidth: .infinity, alignment: .leading).merchantCard()
+                        }
                         ForEach(coupons.indices, id: \.self) { index in couponCard(coupons[index]) }
                         if !loading && error == nil && coupons.isEmpty {
                             Text("这个分类暂时没有消费券。")
@@ -189,10 +205,13 @@ struct NativeCouponsView: View {
             else { await loadCoupons(page: 1) }
         }
         .onChange(of: store.session?.accessToken) { _, _ in
-            requestSequence += 1; coupons = []; qrImage = nil; claimingID = ""; requestIDs = [:]
+            receiptTask?.cancel(); receiptAttempts = [:]; receiptNotice = nil
+            requestSequence += 1; coupons = []; qrImage = nil; claimingID = ""
             error = nil; retryPage = nil; retryTab = nil; pendingCampaign = nil; claimFeedback = nil
             if tab == "mine" { revision += 1 }
         }
+        .onChange(of: tab) { _, _ in receiptTask?.cancel(); receiptNotice = nil }
+        .onDisappear { receiptTask?.cancel() }
         .alert("领券前请完成账号实名", isPresented: $identityNotReady) {
             Button("前往实名") { identityProfileOpen = true }
             Button("暂不领取", role: .cancel) {}
@@ -523,6 +542,7 @@ struct NativeCouponsView: View {
 
     @MainActor private func loadCoupons(page target: Int) async {
         guard let token = store.session?.accessToken else { coupons = []; couponTotal = 0; loading = false; return }
+        if target == 1 { receiptAttempts = storedClaimAttempts(principal: MobileAPI(store: store).nativeTourismPrincipal(token)) }
         requestSequence += 1; let sequence = requestSequence
         loading = true; error = nil; retryPage = nil; retryTab = nil
         if target == 1 { coupons = []; couponTotal = 0; qrImage = nil }
@@ -544,6 +564,124 @@ struct NativeCouponsView: View {
                 self.error = "暂时无法加载券包"
                 retryPage = target; retryTab = "mine"
             }
+        }
+    }
+
+    private func couponClaimAttemptPrefix(_ principal: String) -> String { "jhcti.coupon.claim.attempt.v1.\(principal)." }
+
+    private func couponClaimStoragePrincipal(_ principal: String) -> String {
+        guard let separator = principal.firstIndex(of: ":") else { return principal }
+        let subject = String(principal[..<separator])
+        guard let number = Int64(subject), number > 0, String(number) == subject else { return principal }
+        return "account:\(subject)"
+    }
+
+    private func validStoredClaimRequest(_ value: Any?) -> String? {
+        guard let request = value as? String,
+              request.range(of: "^[A-Za-z0-9._:-]{16,80}$", options: .regularExpression) != nil else { return nil }
+        return request
+    }
+
+    private func storedClaimAttempts(principal: String) -> [String: String] {
+        let prefix = couponClaimAttemptPrefix(couponClaimStoragePrincipal(principal))
+        let legacyPrefix = couponClaimAttemptPrefix(principal)
+        let defaults = UserDefaults.standard
+        let entries = defaults.dictionaryRepresentation()
+        var attempts = [String: String]()
+        for (key, value) in entries {
+            let matchedPrefix = key.hasPrefix(prefix) ? prefix : legacyPrefix
+            guard key.hasPrefix(matchedPrefix), let request = validStoredClaimRequest(value) else { continue }
+            let id = String(key.dropFirst(matchedPrefix.count))
+            guard let number = Int64(id), number > 0, String(number) == id else { continue }
+            if matchedPrefix == prefix {
+                attempts[id] = request
+            } else if entries[prefix + id] == nil {
+                // 旧会话的记录先复制到账号名下，收到确认后再按原号清理。
+                defaults.set(request, forKey: prefix + id)
+                attempts[id] = request
+            }
+        }
+        return attempts
+    }
+
+    private func saveClaimAttempt(principal: String, campaignID: String) -> String? {
+        let key = couponClaimAttemptPrefix(couponClaimStoragePrincipal(principal)) + campaignID
+        let legacyKey = couponClaimAttemptPrefix(principal) + campaignID
+        let defaults = UserDefaults.standard
+        let stored = defaults.object(forKey: key) ?? defaults.object(forKey: legacyKey) ?? "coupon-\(UUID().uuidString)"
+        guard let request = validStoredClaimRequest(stored) else { return nil }
+        defaults.set(request, forKey: key)
+        return defaults.string(forKey: key) == request ? request : nil
+    }
+
+    @discardableResult private func clearClaimAttempt(principal: String, campaignID: String, request: String) -> Bool {
+        let defaults = UserDefaults.standard
+        let keys = Set([couponClaimAttemptPrefix(couponClaimStoragePrincipal(principal)) + campaignID,
+                        couponClaimAttemptPrefix(principal) + campaignID])
+        let matching = keys.filter { defaults.string(forKey: $0) == request }
+        for key in matching { defaults.removeObject(forKey: key) }
+        return !matching.isEmpty
+    }
+
+    private func matchClaimReceipts(_ response: Any, to attempts: [String: String]) throws -> [String: String] {
+        let invalid = MobileAPIError.unavailable("领券回执格式无效。")
+        guard let rows = response as? [[String: Any]], rows.count <= attempts.count else { throw invalid }
+        var matched = [String: String]()
+        var couponIDs = Set<String>()
+        for row in rows {
+            func read(_ key: String) throws -> String? {
+                let alias = key.prefix(1).lowercased() + key.dropFirst()
+                if let upper = row[key], let lower = row[alias],
+                   !(upper is String && (upper as? String) == (lower as? String)) { throw invalid }
+                return (row[key] ?? row[alias]) as? String
+            }
+            guard let couponID = try read("Id"), let value = Int64(couponID), value > 0, String(value) == couponID,
+                  couponIDs.insert(couponID).inserted, let campaignID = try read("CampaignId"), matched[campaignID] == nil,
+                  let requestID = try read("RequestId"), attempts[campaignID] == requestID else { throw invalid }
+            matched[campaignID] = requestID
+        }
+        return matched
+    }
+
+    @MainActor private func checkClaimReceipts() async {
+        defer { receiptTask = nil }
+        guard tab == "mine", !Task.isCancelled, let token = store.session?.accessToken else { return }
+        let api = MobileAPI(store: store)
+        let principal = api.nativeTourismPrincipal(token)
+        let attempts = storedClaimAttempts(principal: principal)
+        let campaignIDs = attempts.keys.sorted()
+        var confirmed = 0
+        receiptNotice = nil
+        let active = { !Task.isCancelled && store.session?.accessToken == token && tab == "mine" }
+        do {
+            for offset in stride(from: 0, to: campaignIDs.count, by: 20) {
+                guard active() else { return }
+                let batch = Dictionary(uniqueKeysWithValues: campaignIDs.dropFirst(offset).prefix(20).compactMap { id in
+                    attempts[id].map { (id, $0) }
+                })
+                let body = batch.map { ["CampaignId": $0.key, "RequestId": $0.value] }
+                let response = try await api.postJSON("/api/JHCTICouponClaim/GetMyClaimReceipts", body: body,
+                    authenticated: true, expectedPrincipal: principal, requireExplicitResponse: true,
+                    timeoutInterval: couponClaimTimeout)
+                guard active() else { return }
+                let matched = try matchClaimReceipts(response, to: batch)
+                let recovered = matched.filter { id, request in
+                    clearClaimAttempt(principal: principal, campaignID: id, request: request)
+                }
+                receiptAttempts = storedClaimAttempts(principal: principal)
+                guard !recovered.isEmpty else { continue }
+                confirmed += recovered.count
+                receiptNotice = "已确认领取 \(confirmed) 张消费券。"
+                status = ""; revision += 1
+            }
+            if confirmed == 0, !attempts.isEmpty {
+                receiptNotice = "暂未查到对应的领券结果，可稍后再核对。"
+            }
+        } catch {
+            guard active() else { return }
+            receiptNotice = confirmed > 0
+                ? "已确认领取 \(confirmed) 张消费券，其余结果暂时无法核对。"
+                : "暂时无法核对领券结果，请稍后重试。"
         }
     }
 
@@ -571,39 +709,35 @@ struct NativeCouponsView: View {
         guard Int64(id).map({ $0 > 0 }) == true, claimingID.isEmpty,
               campaigns.contains(where: { display(field($0, "Id")) == id }) else { return }
         let principal = MobileAPI(store: store).nativeTourismPrincipal(token)
-        let attemptKey = "jhcti.coupon.claim.attempt.v1.\(principal).\(id)"
-        if UserDefaults.standard.object(forKey: attemptKey) != nil,
-           UserDefaults.standard.string(forKey: attemptKey) == nil {
+        guard let requestID = saveClaimAttempt(principal: principal, campaignID: id) else {
             claimFeedback = .rejected
             return
         }
-        let requestID = requestIDs[id] ?? UserDefaults.standard.string(forKey: attemptKey) ?? "coupon-\(UUID().uuidString)"
-        UserDefaults.standard.set(requestID, forKey: attemptKey)
-        guard UserDefaults.standard.string(forKey: attemptKey) == requestID else {
-            claimFeedback = .rejected
-            return
-        }
-        requestIDs[id] = requestID; claimingID = id; error = nil; notice = nil; claimFeedback = nil
-        defer { if claimingID == id { claimingID = "" } }
+        claimingID = id; error = nil; notice = nil; claimFeedback = nil
+        defer { if store.session?.accessToken == token, claimingID == id { claimingID = "" } }
         do {
             let api = MobileAPI(store: store)
             let sendClaim = {
-                try await api.post("/api/JHCTICouponClaim/Claim", body: [
+                let receipt = try await api.post("/api/JHCTICouponClaim/Claim", body: [
                     "CampaignId": id, "RequestId": requestID, "IdentityConsent": identityConsent
-                ], authenticated: true, timeoutInterval: 45)
+                ], authenticated: true, expectedPrincipal: principal, timeoutInterval: couponClaimTimeout,
+                   requireExplicitResponse: true) as? [String: Any]
+                guard let claimID = (receipt?["Id"] ?? receipt?["id"]) as? String,
+                      let number = Int64(claimID), number > 0, String(number) == claimID else {
+                    throw MobileAPIError.transient(message: "领券结果未确认，请稍后查询。", retryAfterSeconds: nil)
+                }
             }
             do {
-                _ = try await sendClaim()
+                try await sendClaim()
             } catch {
                 guard let delay = couponClaimRetryDelay(for: error), store.session?.accessToken == token else { throw error }
                 notice = "正在确认领券结果，请稍等…"
                 try await Task.sleep(for: .milliseconds(delay))
                 guard store.session?.accessToken == token else { throw MobileAPIError.unavailable("登录账号已变化，请重新操作") }
-                _ = try await sendClaim()
+                try await sendClaim()
             }
             guard store.session?.accessToken == token else { return }
-            requestIDs.removeValue(forKey: id)
-            UserDefaults.standard.removeObject(forKey: attemptKey)
+            clearClaimAttempt(principal: principal, campaignID: id, request: requestID)
             notice = "领取成功，已放入我的消费券。"
             requestSequence += 1
             await loadCampaigns(page: 1)

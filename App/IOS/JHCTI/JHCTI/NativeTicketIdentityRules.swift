@@ -88,6 +88,9 @@ func nativeTicketIdentityInputError(name: String, number: String, consent: Bool)
     guard number.range(of: "^[1-9][0-9]{16}[0-9X]$", options: .regularExpression) != nil else {
         return "请填写 18 位居民身份证号码。"
     }
+    guard nativeSignupIdentityIsValid(number) else {
+        return "身份证号码校验不通过，请核对出生日期和末位。"
+    }
     return consent ? nil : "请先阅读并单独同意实名资料告知。"
 }
 

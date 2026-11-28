@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct NativeIdentityConsentView: View {
+    private let revokeExplanation = "撤回后，办理新的实名购票和实名消费券业务需重新授权。已登记的实名资料仍加密保留，历史订单按原规则处理。"
+
     @ObservedObject var store: SessionStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -20,7 +22,7 @@ struct NativeIdentityConsentView: View {
     @State private var readTaskGeneration = 0
     @State private var writeTask: Task<Void, Never>?
     @State private var writeTaskGeneration = 0
-    @State private var pageVisible = true
+    @State private var pageVisible = false
 
     private var principal: String? { nativeTourismPrincipal(store.session?.accessToken) }
     private var hasConsent: Bool { profile?["HasConsent"] as? Bool == true }
@@ -43,103 +45,204 @@ struct NativeIdentityConsentView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("当前通过手机号验证账号。请填写本人真实姓名和身份证号码。平台只校验格式，不核实证件真伪。填写不实会影响后续权益。")
-                        .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
-                    if loading {
-                        ProgressView("正在读取实名资料…").frame(maxWidth: .infinity, alignment: .leading)
-                    } else if busy && profile == nil {
-                        ProgressView("正在提交…").frame(maxWidth: .infinity, alignment: .leading)
-                    } else if let profile, profileOwner == principal {
-                        VStack(alignment: .leading, spacing: 10) {
-                            consentRow("手机号验证", detail: profile["IsPhoneVerified"] as? Bool == true ? "已验证" : "未验证")
-                            consentRow("授权状态", detail: consentStatus)
-                            consentRow("实名姓名", detail: profile["IsIdentityDataReadable"] as? Bool == true
-                                ? profile["MaskedRealName"] as? String ?? "不可读取" : "不可读取")
-                            consentRow("身份证号", detail: profile["IsIdentityDataReadable"] as? Bool == true
-                                ? profile["MaskedIdentityNumber"] as? String ?? "不可读取" : "不可读取")
-                            consentRow("告知版本", detail: profile["ConsentVersion"] as? String ?? "—")
-                            consentRow("授权时间", detail: profile["ConsentedAt"] as? String ?? "—")
-                            if profile["HasProfile"] as? Bool == true && profile["IsIdentityDataReadable"] as? Bool != true {
-                                Text("实名资料已保存，但当前无法安全读取；修复前不能用于新的实名业务或重新授权。请联系平台处理。已产生订单资料快照仍按原规则保留。")
-                                    .font(.footnote).foregroundStyle(Brand.muted)
-                            }
-                            if hasConsent {
-                                Button(role: .destructive) {
-                                    guard let principal else { return }
-                                    revokeConfirmationPrincipal = principal
-                                    confirmRevoke = true
-                                } label: {
-                                    HStack { Spacer(); Text(busy ? "正在撤回…" : "撤回实名资料授权"); Spacer() }
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(busy || loading)
-                            } else {
-                                Text("当前没有有效的实名资料授权；使用实名票种或实名消费券业务前，请先登记或重新授权。")
-                                    .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)
-                            }
-                            if profile["IsPhoneVerified"] as? Bool != true {
-                                Text("请先使用绑定手机号通过短信验证码登录，再填写实名资料。")
-                                    .font(.footnote).foregroundStyle(Brand.muted)
-                            } else if canFillIdentity {
-                                Text(profile["HasProfile"] as? Bool == true ? "重新授权时请填写原登记资料；如需更正，请联系客服核验。" : "请填写本人资料。登记后不能自行更改，如需更正请联系客服核验。")
-                                    .font(.footnote).foregroundStyle(Brand.muted)
-                                TextField("真实姓名", text: $realName).textContentType(.name)
-                                    .textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
-                                TextField("18 位居民身份证号码", text: $identityNumber)
-                                    .keyboardType(.asciiCapable).textInputAutocapitalization(.characters).autocorrectionDisabled().privacySensitive()
-                                Toggle("我同意为实名票种购票、入园核验及实名消费券资格校验加密保存姓名和身份证号码。可在此撤回授权，历史订单资料按原规则保留。", isOn: $identityConsent)
-                                    .font(.footnote)
-                                Button("同意并保存实名资料") { startSaveProfile() }
-                                    .buttonStyle(.borderedProminent).disabled(busy || loading || !identityConsent)
-                            }
+                VStack(alignment: .leading, spacing: 12) {
+                    if let profile, profileOwner == principal {
+                        identityStatusCard(profile)
+                        if canFillIdentity {
+                            identityForm(hasProfile: profile["HasProfile"] as? Bool == true)
                         }
-                        .padding(14).background(.white, in: RoundedRectangle(cornerRadius: 12))
+                        if hasConsent { revokeCard }
+                    } else if busy {
+                        ProgressView("正在提交…")
+                    } else if let error {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label(error, systemImage: "exclamationmark.circle")
+                                .foregroundStyle(Brand.ink)
+                                .lineSpacing(3)
+                            Button("重新读取状态", systemImage: "arrow.clockwise") { startLoad() }
+                                .buttonStyle(.bordered)
+                                .tint(Brand.primary)
+                                .disabled(loading || busy)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+                    } else {
+                        ProgressView("正在读取实名资料…")
                     }
-                    if let error { Text(error).font(.system(size: NativeTypography.size(14))).foregroundStyle(.red) }
-                    if let notice { Text(notice).font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.primary) }
-                    Button("重新读取") { startLoad() }
-                        .disabled(loading || busy)
+                    if let notice { Text(notice).foregroundStyle(Brand.primary) }
                 }
+                .font(.system(size: NativeTypography.configuredSize(15)))
+                .foregroundStyle(Brand.ink)
                 .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Brand.background)
-            .navigationTitle("实名资料登记与授权")
+            .navigationTitle("实名资料")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("关闭") { dismiss() } } }
-            .confirmationDialog("撤回实名资料授权？", isPresented: Binding(
+            .alert("撤回授权？", isPresented: Binding(
                 get: { confirmRevoke && revokeConfirmationPrincipal == principal },
-                set: { presented in
-                    confirmRevoke = presented
-                    if !presented { revokeConfirmationPrincipal = nil }
-                }), titleVisibility: .visible) {
+                set: { confirmRevoke = $0 })) {
                 Button("确认撤回", role: .destructive) {
                     let expectedPrincipal = revokeConfirmationPrincipal
                     confirmRevoke = false
+                    revokeConfirmationPrincipal = nil
                     startRevoke(expectedPrincipal: expectedPrincipal)
                 }
-                Button("暂不撤回", role: .cancel) { }
+                Button("暂不撤回", role: .cancel) { revokeConfirmationPrincipal = nil }
             } message: {
-                Text("撤回后，之后的实名票种和实名消费券业务都需重新授权；账号加密资料不会因此删除，已产生订单的资料快照仍按原规则保留。")
+                Text(revokeExplanation)
             }
-            .task(id: principal) {
-                confirmRevoke = false
-                revokeConfirmationPrincipal = nil
+            .onAppear {
+                pageVisible = true
                 startLoad()
             }
-            .onAppear { pageVisible = true }
-            .onDisappear { invalidate() }
+            .onDisappear {
+                pageVisible = false
+                invalidate()
+            }
             .onChange(of: principal) { _, _ in
-                cancelReadTask()
-                cancelWriteTask()
-                operation += 1
-                clearEditor(); profile = nil; profileOwner = nil
-                loading = false; busy = false; error = nil; notice = nil
+                invalidate()
+                startLoad()
             }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { pageVisible = true; startLoad() }
+                if phase == .active { startLoad() }
                 else { invalidate() }
             }
+        }
+    }
+
+    private func identityStatusCard(_ profile: [String: Any]) -> some View {
+        let hasProfile = profile["HasProfile"] as? Bool == true
+        let dataReadable = profile["IsIdentityDataReadable"] as? Bool == true
+        let phoneVerified = profile["IsPhoneVerified"] as? Bool == true
+        let authorized = hasConsent && profile["IsConsentCurrent"] as? Bool == true && dataReadable
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        if authorized { Image(systemName: "checkmark.circle.fill").accessibilityHidden(true) }
+                        Text(consentStatus)
+                    }
+                    .font(.system(size: NativeTypography.configuredSize(16), weight: .semibold))
+                    .foregroundStyle(authorized ? Brand.primary : Brand.ink)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("实名授权状态：\(consentStatus)")
+                    .accessibilityAddTraits(.isHeader)
+                    Text(phoneVerified ? "手机号已验证" : "手机号未验证")
+                        .font(.system(size: NativeTypography.configuredSize(13)))
+                        .foregroundStyle(Brand.muted)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    startLoad()
+                } label: {
+                    Label("重新读取授权状态", systemImage: "arrow.clockwise")
+                        .labelStyle(.iconOnly)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .foregroundStyle(Brand.primary)
+                .disabled(loading || busy)
+            }
+            if hasProfile {
+                consentRow("实名姓名", detail: dataReadable ? profile["MaskedRealName"] as? String ?? "不可读取" : "不可读取")
+                consentRow("身份证号", detail: dataReadable ? profile["MaskedIdentityNumber"] as? String ?? "不可读取" : "不可读取")
+            }
+            if let consentedAt = profile["ConsentedAt"] as? String, !consentedAt.isEmpty {
+                consentRow("授权时间", detail: bookingBusinessDateTime(consentedAt) ?? consentedAt)
+            }
+            if hasProfile && !dataReadable {
+                Text("实名资料已保存，但当前无法安全读取。请联系平台处理；修复前不能用于新的实名业务或重新授权。已产生订单的资料快照仍按原规则保留。")
+                    .foregroundStyle(Brand.muted)
+            }
+            if !phoneVerified {
+                Text("请先使用绑定手机号通过短信验证码登录，再填写实名资料。")
+                    .foregroundStyle(Brand.muted)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var revokeCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("授权管理").fontWeight(.semibold).accessibilityAddTraits(.isHeader)
+            Text(revokeExplanation)
+                .font(.system(size: NativeTypography.configuredSize(13)))
+                .foregroundStyle(Brand.muted)
+            Button(role: .destructive) {
+                guard let principal else { return }
+                revokeConfirmationPrincipal = principal
+                confirmRevoke = true
+            } label: {
+                Text("撤回授权")
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.red)
+            .disabled(busy || loading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 4)
+        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func identityForm(hasProfile: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(hasProfile ? "重新授权请填写原登记资料。" : "请按本人身份证填写。")
+                .foregroundStyle(Brand.muted)
+            identityField("姓名") {
+                TextField("姓名", text: $realName, prompt: Text("本人真实姓名").foregroundStyle(Brand.muted))
+                    .textContentType(.name).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
+            }
+            identityField("身份证号") {
+                TextField("身份证号", text: $identityNumber, prompt: Text("18 位居民身份证号码").foregroundStyle(Brand.muted))
+                    .keyboardType(.asciiCapable).textInputAutocapitalization(.characters).autocorrectionDisabled().privacySensitive()
+            }
+            Divider().overlay(Brand.border)
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle("同意实名资料授权", isOn: $identityConsent)
+                    .fontWeight(.semibold)
+                    .tint(Brand.primary)
+                Text("姓名和身份证号将加密保存，用于实名购票、入园核验和实名消费券资格校验。可在此撤回授权，历史订单资料按原规则保留。")
+                    .font(.system(size: NativeTypography.configuredSize(13)))
+                    .foregroundStyle(Brand.muted)
+                    .lineSpacing(3)
+            }
+            if let error { Text(error).foregroundStyle(.red) }
+            Button {
+                startSaveProfile()
+            } label: {
+                Text("保存并授权").fontWeight(.semibold)
+                    .frame(maxWidth: .infinity, minHeight: 36)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Brand.primary)
+            .disabled(busy || loading || !identityConsent)
+            Text("现场核验时，请本人出示实体身份证。登记后如需更正，请联系客服。")
+                .font(.system(size: NativeTypography.configuredSize(13)))
+                .foregroundStyle(Brand.muted)
+                .lineSpacing(3)
+        }
+        .padding(16).background(.white, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func identityField<Field: View>(_ title: String, @ViewBuilder field: () -> Field) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).fontWeight(.semibold).accessibilityHidden(true)
+            field()
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 46)
+                .background(Brand.background, in: RoundedRectangle(cornerRadius: 9))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9).strokeBorder(Brand.border)
+                        .allowsHitTesting(false)
+                }
         }
     }
 
@@ -149,9 +252,8 @@ struct NativeIdentityConsentView: View {
             Spacer(minLength: 16)
             Text(detail).foregroundStyle(Brand.ink).multilineTextAlignment(.trailing)
         }
-        .font(.system(size: NativeTypography.size(14)))
         .padding(.vertical, 6)
-        .overlay(alignment: .bottom) { Brand.border.frame(height: 1) }
+        .overlay(alignment: .top) { Brand.border.frame(height: 1) }
     }
 
     private func clearEditor() {
@@ -161,7 +263,7 @@ struct NativeIdentityConsentView: View {
     @MainActor private func invalidate() {
         cancelReadTask()
         cancelWriteTask()
-        operation += 1; pageVisible = false; clearEditor(); profile = nil; profileOwner = nil
+        operation += 1; clearEditor(); profile = nil; profileOwner = nil
         confirmRevoke = false; revokeConfirmationPrincipal = nil; loading = false; busy = false
         error = nil; notice = nil
     }
@@ -173,6 +275,7 @@ struct NativeIdentityConsentView: View {
     }
 
     @MainActor private func startLoad() {
+        guard pageVisible, scenePhase == .active else { return }
         cancelReadTask()
         cancelWriteTask()
         let generation = readTaskGeneration
@@ -217,6 +320,7 @@ struct NativeIdentityConsentView: View {
             error = "请先登录文旅账号。"; return
         }
         loading = true
+        defer { if isCurrent(requestedOperation, principal: requestedPrincipal) { loading = false } }
         do {
             let value = try await MobileAPI(store: store).get("/api/JHCTITourismAuth/GetMyTicketIdentityProfile", authenticated: true,
                 expectedPrincipal: requestedPrincipal) as? [String: Any]
@@ -228,7 +332,6 @@ struct NativeIdentityConsentView: View {
         } catch {
             if isCurrent(requestedOperation, principal: requestedPrincipal) { self.error = error.localizedDescription }
         }
-        if isCurrent(requestedOperation, principal: requestedPrincipal) { loading = false }
     }
 
     @MainActor private func saveProfile() async {
@@ -252,10 +355,14 @@ struct NativeIdentityConsentView: View {
             guard nativeTicketIdentitySaveReceiptValid(result, previousVersion: previousVersion) else {
                 throw MobileAPIError.unavailable("实名资料保存回执异常")
             }
-            profile = result; profileOwner = requestedPrincipal; notice = "实名资料已登记并授权。"
+            profile = result; profileOwner = requestedPrincipal
         } catch {
             if isCurrent(requestedOperation, principal: requestedPrincipal) {
-                self.error = "保存结果暂未确认，请重新读取实名资料状态后再操作；如已登记需更正，请联系客服。"
+                if case let MobileAPIError.rejected(statusCode, message, _) = error, [400, 409].contains(statusCode) {
+                    self.error = message
+                } else {
+                    self.error = "保存结果待确认。请先重新读取状态。如显示已登记，无需再次提交。"
+                }
             }
         }
     }

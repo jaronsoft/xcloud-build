@@ -9,6 +9,8 @@ struct MyActivityRegistrationRecordCard: View {
     let loading: Bool
     let cancelBusyId: String
     let deleteBusyId: String
+    let credentialLocked: Bool
+    let mutationBlocked: Bool
     let onCopyCode: (String, String, String?) -> Void
     let onShowQr: (String, String) -> Void
     let onRequestCancellation: ([String: Any]) -> Void
@@ -70,7 +72,7 @@ struct MyActivityRegistrationRecordCard: View {
             if let checkedInAt = activityRegistrationBusinessDateTime(item["CheckedInAt"]) {
                 Text("签到时间：\(checkedInAt)").font(.system(size: NativeTypography.size(12))).foregroundStyle(Brand.muted)
             }
-            if status == "Registered" && !credentialUnavailable {
+            if status == "Registered" && !credentialUnavailable && !credentialLocked {
                 if let code = item["CredentialCode"] as? String, !code.isEmpty {
                     HStack(spacing: 6) {
                         Image(systemName: "ticket").foregroundStyle(Brand.primary)
@@ -91,7 +93,7 @@ struct MyActivityRegistrationRecordCard: View {
                         Spacer()
                         if item["CanCancel"] as? Bool == true {
                             Button("取消报名", role: .destructive) { onRequestCancellation(item) }
-                                .disabled(loading || !cancelBusyId.isEmpty || !deleteBusyId.isEmpty)
+                                .disabled(mutationBlocked || loading || !cancelBusyId.isEmpty || !deleteBusyId.isEmpty)
                         }
                     }.font(.system(size: NativeTypography.size(14), weight: .semibold)).tint(Brand.primary)
                     if let qrRetry, qrRetry.registrationID == id, qrRetry.token == expectedToken {
@@ -109,7 +111,7 @@ struct MyActivityRegistrationRecordCard: View {
                 Button(deleteBusyId == id ? "正在删除…" : "删除记录", role: .destructive) {
                     onRequestDeletion(item)
                 }
-                .disabled(loading || !deleteBusyId.isEmpty || !cancelBusyId.isEmpty)
+                .disabled(mutationBlocked || loading || !deleteBusyId.isEmpty || !cancelBusyId.isEmpty)
             } else if status == "Registered" && expiryUnknown {
                 Text("签到凭证有效期暂无法确认，请刷新报名状态。")
                     .font(.system(size: NativeTypography.size(14))).foregroundStyle(Brand.muted)

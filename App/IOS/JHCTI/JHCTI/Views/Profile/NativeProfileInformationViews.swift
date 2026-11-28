@@ -80,7 +80,6 @@ struct NativeProfileSessionActionsView: View {
     let profileVersion: Int64?
     let loggingOut: Bool
     let busy: Bool
-    let onLogout: () -> Void
     let onCancelAccount: () -> Void
     let onProfileUpdated: ([String: Any]) -> Void
     let onReloadProfile: () -> Void
@@ -95,17 +94,6 @@ struct NativeProfileSessionActionsView: View {
             Button("更换手机号") { phoneChangeOpen = true }
                 .font(.system(size: 13, weight: .medium))
                 .disabled(loggingOut || busy || profileVersion == nil)
-            Button(role: .destructive, action: onLogout) {
-                HStack(spacing: 7) {
-                    if loggingOut { ProgressView().controlSize(.small) }
-                    Text(loggingOut ? "正在退出…" : "退出登录")
-                        .font(.system(size: NativeTypography.size(16), weight: .semibold))
-                }
-                .frame(maxWidth: .infinity, minHeight: 52)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Brand.primary)
-            .disabled(loggingOut)
             Button(role: .destructive, action: onCancelAccount) {
                 Text("注销文旅账号")
                     .font(.system(size: NativeTypography.size(12), weight: .medium))

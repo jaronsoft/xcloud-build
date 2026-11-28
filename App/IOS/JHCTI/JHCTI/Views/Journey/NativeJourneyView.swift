@@ -1,6 +1,8 @@
 import SwiftUI
 import UIKit
 
+@MainActor private var inFlightTourismReservationWrites = Set<UUID>()
+
 struct JourneyView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var store: SessionStore
@@ -36,7 +38,19 @@ struct JourneyView: View {
     @State private var reservationOwner = ""
     @State private var reservationHasMore = false
     @State private var reservationDetailSequence = 0
-    @State private var reservationNeedsRefresh = false
+    @State private var pendingAttempt: TourismReservationAttempt?
+    @State private var reviewedAttempt: TourismReservationAttempt?
+    @State private var recoveryOwner: String?
+    @State private var recoveryStorageFailed = false
+    @State private var recoveryNotice: String?
+
+    private var principal: String? {
+        guard let token = store.session?.accessToken, !token.isEmpty else { return nil }
+        return nativeTourismPrincipal(token)
+    }
+    private var canRecover: Bool { pageVisible && scenePhase == .active && !favoritesOpen && !activityRegistrationsOpen }
+    private var recoveryReady: Bool { recoveryOwner != nil && recoveryOwner == principal && !recoveryStorageFailed }
+    private func operationLocked(_ id: String) -> Bool { !recoveryReady || pendingAttempt?.id == id }
 
     var body: some View {
         NavigationStack {
@@ -79,23 +93,20 @@ struct JourneyView: View {
             .task(id: revision) { await loadReservations(reset: true) }
             .task(id: routeRevision) { await loadRoutes() }
             .task {
-                var reservationStatusPollSeconds = 0
                 while !Task.isCancelled {
                     self.refreshReservationClock()
-                    if reservationQrImage != nil,
-                       let item = selectedReservation,
-                       item["Status"] as? String == "Reserved",
-                       let id = item["Id"] as? String,
-                       let token = store.session?.accessToken {
-                        reservationStatusPollSeconds += 1
-                        if reservationStatusPollSeconds >= 5 {
-                            reservationStatusPollSeconds = 0
-                            await self.refreshReservationQrStatus(id: id, token: token)
-                        }
-                    } else {
-                        reservationStatusPollSeconds = 0
-                    }
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
+                }
+            }
+            .task(id: reservationQrImage == nil ? nil : reservationQrSequence) {
+                guard reservationQrImage != nil, let id = selectedReservation?["Id"] as? String,
+                      let token = store.session?.accessToken else { return }
+                let sequence = reservationQrSequence
+                while !Task.isCancelled {
+                    do { try await Task.sleep(nanoseconds: 5_000_000_000) }
+                    catch { return }
+                    if !canPollReservationQr(id: id, token: token, sequence: sequence) { return }
+                    await refreshReservationQrStatus(id: id, token: token, sequence: sequence)
                 }
             }
             .onChange(of: scenePhase) { _, phase in
@@ -104,15 +115,16 @@ struct JourneyView: View {
                     self.refreshReservationClock()
                     revision += 1
                 default:
+                    reviewedAttempt = nil
                     self.clearPrivateReservations()
                 }
             }
             .onDisappear {
-                pageVisible = false; clearPrivateReservations()
+                pageVisible = false; reviewedAttempt = nil; clearPrivateReservations()
             }
             .onAppear { pageVisible = true; revision += 1 }
-            .onChange(of: favoritesOpen) { _, open in if open { clearPrivateReservations() } else { revision += 1 } }
-            .onChange(of: activityRegistrationsOpen) { _, open in if open { clearPrivateReservations() } else { revision += 1 } }
+            .onChange(of: favoritesOpen) { _, open in if open { reviewedAttempt = nil; clearPrivateReservations() } else { revision += 1 } }
+            .onChange(of: activityRegistrationsOpen) { _, open in if open { reviewedAttempt = nil; clearPrivateReservations() } else { revision += 1 } }
             .sheet(isPresented: $favoritesOpen) { NativeFavoritesView(store: store) }
             .sheet(isPresented: $activityRegistrationsOpen) { ActivityRegistrationsView(store: store) }
             .alert("请先登录文旅账号", isPresented: $loginPrompt) {
@@ -138,7 +150,11 @@ struct JourneyView: View {
                 selectedReservation = nil; reservationActionError = nil; reservationCancelConfirm = false
                 reservationDeleteConfirm = false
                 reservationActionSequence += 1; reservationActionBusy = false
-                reservationOwner = ""; reservationHasMore = false; reservationNeedsRefresh = false; reservationDetailSequence += 1
+                if recoveryOwner != principal {
+                    recoveryOwner = nil; pendingAttempt = nil; reviewedAttempt = nil
+                    recoveryStorageFailed = false; recoveryNotice = nil
+                }
+                reservationOwner = ""; reservationHasMore = false; reservationDetailSequence += 1
                 reservations = []; reservationPage = 1; reservationTotal = 0
                 reservationRequestSequence += 1; error = nil; loading = false; revision += 1
             }
@@ -157,6 +173,41 @@ struct JourneyView: View {
         reservationRequestSequence += 1; closeReservationDetail(refresh: false)
         reservations = []; reservationOwner = ""; reservationHasMore = false
         reservationPage = 1; reservationTotal = 0; loading = false; reservationLoadingMore = false; error = nil
+    }
+
+    private func restoreRecovery() {
+        guard canRecover, let owner = principal else { return }
+        if owner != recoveryOwner { recoveryNotice = nil; reviewedAttempt = nil }
+        recoveryOwner = owner
+        do {
+            pendingAttempt = try TourismReservationRecovery(principal: owner).read()
+            recoveryStorageFailed = false
+        } catch {
+            pendingAttempt = nil; recoveryStorageFailed = true
+        }
+        if reviewedAttempt != pendingAttempt { reviewedAttempt = nil }
+    }
+
+    @ViewBuilder private var reservationRecoveryContent: some View {
+        if recoveryOwner != nil && recoveryOwner == principal {
+            if let recoveryNotice { Text(recoveryNotice).font(.footnote).foregroundStyle(Brand.muted) }
+            if recoveryStorageFailed {
+                Text("无法读取本机预约核对记录，预约操作暂不可用。").font(.footnote)
+                Button("重新读取核对记录") { restoreRecovery() }
+            }
+            if let attempt = pendingAttempt {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("待核对 · \(attempt.action.label) · 预约编号 \(attempt.id)").font(.footnote).foregroundStyle(Brand.muted)
+                    Button("核对原预约") { Task { await checkReservationOutcome() } }
+                    if reviewedAttempt == attempt {
+                        Button("重新核对并解除保护") { Task { await checkReservationOutcome(release: true) } }
+                    }
+                }
+                .disabled(reservationActionBusy)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                .background(.white, in: RoundedRectangle(cornerRadius: 9))
+            }
+        }
     }
 
     private func journeyShortcut(_ title: String, note: String, icon: String? = nil,
@@ -195,6 +246,7 @@ struct JourneyView: View {
                 Button("刷新") { revision += 1 }.font(.system(size: NativeTypography.size(14)))
             }
             StatusView(loading: loading, error: error) { revision += 1 }
+            reservationRecoveryContent
             ForEach(reservations.indices, id: \.self) { index in
                 let item = reservations[index]
                 let statusLabel = nativeTourismReservationStatus(item["Status"] as? String ?? "", expired: isExpiredReservation(item, now: reservationClock))
@@ -286,6 +338,8 @@ struct JourneyView: View {
         NavigationStack {
             Form {
                 if let item = selectedReservation {
+                    let id = item["Id"] as? String ?? ""
+                    let mutationBlocked = !recoveryReady || pendingAttempt != nil
                     Section("预约信息") {
                         Text(item["ResourceName"] as? String ?? "景点预约").font(.headline)
                         Text("\(item["ReservationDate"] as? String ?? "时间待确认") · \(item["SessionName"] as? String ?? "当日预约")")
@@ -297,7 +351,7 @@ struct JourneyView: View {
                     if isExpiredReservation(item, now: reservationClock) {
                         Section {
                             Button("删除过期预约", role: .destructive) { reservationDeleteConfirm = true }
-                                .disabled(reservationActionBusy || reservationNeedsRefresh)
+                                .disabled(reservationActionBusy || mutationBlocked)
                             Text("场次已结束，入园凭证已失效。删除只会从本人预约列表中移除记录。")
                                 .font(.caption).foregroundStyle(Brand.muted)
                         }
@@ -307,22 +361,22 @@ struct JourneyView: View {
                                 .foregroundStyle(Brand.primary)
                         }
                     } else if item["Status"] as? String == "Reserved" {
-                        Section("入园凭证") {
+                        if !operationLocked(id) { Section("入园凭证") {
                             if reservationQrLoading { ProgressView("正在获取有效凭证…") }
                             else if let reservationQrImage {
                                 Image(uiImage: reservationQrImage).resizable().interpolation(.none)
                                     .scaledToFit().frame(maxWidth: 240, maxHeight: 240)
                                     .frame(maxWidth: .infinity)
                             } else {
-                                Button("查看入园二维码") { Task { await loadReservationQr() } }.disabled(reservationActionBusy || reservationNeedsRefresh)
+                                Button("查看入园二维码") { Task { await loadReservationQr() } }.disabled(reservationActionBusy)
                             }
                             Text("二维码仅在预约有效时由服务端生成；请勿转发给他人。")
                                 .font(.caption).foregroundStyle(Brand.muted)
-                        }
+                        } }
                         if item["CanCancel"] as? Bool == true {
                             Section {
                                 Button("取消预约", role: .destructive) { reservationCancelConfirm = true }
-                                    .disabled(reservationActionBusy || reservationNeedsRefresh)
+                                    .disabled(reservationActionBusy || mutationBlocked)
                             }
                         }
                     }
@@ -330,8 +384,8 @@ struct JourneyView: View {
                         Section { Text(reservationActionError).foregroundStyle(.red) }
                     }
                     if reservationActionBusy { Section { ProgressView("正在处理预约…") } }
-                    if reservationNeedsRefresh {
-                        Section { Button("核对最新预约状态") { closeReservationDetail() }.disabled(reservationActionBusy) }
+                    if pendingAttempt?.id == id {
+                        Section { Button("返回列表核对原预约") { closeReservationDetail() }.disabled(reservationActionBusy) }
                     }
                 }
             }
@@ -369,7 +423,7 @@ struct JourneyView: View {
                                 .font(.system(size: NativeTypography.size(15), weight: .semibold))
                                 .foregroundStyle(Color(red: 0.70, green: 0.34, blue: 0.29))
                                 .frame(maxWidth: .infinity, minHeight: 54)
-                                .disabled(reservationActionBusy || reservationNeedsRefresh)
+                                .disabled(reservationActionBusy || !recoveryReady || pendingAttempt != nil)
                             }
                         }
                         .frame(maxWidth: 340)
@@ -394,11 +448,12 @@ struct JourneyView: View {
     }
 
     private func loadReservationQr() async {
-        guard !reservationQrLoading, !reservationActionBusy, !reservationNeedsRefresh else { return }
+        guard !reservationQrLoading, !reservationActionBusy, canRecover else { return }
         guard let item = selectedReservation, let token = store.session?.accessToken,
               let id = item["Id"] as? String, !id.isEmpty else {
             reservationActionError = "请重新登录后查看预约凭证。"; return
         }
+        guard !operationLocked(id), reservationOwner == token else { return }
         guard item["Status"] as? String == "Reserved", !isExpiredReservation(item) else {
             refreshReservationClock(); return
         }
@@ -444,46 +499,93 @@ struct JourneyView: View {
         await performReservationAction(deleting: true, expectedID: id, expectedDetail: detail)
     }
 
-    private func performReservationAction(deleting: Bool, expectedID: String, expectedDetail: Int) async {
-        guard !Task.isCancelled, !reservationActionBusy, !reservationNeedsRefresh, pageVisible, scenePhase == .active,
-              !favoritesOpen, !activityRegistrationsOpen,
-              reservationDetailSequence == expectedDetail,
-              reservationDetailOpen, let item = selectedReservation,
-              let token = store.session?.accessToken, !token.isEmpty, reservationOwner == token,
-              let id = item["Id"] as? String, id == expectedID, let number = Int64(id), number > 0, String(number) == id,
+    private func finishRecovery(_ recovery: TourismReservationRecovery, attempt: TourismReservationAttempt, notice: String) throws {
+        try recovery.remove(attempt)
+        pendingAttempt = nil; reviewedAttempt = nil; recoveryNotice = notice
+        clearPrivateReservations(); revision += 1
+    }
+
+    @MainActor private func checkReservationOutcome(release: Bool = false) async {
+        guard canRecover, recoveryReady, !reservationActionBusy, let owner = principal, let attempt = pendingAttempt,
+              !release || reviewedAttempt == attempt else { return }
+        guard !inFlightTourismReservationWrites.contains(attempt.marker) else {
+            recoveryNotice = "原预约请求仍在处理中，请稍后核对。"; return
+        }
+        reservationActionSequence += 1
+        let sequence = reservationActionSequence
+        reservationActionBusy = true; reviewedAttempt = nil
+        defer { if sequence == reservationActionSequence { reservationActionBusy = false } }
+        func isCurrent() -> Bool {
+            !Task.isCancelled && canRecover && sequence == reservationActionSequence && principal == owner && pendingAttempt == attempt
+        }
+        do {
+            let raw = try await MobileAPI(store: store).get("/api/JHCTITourismReservation/GetMineStatus?id=\(attempt.id)",
+                authenticated: true, expectedPrincipal: owner, requireExplicitResponse: true)
+            guard isCurrent() else { return }
+            let recovery = try TourismReservationRecovery(principal: owner)
+            switch (raw as? String).flatMap(TourismReservationReadStatus.init(rawValue:)) {
+            case .reserved:
+                if release { try finishRecovery(recovery, attempt: attempt, notice: "已解除保护。请按最新预约状态操作。") }
+                else {
+                    reviewedAttempt = attempt
+                    recoveryNotice = "原记录仍显示已预约。再次核对可解除保护。"
+                }
+            case .cancelled: try finishRecovery(recovery, attempt: attempt, notice: "原预约已取消。")
+            case .checkedIn: try finishRecovery(recovery, attempt: attempt, notice: "原预约已入园。")
+            case .unavailable: try finishRecovery(recovery, attempt: attempt, notice: "原预约记录已不在列表中。")
+            case nil: throw MobileAPIError.unavailable("预约状态回执异常")
+            }
+        } catch {
+            if isCurrent() { recoveryNotice = "暂时无法核对原预约，请稍后重试。" }
+        }
+    }
+
+    @MainActor private func performReservationAction(deleting: Bool, expectedID: String, expectedDetail: Int) async {
+        guard !Task.isCancelled, !reservationActionBusy, recoveryReady, pendingAttempt == nil, canRecover,
+              reservationDetailSequence == expectedDetail, reservationDetailOpen, let item = selectedReservation,
+              let owner = principal, reservationOwner == store.session?.accessToken,
+              let id = item["Id"] as? String, id == expectedID,
               let current = reservations.first(where: { $0["Id"] as? String == id }),
               deleting ? isExpiredReservation(current) : (current["Status"] as? String == "Reserved"
-                && current["CanCancel"] as? Bool == true && !isExpiredReservation(current)) else {
-            return
+                && current["CanCancel"] as? Bool == true && !isExpiredReservation(current)) else { return }
+        let action: TourismReservationAction = deleting ? .delete : .cancel
+        let attempt = TourismReservationAttempt(id: id, action: action)
+        guard attempt.valid else { return }
+        let recovery: TourismReservationRecovery
+        do {
+            recovery = try TourismReservationRecovery(principal: owner)
+            try recovery.add(attempt)
+        } catch {
+            restoreRecovery(); reservationActionError = "无法保存预约核对记录，本次操作未发送。"; return
         }
+        pendingAttempt = attempt; reviewedAttempt = nil; recoveryNotice = nil
         reservationActionSequence += 1; let sequence = reservationActionSequence
-        let detailSequence = reservationDetailSequence
         reservationRequestSequence += 1; loading = false; reservationLoadingMore = false
         reservationQrSequence += 1; reservationQrImage = nil; reservationQrLoading = false
         reservationCancelConfirm = false; reservationDeleteConfirm = false
-        reservationNeedsRefresh = true
         reservationActionBusy = true; reservationActionError = nil
-        defer { if reservationActionSequence == sequence { reservationActionBusy = false } }
+        inFlightTourismReservationWrites.insert(attempt.marker)
+        defer {
+            inFlightTourismReservationWrites.remove(attempt.marker)
+            if reservationActionSequence == sequence { reservationActionBusy = false }
+        }
         func isCurrent() -> Bool {
-            !Task.isCancelled && reservationActionSequence == sequence && reservationDetailSequence == detailSequence
-                && store.session?.accessToken == token && selectedReservation?["Id"] as? String == id
-                && reservationDetailOpen && pageVisible && scenePhase == .active && !favoritesOpen && !activityRegistrationsOpen
+            !Task.isCancelled && reservationActionSequence == sequence && reservationDetailSequence == expectedDetail
+                && principal == owner && selectedReservation?["Id"] as? String == id
+                && reservationDetailOpen && canRecover && pendingAttempt == attempt
         }
         do {
-            let action = deleting ? "DeleteExpiredMine" : "CancelMine"
-            let result = try await MobileAPI(store: store).post(
-                "/api/JHCTITourismReservation/\(action)?id=\(id)", body: [:], authenticated: true,
-                expectedPrincipal: nativeTourismPrincipal(token)) as? String
+            let receipt = try await MobileAPI(store: store).post(
+                "/api/JHCTITourismReservation/\(action.rawValue)?id=\(id)", body: [:], authenticated: true,
+                expectedPrincipal: owner, canRefresh: false, requireExplicitResponse: true)
             guard isCurrent() else { return }
-            guard result == id else {
-                throw MobileAPIError.unavailable("操作结果暂未确认")
-            }
-            reservations.removeAll { $0["Id"] as? String == id }; reservationHasMore = false
-            reservationNeedsRefresh = false; closeReservationDetail()
+            guard attempt.matchesReceipt(receipt) else { throw MobileAPIError.unavailable("操作结果暂未确认") }
+            try finishRecovery(recovery, attempt: attempt, notice: deleting ? "过期预约已删除。" : "预约已取消。")
         } catch {
-            if isCurrent() {
-                reservationActionError = "操作结果暂未确认，请核对最新预约状态后再继续。"
-            }
+            guard isCurrent() else { return }
+            if let status = (error as? MobileAPIError)?.httpStatusCode, [400, 403, 409].contains(status),
+               (try? finishRecovery(recovery, attempt: attempt, notice: error.localizedDescription)) != nil { return }
+            reservationActionError = "\(action.label)结果暂未确认，请核对原预约。"
         }
     }
 
@@ -502,23 +604,36 @@ struct JourneyView: View {
         routeLoading = false
     }
 
-    private func refreshReservationQrStatus(id: String, token: String) async {
-        guard let principal = nativeTourismPrincipal(token) else { return }
-        guard reservationDetailOpen, reservationQrImage != nil,
-              selectedReservation?["Id"] as? String == id,
-              selectedReservation?["Status"] as? String == "Reserved",
-              store.session?.accessToken == token else { return }
+    private func canPollReservationQr(id: String, token: String, sequence: Int) -> Bool {
+        !Task.isCancelled && canRecover && reservationDetailOpen && reservationQrImage != nil
+            && reservationQrSequence == sequence && store.session?.accessToken == token
+            && selectedReservation?["Id"] as? String == id && selectedReservation?["Status"] as? String == "Reserved"
+            && !operationLocked(id)
+    }
+
+    private func refreshReservationQrStatus(id: String, token: String, sequence: Int) async {
+        guard let owner = nativeTourismPrincipal(token) else { return }
         do {
-            let response = try await MobileAPI(store: store).get(
-                "/api/JHCTITourismReservation/GetMinePage?page=1&pageSize=20",
-                authenticated: true, expectedPrincipal: principal) as? [String: Any]
-            guard reservationDetailOpen, reservationQrImage != nil,
-                  selectedReservation?["Id"] as? String == id,
-                  store.session?.accessToken == token,
-                  let rows = (response?["data"] ?? response?["Data"]) as? [[String: Any]],
-                  let latest = rows.first(where: { $0["Id"] as? String == id }) else { return }
-            reservations = reservations.map { ($0["Id"] as? String == id) ? latest : $0 }
-            selectedReservation = latest
+            let raw = try await MobileAPI(store: store).get(
+                "/api/JHCTITourismReservation/GetMineStatus?id=\(id)",
+                authenticated: true, expectedPrincipal: owner, requireExplicitResponse: true)
+            guard canPollReservationQr(id: id, token: token, sequence: sequence),
+                  var current = selectedReservation,
+                  let state = (raw as? String).flatMap(TourismReservationReadStatus.init(rawValue:)) else { return }
+            switch state {
+            case .checkedIn, .cancelled:
+                current["Status"] = state.rawValue
+                current["CanCancel"] = false
+                current["CredentialCode"] = ""
+                reservationQrSequence += 1; reservationQrImage = nil; reservationCancelConfirm = false
+                reservations = reservations.map { ($0["Id"] as? String == id) ? current : $0 }
+                selectedReservation = current
+            case .unavailable:
+                recoveryNotice = "该预约已不在列表中。"
+                clearPrivateReservations(); revision += 1
+            case .reserved:
+                break
+            }
         } catch {
             // 轮询失败时保留当前二维码和预约状态，下一轮继续核对。
         }
@@ -526,6 +641,7 @@ struct JourneyView: View {
 
     private func loadReservations(reset: Bool) async {
         guard pageVisible, scenePhase == .active, !favoritesOpen, !activityRegistrationsOpen else { return }
+        if reset { restoreRecovery() }
         if !reset && (loading || reservationLoadingMore || !reservationHasMore) { return }
         guard let token = store.session?.accessToken, !token.isEmpty,
               let principal = nativeTourismPrincipal(token) else {
@@ -581,7 +697,6 @@ struct JourneyView: View {
             reservations = reset ? rows : reservations + additions
             reservationTotal = max(total, reservations.count); reservationPage = targetPage; reservationOwner = token
             reservationHasMore = rows.count == 20 && reservations.count < reservationTotal
-            if !reservationActionBusy { reservationNeedsRefresh = false }
         } catch {
             if isCurrent() { self.error = error.localizedDescription }
         }

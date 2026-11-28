@@ -19,6 +19,7 @@ struct ActivityDetailView: View {
     @State private var credentialCopyNotice: String?
     @State private var loading = true
     @State private var busy = false
+    @State private var pageVisible = false
     @State private var error: String?
     @State private var submitError: String?
     @State private var sessionSelectionNotice: String?
@@ -92,6 +93,7 @@ struct ActivityDetailView: View {
         requestKey = UUID().uuidString
     }
     private func invalidateDetailRequestsOnDisappear() {
+        pageVisible = false
         loadSequence += 1
         recoverySequence += 1
         recoveryChecking = false
@@ -102,6 +104,8 @@ struct ActivityDetailView: View {
             return
         }
         loadSequence += 1
+        recoverySequence += 1
+        recoveryChecking = false
         if !busy { detail = nil; availability = nil; loading = true }
         else { refreshDeferred = true }
     }
@@ -113,6 +117,8 @@ struct ActivityDetailView: View {
     private func handleActivityIDChange() {
         selectedContentTab = "registration"
         sessionSelectionNotice = nil
+        recoverySequence += 1
+        recoveryChecking = false
     }
     private func handleAccessTokenChange(from oldToken: String?, to newToken: String?) {
         if nativeTourismPrincipal(oldToken) != nativeTourismPrincipal(newToken) {
@@ -137,10 +143,6 @@ struct ActivityDetailView: View {
         loadSequence += 1
         revision += 1
     }
-    private var selectedSessionBookable: Bool {
-        sessions.isEmpty || sessionIsBookable(sessionAvailability(selectedSessionID))
-    }
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -188,7 +190,9 @@ struct ActivityDetailView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
-                        registrationCard
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            registrationCard(detail: detail, now: context.date)
+                        }
                     }
                 }
             }
@@ -243,16 +247,18 @@ struct ActivityDetailView: View {
         .onChange(of: store.session?.accessToken) { oldToken, newToken in
             handleAccessTokenChange(from: oldToken, to: newToken)
         }
+        .onAppear { pageVisible = true }
         .onDisappear(perform: invalidateDetailRequestsOnDisappear)
     }
 
-    @ViewBuilder private var registrationCard: some View {
-        ActivityRegistrationCard(
+    private func registrationCard(detail: [String: Any], now: Date) -> some View {
+        let selectedAvailability = sessionAvailability(selectedSessionID)
+        return ActivityRegistrationCard(
             recoveryPending: recoveryPending,
             recoveryChecking: recoveryChecking,
             receipt: receipt,
             activityName: (receipt?["ActivityName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-                ?? (detail?["Name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "活动",
+                ?? (detail["Name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "活动",
             sessionName: (receipt?["SessionName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "整体活动",
             receiptPrincipalMatches: nativeTourismPrincipal(store.session?.accessToken) == receiptPrincipal,
             sceneIsActive: scenePhase == .active,
@@ -261,15 +267,17 @@ struct ActivityDetailView: View {
             isAuthenticated: store.session != nil,
             remainingQuota: remainingQuota,
             loading: loading,
-            configurationError: nativeActivitySignupConfigurationError(detail?["SignupFields"]),
+            configurationError: nativeActivitySignupConfigurationError(detail["SignupFields"]),
+            windowIssue: nativeActivityRegistrationWindowIssue(
+                detail, session: chosenSession, availability: selectedAvailability, now: now),
             sessions: sessions,
             chosenSession: chosenSession,
             remainingSeats: remainingSeats,
             fields: fields,
             quantity: quantity,
-            configuredLimit: max(1, (detail?["MaxPerUser"] as? NSNumber)?.intValue ?? 1),
+            configuredLimit: max(1, (detail["MaxPerUser"] as? NSNumber)?.intValue ?? 1),
             maxQuantity: maxQuantity,
-            selectedSessionBookable: selectedSessionBookable,
+            selectedSessionBookable: sessions.isEmpty || sessionIsBookable(selectedAvailability, now: now),
             participantAnswers: $participantAnswers,
             identityConsent: $identityConsent,
             submitError: submitError,
@@ -442,7 +450,8 @@ struct ActivityDetailView: View {
     }
 
     private func submit() async {
-        guard detail != nil, !busy, !recoveryPending, let principal = nativeTourismPrincipal(store.session?.accessToken) else { return }
+        guard let requestedDetail = detail, pageVisible, scenePhase == .active, !busy, !recoveryPending,
+              let principal = nativeTourismPrincipal(store.session?.accessToken) else { return }
         submitError = nil
         guard (1...100).contains(quantity), participantAnswers.count >= quantity else {
             submitError = "参与者资料不完整，请重新填写。"; return
@@ -450,19 +459,32 @@ struct ActivityDetailView: View {
         guard quantity <= maxQuantity else {
             submitError = "报名人数已超过本活动单人报名上限，请调整人数后重试。"; return
         }
-        if let message = nativeActivitySignupAnswerError(detail?["SignupFields"],
-            participants: Array(participantAnswers.prefix(quantity)), quantity: quantity) {
+        let requestedQuantity = quantity
+        let requestedAnswers = Array(participantAnswers.prefix(requestedQuantity))
+        let requestedIdentityConsent = identityConsent
+        if let message = nativeActivitySignupAnswerError(requestedDetail["SignupFields"],
+            participants: requestedAnswers, quantity: requestedQuantity) {
             submitError = message; return
         }
-        if let message = nativeActivityTextLengthError(fields, participants: Array(participantAnswers.prefix(quantity))) {
+        if let message = nativeActivityTextLengthError(fields, participants: requestedAnswers) {
             submitError = message; return
         }
-        let hasIdentityData = nativeActivityRequiresIdentityConsent(fields, participants: Array(participantAnswers.prefix(quantity)))
-        if hasIdentityData && !identityConsent {
+        if nativeActivityRequiresIdentityConsent(fields, participants: requestedAnswers) && !requestedIdentityConsent {
             submitError = "请先同意本次身份证实名信息采集"
             return
         }
+        let requestedActivityID = id
+        let requestedKey = requestKey
+        let hasSessions = !sessions.isEmpty
+        let expectedSessionID = hasSessions ? selectedSessionID : ""
         submitSequence += 1; let operation = submitSequence
+        let scheduledSession = sessions.first { $0["Id"] as? String == expectedSessionID }
+        // 等待实时名额期间场次可能到期，届时不能提交已被页面重置的报名草稿。
+        func isCurrentDraft() -> Bool {
+            operation == submitSequence && pageVisible && scenePhase == .active && id == requestedActivityID
+                && requestKey == requestedKey && identityConsent == requestedIdentityConsent
+                && nativeTourismPrincipal(store.session?.accessToken) == principal
+        }
         busy = true
         defer { if operation == submitSequence { busy = false } }
         do {
@@ -470,22 +492,23 @@ struct ActivityDetailView: View {
             guard (try await api.get("/api/JHCTIActivity/GetPublicRegistrationAvailability") as? Bool) == true else {
                 throw MobileAPIError.unavailable("活动暂时不能报名")
             }
-            guard let fresh = try await api.get("/api/JHCTIActivity/GetPublicAvailability?id=\(id)") as? [String: Any],
-                fresh["ActivityId"] as? String == id else {
+            guard isCurrentDraft() else { return }
+            guard let fresh = try await api.get("/api/JHCTIActivity/GetPublicAvailability?id=\(requestedActivityID)") as? [String: Any],
+                fresh["ActivityId"] as? String == requestedActivityID else {
                 throw MobileAPIError.unavailable("暂无法确认最新报名名额")
             }
-            guard let currentDetail = detail,
-                  nativePublicActivityAvailabilityMatches(detail: currentDetail, availability: fresh) else {
+            guard isCurrentDraft() else { return }
+            guard nativePublicActivityAvailabilityMatches(detail: requestedDetail, availability: fresh) else {
                 throw MobileAPIError.unavailable("活动场次与实时名额不一致，请刷新后重试")
             }
-            guard operation == submitSequence, nativeTourismPrincipal(store.session?.accessToken) == principal else { return }
             availability = fresh
             let freshSessions = fresh["Sessions"] as? [[String: Any]] ?? []
-            if sessions.isEmpty {
+            let requestedSession = freshSessions.first { $0["Id"] as? String == expectedSessionID }
+            if !hasSessions {
                 let freshSeats = fresh["RemainingCapacity"] as? Int ?? 0
-                guard freshSeats >= quantity else { throw MobileAPIError.unavailable("当前活动剩余名额不足") }
+                guard freshSeats >= requestedQuantity else { throw MobileAPIError.unavailable("当前活动剩余名额不足") }
             } else {
-                guard let freshSession = freshSessions.first(where: { $0["Id"] as? String == selectedSessionID }) else {
+                guard let freshSession = requestedSession else {
                     clearSessionDraft(reason: "名额待核对", original: true)
                     throw MobileAPIError.unavailable("暂无法确认所选场次状态")
                 }
@@ -495,30 +518,42 @@ struct ActivityDetailView: View {
                     throw MobileAPIError.unavailable(reason)
                 }
                 let freshSeats = freshSession["RemainingCapacity"] as? Int ?? 0
-                guard freshSeats >= quantity else { throw MobileAPIError.unavailable("当前场次剩余名额不足") }
+                guard freshSeats >= requestedQuantity else { throw MobileAPIError.unavailable("当前场次剩余名额不足") }
             }
-            let quota = try await api.get("/api/JHCTIActivity/GetMyRegistrationQuota?activityId=\(id)", authenticated: true,
+            if let issue = nativeActivityRegistrationWindowIssue(
+                requestedDetail, session: scheduledSession, availability: requestedSession, now: Date()) {
+                throw MobileAPIError.unavailable(issue)
+            }
+            let quota = try await api.get("/api/JHCTIActivity/GetMyRegistrationQuota?activityId=\(requestedActivityID)", authenticated: true,
                                           expectedPrincipal: principal)
-            guard operation == submitSequence, nativeTourismPrincipal(store.session?.accessToken) == principal else { return }
-            guard let remainingQuota = nativeActivityRegistrationQuotaRemaining(quota, activityID: id) else {
+            guard isCurrentDraft() else { return }
+            if hasSessions && !sessionIsBookable(requestedSession) {
+                let reason = sessionUnavailableText(requestedSession)
+                clearSessionDraft(reason: reason, original: true)
+                throw MobileAPIError.unavailable(reason)
+            }
+            guard let remainingQuota = nativeActivityRegistrationQuotaRemaining(quota, activityID: requestedActivityID) else {
                 throw MobileAPIError.unavailable("暂无法确认本人报名额度，请重新加载后再试。")
             }
-            guard remainingQuota >= quantity else {
+            guard remainingQuota >= requestedQuantity else {
                 throw MobileAPIError.unavailable("您的可报名人数已用完")
             }
-            var body: [String: Any] = ["ActivityId": id, "Quantity": quantity,
-                                      "IdempotencyKey": requestKey, "IdentityConsent": identityConsent,
-                                      "Answers": participantAnswers[0].filter { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }]
-            if quantity > 1 {
-                body["Participants"] = participantAnswers.prefix(quantity).map { values in
+            if let issue = nativeActivityRegistrationWindowIssue(
+                requestedDetail, session: scheduledSession, availability: requestedSession, now: Date()) {
+                throw MobileAPIError.unavailable(issue)
+            }
+            var body: [String: Any] = ["ActivityId": requestedActivityID, "Quantity": requestedQuantity,
+                                      "IdempotencyKey": requestedKey, "IdentityConsent": requestedIdentityConsent,
+                                      "Answers": requestedAnswers[0].filter { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }]
+            if requestedQuantity > 1 {
+                body["Participants"] = requestedAnswers.map { values in
                     ["Answers": values.filter { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }]
                 }
             }
-            if !sessions.isEmpty { body["SessionId"] = selectedSessionID }
+            if hasSessions { body["SessionId"] = expectedSessionID }
             guard let token = store.session?.accessToken else { return }
-            let storageKey = nativeActivityRegistrationRecoveryKey(token: token, activityID: id)
-            let expectedSessionID = sessions.isEmpty ? "" : selectedSessionID
-            guard !storageKey.isEmpty, store.saveActivityRegistrationAttempt(requestKey, sessionID: expectedSessionID, for: storageKey) else {
+            let storageKey = nativeActivityRegistrationRecoveryKey(token: token, activityID: requestedActivityID)
+            guard !storageKey.isEmpty, store.saveActivityRegistrationAttempt(requestedKey, sessionID: expectedSessionID, for: storageKey) else {
                 if store.activityRegistrationAttempt(for: storageKey).exists {
                     recoveryStorageKey = storageKey; recoveryPending = true
                 }
@@ -529,9 +564,9 @@ struct ActivityDetailView: View {
                                                   authenticated: true, expectedPrincipal: principal) as? [String: Any] else {
                 throw MobileAPIError.unavailable("报名响应异常，请核对报名记录")
             }
-            if operation == submitSequence, nativeTourismPrincipal(store.session?.accessToken) == principal {
-                guard nativeActivityRecoveryReceiptMatches(value, activityID: id, sessionID: expectedSessionID),
-                      value["Quantity"] as? Int == body["Quantity"] as? Int,
+            if isCurrentDraft() {
+                guard nativeActivityRecoveryReceiptMatches(value, activityID: requestedActivityID, sessionID: expectedSessionID),
+                      value["Quantity"] as? Int == requestedQuantity,
                       (value["SessionId"] as? String ?? "") == expectedSessionID else {
                     throw MobileAPIError.unavailable("报名回执与本次请求不一致，请先核对报名记录。")
                 }
@@ -548,7 +583,8 @@ struct ActivityDetailView: View {
     }
 
     private func recoverRegistration() async {
-        guard !busy, !recoveryChecking, let token = store.session?.accessToken,
+        guard !Task.isCancelled, pageVisible, scenePhase == .active,
+              !busy, !recoveryChecking, let token = store.session?.accessToken,
               let principal = nativeTourismPrincipal(token) else { return }
         let storageKey = nativeActivityRegistrationRecoveryKey(token: token, activityID: id)
         guard !storageKey.isEmpty else { return }
@@ -562,13 +598,18 @@ struct ActivityDetailView: View {
         recoverySequence += 1; let operation = recoverySequence
         recoveryChecking = true
         defer { if operation == recoverySequence, nativeTourismPrincipal(store.session?.accessToken) == principal { recoveryChecking = false } }
+        func isCurrentRecovery() -> Bool {
+            guard !Task.isCancelled, pageVisible, scenePhase == .active,
+                  operation == recoverySequence, nativeTourismPrincipal(store.session?.accessToken) == principal,
+                  recoveryStorageKey == storageKey else { return false }
+            let current = store.activityRegistrationAttempt(for: storageKey)
+            return current.requestKey == key && current.sessionID == expectedSessionID
+        }
         do {
             let value = try await MobileAPI(store: store).get(
                 "/api/JHCTIActivity/GetMyRegistrationByIdempotencyKey?activityId=\(id)&idempotencyKey=\(key)",
-                authenticated: true, expectedPrincipal: principal)
-            guard operation == recoverySequence, nativeTourismPrincipal(store.session?.accessToken) == principal,
-                  recoveryStorageKey == storageKey, store.activityRegistrationAttempt(for: storageKey).requestKey == key,
-                  store.activityRegistrationAttempt(for: storageKey).sessionID == expectedSessionID else { return }
+                authenticated: true, expectedPrincipal: principal, requireExplicitResponse: true)
+            guard isCurrentRecovery() else { return }
             guard let result = value as? [String: Any] else {
                 submitError = "暂未查到上次报名结果，请稍后重试核对；这不代表报名未提交。"; return
             }
@@ -581,7 +622,7 @@ struct ActivityDetailView: View {
                 recoveryPending = false; recoveryStorageKey = ""; submitError = nil
             } else { submitError = "报名结果已确认，但恢复标记尚未清理，请再次核对。" }
         } catch {
-            if operation == recoverySequence, nativeTourismPrincipal(store.session?.accessToken) == principal {
+            if isCurrentRecovery() {
                 submitError = "暂时无法核对上次报名，请保留恢复标记并稍后重试。"
             }
         }
